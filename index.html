@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Игровой сервер</title>
+<style>
+:root{color-scheme:dark;--bg:#0f0e17;--panel:#1a1a2a;--panel2:#22223a;--line:#2b2b45;--tx:#f2f2fa;--mut:#8b8ba7;--red:#e5484d;--gold:#f5a524;
+ --r:74;--g:108;--b:247;--ar:155;--ag:92;--ab:246;--on-acc:#fff;
+ --acc:rgb(var(--r) var(--g) var(--b));--acc-rgb:var(--r),var(--g),var(--b);
+ --acc-b:rgb(var(--ar) var(--ag) var(--ab));--acc-b-rgb:var(--ar),var(--ag),var(--ab);
+ --acc2:color-mix(in srgb,var(--acc) 45%,#fff);--acc3:color-mix(in srgb,var(--acc) 68%,#fff);--planbg:color-mix(in srgb,var(--acc) 22%,#12121e)}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--tx);font:15px/1.4 "Segoe UI",system-ui,sans-serif;min-height:100vh}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--panel);border-radius:16px;margin:16px auto;max-width:1280px;padding:10px 16px}
+.logo{width:36px;height:36px;border-radius:10px;background:var(--acc);display:grid;place-items:center;font-weight:800}
+.stat{font-size:12px;color:var(--mut);line-height:1.5}
+nav{display:flex;gap:4px;flex:1;justify-content:center;flex-wrap:wrap}
+nav button{padding:10px 16px;border-radius:12px;font-weight:600}
+nav button.on,nav button:hover{background:var(--panel2)}
+.tag{background:var(--red);border-radius:6px;font-size:11px;padding:1px 6px;margin-left:6px}
+.right{display:flex;gap:8px;align-items:center;position:relative}
+.promo-wrap{position:relative}
+.chip{background:var(--panel2);border-radius:12px;padding:10px 14px;font-weight:600}
+.steam{background:var(--acc);border-radius:12px;padding:10px 18px;font-weight:700}
+.demo{font-size:12px;color:var(--mut);text-decoration:underline}
+.ava{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc-b)) center/cover no-repeat;border:0}
+.promo-btn{background:var(--panel2);border-radius:12px;padding:10px 14px;font-weight:600}
+.promo-pop{position:absolute;top:52px;right:0;background:var(--panel2);border-radius:12px;padding:14px;min-width:240px;z-index:6;box-shadow:0 8px 24px #0008;display:flex;flex-direction:column;gap:8px}
+.promo-pop input{width:100%}
+.promo-pop button{background:var(--acc);border-radius:10px;padding:9px 0;font-weight:700}
+.promo-msg{font-size:13px;min-height:16px}
+.promo-msg.ok{color:#4ade80}.promo-msg.err{color:var(--red)}
+.menu{position:absolute;top:52px;right:0;background:var(--panel2);border-radius:12px;padding:8px;min-width:190px;z-index:5;box-shadow:0 8px 24px #0008}
+.menu-role{color:var(--gold);font-size:12px;font-weight:700;padding:6px 12px 4px}
+.menu button{display:block;width:100%;text-align:left;padding:10px 12px;border-radius:8px}
+.menu button:hover{background:var(--line)}
+.admin-badge{background:var(--gold);color:#1a1200;border-radius:6px;font-size:11px;font-weight:700;padding:2px 8px;margin-left:10px}
+.admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:20px}
+.admin-card{background:var(--panel);border-radius:12px;padding:18px}
+.admin-card .n{font-size:26px;font-weight:800}
+.admin-card .l{color:var(--mut);font-size:13px;margin-top:4px}
+.admin-tools{background:var(--panel);border-radius:12px;padding:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:20px}
+.admin-tools input{flex:1;min-width:200px}
+.admin-tools button{background:var(--panel2);border-radius:10px;padding:10px 16px;font-weight:600}
+.admin-tools button.danger{background:var(--red)}
+main{max-width:1280px;margin:0 auto 60px;padding:0 16px}
+h1{font-size:28px;margin:24px 0 20px}
+.cards{display:flex;justify-content:center}
+.mode{width:min(100%,320px);height:460px;border-radius:16px;background:linear-gradient(180deg,#1c1c2e,#12121e);border:1px solid var(--line);display:flex;flex-direction:column;justify-content:flex-end;align-items:center;padding:28px;gap:10px;cursor:pointer;transition:transform .2s}
+.mode:hover{transform:translateY(-4px)}
+.mode b{font-size:40px;letter-spacing:.5px}
+.online{background:var(--panel2);border-radius:20px;padding:4px 14px;font-size:13px;color:var(--mut)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--acc);margin-left:6px}
+table{width:100%;border-collapse:separate;border-spacing:0 8px}
+th{font-weight:500;color:var(--mut);font-size:13px;text-align:left;padding:4px 16px}
+td{background:var(--panel);padding:14px 16px}
+td:first-child{border-radius:12px 0 0 12px}td:last-child{border-radius:0 12px 12px 0}
+.tabs{display:inline-flex;background:var(--panel);border-radius:12px;padding:4px;gap:4px;margin-bottom:12px}
+.tabs button{padding:9px 18px;border-radius:9px;font-weight:600;color:var(--mut)}
+.tabs button.on{background:var(--panel2);color:var(--tx)}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+input{background:var(--panel);border:1px solid var(--line);color:var(--tx);border-radius:12px;padding:10px 14px;font:inherit;min-width:240px}
+.prem{background:var(--acc);border-radius:6px;font-size:11px;font-weight:700;padding:2px 8px;margin-right:8px}
+.ban{color:var(--red)}.ok{color:#4ade80}
+.plans{display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
+.plan{width:min(100%,360px);border-radius:16px;padding:24px;background:var(--panel);border:1px solid var(--line)}
+.plan.p{border-color:var(--acc);background:linear-gradient(180deg,var(--planbg),var(--panel))}
+.plan.g{border-color:var(--gold);background:linear-gradient(180deg,#3a2c14,var(--panel))}
+.plan h2{font-size:26px;margin-bottom:16px}
+.plan li{list-style:none;background:#ffffff0d;border-radius:10px;padding:10px 14px;margin-bottom:8px}
+.plan li:before{content:"✓";color:var(--acc);margin-right:10px}
+.plan.g li:before{color:var(--gold)}
+.periods{display:flex;gap:4px;margin:14px 0}
+.periods button{flex:1;padding:8px 0;border-radius:8px;background:#ffffff0d;font-size:13px}
+.periods button.on{background:var(--acc)}
+.price{font-size:26px;font-weight:800;margin-bottom:12px}
+.buy{width:100%;padding:12px;border-radius:12px;background:var(--acc);font-weight:700}
+.plan.g .buy{background:var(--gold);color:#1a1200}
+.rules{display:grid;grid-template-columns:230px 1fr;gap:16px}
+.side{background:var(--panel);border-radius:12px;padding:8px;align-self:start}
+.side button{display:block;width:100%;text-align:left;padding:12px;border-radius:8px;color:var(--mut)}
+.side button.on{background:var(--panel2);color:var(--tx)}
+.empty{background:var(--panel);border-radius:12px;padding:28px;color:var(--mut)}
+.join{background:var(--acc);border-radius:10px;padding:8px 16px;font-weight:600}
+@media(max-width:760px){.rules{grid-template-columns:1fr}nav{justify-content:flex-start}}
+
+/* ===== анимации ===== */
+:root{--ease:cubic-bezier(.22,1,.36,1)}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes drop{from{opacity:0;transform:translateY(-18px)}to{opacity:1;transform:none}}
+@keyframes pop{from{opacity:0;transform:translateY(-8px) scale(.94)}to{opacity:1;transform:none}}
+@keyframes tick{from{opacity:.2;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes bump{40%{transform:scale(1.14);background:var(--acc)}}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(var(--acc-rgb),.6)}70%,100%{box-shadow:0 0 0 9px rgba(var(--acc-rgb),0)}}
+@keyframes drift{to{transform:translate3d(5%,4%,0) scale(1.1)}}
+body::before{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;
+ background:radial-gradient(40% 40% at 20% 20%,rgba(var(--acc-rgb),.13),transparent 70%),radial-gradient(35% 35% at 80% 30%,rgba(var(--acc-b-rgb),.11),transparent 70%),radial-gradient(40% 40% at 50% 95%,#f5a52412,transparent 70%);
+ animation:drift 26s ease-in-out infinite alternate}
+header{animation:drop .8s var(--ease) backwards}
+button,.chip,.steam,.join,.promo-btn{transition:background .3s var(--ease),transform .3s var(--ease),box-shadow .3s var(--ease),color .25s,opacity .25s}
+button:active{transform:scale(.96)!important}
+nav button:hover{transform:translateY(-1px)}
+.logo{transition:transform .6s var(--ease)}.logo:hover{transform:rotate(-10deg) scale(1.1)}
+.ava{transition:transform .35s var(--ease),box-shadow .35s var(--ease)}
+.ava:hover{transform:scale(1.08);box-shadow:0 0 0 3px rgba(var(--acc-rgb),.4)}
+.steam:hover,.promo-btn:hover,.join:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(var(--acc-rgb),.27)}
+.promo-btn:hover{background:var(--line)}
+.chip.bump{animation:bump .7s var(--ease)}
+.price.tick{animation:tick .45s var(--ease)}
+input{transition:border-color .25s,box-shadow .25s,background .25s}
+input:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px rgba(var(--acc-rgb),.2)}
+.mode{transition:transform .45s var(--ease),border-color .35s,box-shadow .45s var(--ease)}
+.mode:hover{transform:translateY(-8px);border-color:var(--acc);box-shadow:0 24px 60px rgba(var(--acc-rgb),.2)}
+.dot{animation:pulse 2s ease-out infinite}
+.plan{transition:transform .45s var(--ease),box-shadow .45s var(--ease)}
+.plan:hover{transform:translateY(-6px);box-shadow:0 20px 44px rgba(var(--acc-rgb),.13)}
+.plan.g:hover{box-shadow:0 20px 44px #f5a52422}
+.plan li{transition:transform .3s var(--ease),background .3s}
+.plan li:hover{transform:translateX(5px);background:#ffffff18}
+.buy:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(var(--acc-rgb),.33)}
+.plan.g .buy:hover{box-shadow:0 10px 26px #f5a52455}
+td{transition:background .3s var(--ease)}
+tr:hover td{background:var(--panel2)}
+.side button{transition:background .3s var(--ease),color .25s,transform .3s var(--ease)}
+.side button:hover{transform:translateX(3px);color:var(--tx)}
+.menu button:hover{transform:translateX(3px)}
+.pop{animation:pop .3s var(--ease);transform-origin:top right}
+#app.enter h1{animation:rise .6s var(--ease) backwards}
+#app.enter :is(tr,.plan,.mode,.admin-card,.admin-tools,.bar,.side,.empty,.stat,.set-card){animation:rise .65s var(--ease) backwards;animation-delay:calc(var(--i,0)*55ms + 70ms)}
+#right.swap>*{animation:rise .55s var(--ease) backwards}
+#right.swap>*:nth-child(2){animation-delay:.07s}#right.swap>*:nth-child(3){animation-delay:.14s}#right.swap>*:nth-child(4){animation-delay:.21s}#right.swap>*:nth-child(5){animation-delay:.28s}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+.ava{color:#fff;font-weight:800;font-size:16px}
+
+.ic{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+nav button,.promo-btn,.steam{display:inline-flex;align-items:center;gap:8px}
+nav button .ic{opacity:.7;transition:opacity .25s}
+nav button.on .ic,nav button:hover .ic{opacity:1}
+.promo-btn.gold{color:var(--gold)}
+.chip.bal{display:inline-flex;align-items:center;gap:8px;padding:5px 5px 5px 12px}
+.chip.bal .ic{color:var(--acc3)}
+.plus{width:28px;height:28px;border-radius:8px;background:rgba(var(--acc-rgb),.2);color:var(--acc2);font-weight:700;line-height:1;font-size:16px}
+.plus:hover{background:var(--acc);color:#fff}
+.menu{min-width:180px;padding:6px}
+.menu button{display:flex;align-items:center;gap:10px;color:#cfcfe6;font-size:14px}
+.menu button:hover{color:#fff}
+.menu hr{border:0;border-top:1px solid var(--line);margin:6px 4px}
+.steam .ic{width:18px;height:18px}
+
+.sec{font-size:20px;margin:30px 0 12px}
+select{background:var(--panel2);border:1px solid var(--line);color:var(--tx);border-radius:12px;padding:10px 14px;font:inherit;cursor:pointer}
+select:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px rgba(var(--acc-rgb),.2)}
+.admin-tools button.ok{background:var(--acc)}
+.admin-tools .promo-msg{width:100%}
+.admin-tools input[type=number]{min-width:150px;flex:0 1 200px}
+.lnk{color:var(--acc2);text-decoration:none}.lnk:hover{text-decoration:underline}
+.join.del{background:#e5484d33;color:#ff8a8e}.join.del:hover{background:var(--red);color:#fff}
+
+.set-card{background:var(--panel);border-radius:16px;padding:20px;display:flex;align-items:center;gap:16px;max-width:620px;margin-bottom:16px;flex-wrap:wrap;justify-content:space-between}
+.set-card>div:first-child{min-width:0}
+.set-ava{width:64px;height:64px;border-radius:16px;flex:none;background:linear-gradient(135deg,var(--acc),var(--acc-b)) center/cover no-repeat;display:grid;place-items:center;font-size:26px;font-weight:800}
+.set-card:first-of-type{justify-content:flex-start}
+.set-name{font-size:18px;font-weight:700;margin-bottom:4px}
+.out-btn{display:inline-flex;align-items:center;gap:8px;background:#e5484d22;color:#ff8a8e;border-radius:12px;padding:12px 20px;font-weight:700}
+.out-btn:hover{background:var(--red);color:#fff;transform:translateY(-2px)}
+
+.gear{width:40px;height:40px;border-radius:10px;background:var(--panel2);display:grid;place-items:center;color:var(--mut)}
+.gear .ic{width:18px;height:18px;transition:transform .6s var(--ease)}
+.gear:hover,.gear.on{color:#fff;background:var(--line)}
+.gear:hover .ic{transform:rotate(90deg)}
+.menu{right:48px}
+#right.swap>*:nth-child(6){animation-delay:.35s}
+
+@property --r{syntax:'<number>';inherits:true;initial-value:74}
+@property --g{syntax:'<number>';inherits:true;initial-value:108}
+@property --b{syntax:'<number>';inherits:true;initial-value:247}
+@property --ar{syntax:'<number>';inherits:true;initial-value:155}
+@property --ag{syntax:'<number>';inherits:true;initial-value:92}
+@property --ab{syntax:'<number>';inherits:true;initial-value:246}
+@property --on-acc{syntax:'<color>';inherits:true;initial-value:#fff}
+:root{transition:--r .7s var(--ease),--g .7s var(--ease),--b .7s var(--ease),--ar .7s var(--ease),--ag .7s var(--ease),--ab .7s var(--ease),--on-acc .7s var(--ease)}
+html.rgb-live{transition:none}
+html[data-theme=red]{--r:229;--g:72;--b:77;--ar:255;--ag:138;--ab:61}
+html[data-theme=yellow]{--r:245;--g:197;--b:24;--ar:255;--ag:159;--ab:28;--on-acc:#1a1400}
+html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:#04170a}
+.steam,.join,.plan.p .buy,.periods button.on,.prem,.promo-pop>button,.admin-tools button.ok,.plus:hover{color:var(--on-acc)}
+.set-card.col{flex-direction:column;align-items:flex-start}
+.themes{display:flex;gap:10px;flex-wrap:wrap}
+.theme-btn{display:inline-flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:var(--panel2);font-weight:600;border:1px solid transparent}
+.theme-btn i{width:18px;height:18px;border-radius:50%;display:block}
+.theme-btn:hover{background:var(--line)}
+.theme-btn.on{border-color:var(--acc);box-shadow:0 0 0 3px rgba(var(--acc-rgb),.2)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.theme-btn[data-t=rgb] i{animation:spin 4s linear infinite}
+
+.scroll-hint{display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:28px;color:var(--mut);font-size:13px}
+.scroll-hint span{font-size:20px;animation:hint 1.6s var(--ease) infinite}
+@keyframes hint{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(7px);opacity:1}}
+@keyframes bob{from{transform:translateY(-6px) rotate(-1.2deg)}to{transform:translateY(8px) rotate(1.2deg)}}
+.reveal-zone{--e:0;--q:0;height:240vh;position:relative;margin-top:30px}
+.reveal-stage{position:sticky;top:0;height:100vh;display:grid;place-items:center;overflow:hidden}
+.burst{position:absolute;inset:-35%;pointer-events:none;
+ background:repeating-conic-gradient(from 0deg,rgba(var(--acc-rgb),.2) 0 9deg,transparent 9deg 18deg);
+ -webkit-mask:radial-gradient(circle,#000 0,transparent 62%);mask:radial-gradient(circle,#000 0,transparent 62%);
+ opacity:var(--e);transform:rotate(calc(var(--q)*80deg)) scale(calc(.55 + var(--e)*.55))}
+.reveal-bob{position:relative;animation:bob 1.4s ease-in-out infinite alternate}
+.reveal-img{display:block;width:min(88vw,640px);height:auto;border-radius:24px;
+ box-shadow:0 30px 90px rgba(var(--acc-rgb),.4),0 0 0 1px var(--line);
+ opacity:clamp(0,calc(var(--e)*1.7 - .35),1);
+ transform:translateY(calc((1 - var(--e))*160px)) scale(calc(.6 + var(--e)*.4)) rotate(calc((var(--q) - .5)*10deg))}
+@media(prefers-reduced-motion:reduce){.reveal-bob{animation:none}.scroll-hint span{animation:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">S</div>
+  <div class="stat">Админов: 37<br>Игроков: 376</div>
+  <nav id="nav"></nav>
+  <div class="right" id="right"></div>
+</header>
+<main id="app"></main>
+<script>
+const $=s=>document.querySelector(s);
+const reduce=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+const prev={menu:false,promo:false,logged:false,coins:null,key:''};
+function countTo(from,to){
+  const t0=performance.now(),d=800;
+  const step=t=>{const p=Math.min(1,(t-t0)/d),e=1-Math.pow(1-p,3),el=$('#bal');
+    if(el)el.textContent=(from+(to-from)*e).toFixed(2);
+    if(p<1)requestAnimationFrame(step)};
+  requestAnimationFrame(step);
+}
+function setPeriod(k,i,btn){
+  st.plan[k]=i;
+  const plan=btn.closest('.plan');
+  plan.querySelectorAll('.periods button').forEach((b,j)=>b.classList.toggle('on',j===i));
+  const p=plan.querySelector('.price');
+  p.textContent=price[k][i]+' ₽';
+  p.classList.remove('tick');void p.offsetWidth;p.classList.add('tick');
+}
+const st={page:'home',lb:'exp',bt:'bans',plan:{prem:0,plus:0},rule:0,user:null,menu:false,promoOpen:false,promo:'',promoMsg:null};
+
+// Промокоды: временный список для примера, лучше хранить и проверять на сервере,
+// иначе любой посмотрит код прямо в исходнике страницы.
+const PROMO_CODES={
+  'START100':{coins:100,text:'+100 монет'},
+  'WELCOME50':{coins:50,text:'+50 монет'},
+  'MELLSTROYPROJECT':{coins:200,text:'+200 монет'}
+};
+const usedPromoKey='usedPromoCodes';
+function getUsedPromo(){try{return JSON.parse(localStorage.getItem(usedPromoKey)||'[]')}catch(e){return []}}
+function togglePromo(){st.promoOpen=!st.promoOpen;st.menu=false;st.promoMsg=null;draw()}
+function buyPlan(key,name){
+  if(!st.user){alert('Сначала войдите через Steam, чтобы купить');return}
+  const cost=price[key][st.plan[key]];
+  const bal=st.user.coins||0;
+  if(bal<cost){alert(`Недостаточно средств: не хватает ${(cost-bal).toFixed(2)} ₽. Пополните баланс или используйте промокод.`);return}
+  st.user.coins=bal-cost;
+  if(key==='plus'){
+    const until=Math.max(Date.now(),getPlusUntil(st.user.id))+PERIOD_DAYS[st.plan[key]]*864e5;
+    try{localStorage.setItem('plusUntil:'+st.user.id,String(until))}catch(e){}
+    applyRole(st.user);
+  }
+  alert(`Покупка успешна: ${name} на ${periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
+  draw();
+}
+function activatePromo(){
+  if(!st.user){st.promoMsg={ok:false,text:'Сначала войдите через Steam'};draw();return}
+  const code=st.promo.trim().toUpperCase();
+  const fail=t=>{st.promoMsg={ok:false,text:t};draw()};
+  if(!code)return fail('Введите код');
+  const found=allPromos()[code];
+  if(!found)return fail('Код не найден');
+  const usedKey='usedPromoCodes:'+st.user.id,used=LS.get(usedKey,[]);
+  if(used.includes(code))return fail('Этот код уже был использован');
+  if(found.max>0&&(found.used||0)>=found.max)return fail('Лимит активаций этого кода исчерпан');
+  st.user.coins=(st.user.coins||0)+found.coins;
+  used.push(code);LS.set(usedKey,used);
+  if(!found.builtin){const list=getCustomPromos(),p=list.find(x=>x.code===code);if(p){p.used=(p.used||0)+1;LS.set('customPromos',list)}}
+  st.promo='';
+  st.promoMsg={ok:true,text:'Код активирован: +'+found.coins+' монет'};
+  draw();
+}
+// Владелец сервера: этот SteamID64 всегда получает права главного админа.
+// https://steamcommunity.com/profiles/76561198659672678
+const OWNER_STEAM_ID='76561198659672678';
+const PERIOD_DAYS=[7,30,90,180];
+const FOREVER=1e15; // «навсегда» для выданной админки
+const LS={
+  get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+};
+function getGrants(){return LS.get('adminGrants',{})}
+function getGrantUntil(id){const g=getGrants()[id];return g?+g.until||0:0}
+function getDeputies(){return LS.get('deputies',{})}
+function getCustomPromos(){return LS.get('customPromos',[])}
+function allPromos(){ // встроенные + созданные в админ-панели
+  const m={};
+  for(const c in PROMO_CODES)m[c]={code:c,coins:PROMO_CODES[c].coins,max:0,used:0,builtin:true};
+  for(const p of getCustomPromos())m[p.code]=p;
+  return m;
+}
+const fmtDate=t=>t>=FOREVER?'навсегда':new Date(t).toLocaleString('ru-RU',{dateStyle:'short',timeStyle:'short'});
+function getPlusUntil(id){try{return +localStorage.getItem('plusUntil:'+id)||0}catch(e){return 0}}
+const DEFAULT_AVATAR_HASH='b5bd56c1aa4644a474a2e4972be27ef9e82e517e'; // стандартная «?» аватарка Steam
+function safeAvatar(a){
+  return typeof a==='string'&&!a.includes(DEFAULT_AVATAR_HASH)&&/^https:\/\/[\w.-]+\.(steamstatic\.com|akamaihd\.net)\/[\w\-./]+$/i.test(a)?a:null;
+}
+const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function applyRole(u){
+  u.avatar=safeAvatar(u.avatar);
+  u.isOwner=u.id===OWNER_STEAM_ID;
+  u.plusUntil=Math.max(getPlusUntil(u.id),getGrantUntil(u.id));
+  u.hasPlus=u.plusUntil>Date.now();
+  u.isDeputy=!u.isOwner&&!!getDeputies()[u.id];
+  u.canManage=u.isOwner||u.isDeputy; // владелец и замы: полный набор модерации + выдача «Админ+»
+  u.isAdmin=u.canManage||u.hasPlus;
+  u.role=u.isOwner?'Владелец':(u.isDeputy?'Зам':(u.hasPlus?'Админ+':null));
+  return u;
+}
+
+const ICONS={
+ play:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>',
+ shop:'<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.6 12.2a1 1 0 0 0 1 .8h9.2a1 1 0 0 0 1-.8L21 8H6"/>',
+ leaders:'<path d="M6 20v-9M12 20V4M18 20v-6"/>',
+ bans:'<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
+ rules:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+ promo:'<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
+ coin:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/>',
+ user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+ skin:'<path d="M4 20l6-6M14 4l6 6-8 8-6-6z"/>',
+ box:'<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
+ gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9L7 7M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
+ out:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+ shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+ steam:'<circle cx="15.5" cy="8.5" r="4.5"/><circle cx="8" cy="16" r="3" fill="currentColor"/><path d="M8.5 15.5l4.5-4"/>'
+};
+const I=n=>`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
+const PAGES=[['home','Играть','play'],['shop','Магазин','shop'],['leaders','Лидеры','leaders'],['bans','Баны','bans'],['rules','Правила','rules']];
+
+// Steam: если Steam вернул пользователя с openid-параметрами, читаем SteamID.
+// ВАЖНО: проверить подпись (openid.sig) нужно на сервере, иначе вход можно подделать.
+try{const q=new URLSearchParams(location.search),c=q.get('openid.claimed_id');
+ if(c&&/\/openid\/id\/(\d+)$/.test(c)){
+   st.user=applyRole({id:RegExp.$1,name:'Игрок',coins:15,avatar:null});
+   try{history.replaceState(null,'',location.pathname)}catch(e){} // убираем openid-параметры из адреса
+   // OpenID отдаёт только SteamID64, но не имя и не аватарку.
+   // Чтобы получить реальную аватарку, нужен запрос на backend, который
+   // сам сходит в Steam Web API (ISteamUser/GetPlayerSummaries) со своим
+   // ключом — из браузера так сделать нельзя (ключ светился бы всем, и Steam
+   // не пускает такие запросы через CORS). Пример:
+ }}catch(e){}
+
+// Сохранённый аккаунт: после перезагрузки страницы пользователь остаётся в системе.
+const ACC_KEY='account';
+try{
+  const saved=JSON.parse(localStorage.getItem(ACC_KEY)||'null');
+  if(saved&&saved.id){
+    if(!st.user) st.user=applyRole(saved);
+    else if(st.user.id===saved.id){ // вернулись из Steam тем же аккаунтом — оставляем баланс и аватарку
+      st.user.coins=saved.coins;
+      if(saved.name&&saved.name!=='Игрок')st.user.name=saved.name;
+      st.user.avatar=st.user.avatar||saved.avatar;
+      applyRole(st.user);
+    }
+  }
+}catch(e){}
+function saveUser(){
+  try{
+    if(st.user)localStorage.setItem(ACC_KEY,JSON.stringify({id:st.user.id,name:st.user.name,coins:st.user.coins,avatar:st.user.avatar||null}));
+    else localStorage.removeItem(ACC_KEY);
+  }catch(e){}
+}
+
+// Аватарка и ник из Steam. OpenID отдаёт только SteamID, поэтому профиль берём отдельно:
+// 1) со своего backend (/api/steam-profile) — лучший вариант, когда сайт лежит на хостинге;
+// 2) иначе — публичная XML-страница профиля Steam через CORS-прокси (работает и из локального файла).
+const avatarTried={};
+async function getWithTimeout(url,ms){
+  const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);
+  try{const r=await fetch(url,{signal:c.signal});if(!r.ok)throw new Error(r.status);return r}finally{clearTimeout(t)}
+}
+function parseSteamXml(x){
+  const g=tag=>{const m=x.match(new RegExp('<'+tag+'>\\s*(?:<!\\[CDATA\\[)?\\s*([\\s\\S]*?)\\s*(?:\\]\\]>)?\\s*</'+tag+'>'));return m?m[1]:null};
+  return {avatar:g('avatarFull'),name:g('steamID')};
+}
+async function loadSteamAvatar(){
+  const u=st.user;
+  if(!u||u.avatar||!/^\d{17}$/.test(u.id)||avatarTried[u.id])return;
+  avatarTried[u.id]=true;
+  let info=null;
+  try{
+    if(location.protocol.startsWith('http')){info=await (await getWithTimeout('/api/steam-profile?steamid='+u.id,4000)).json()}
+  }catch(e){}
+  if(!info||!safeAvatar(info.avatar)){
+    const xml='https://steamcommunity.com/profiles/'+u.id+'?xml=1';
+    const proxies=[x=>'https://api.allorigins.win/raw?url='+encodeURIComponent(x),x=>'https://corsproxy.io/?'+encodeURIComponent(x)];
+    for(const p of proxies){
+      try{
+        const r=parseSteamXml(await (await getWithTimeout(p(xml),8000)).text());
+        if(safeAvatar(r.avatar&&r.avatar.replace(/^http:/,'https:'))){info={avatar:r.avatar.replace(/^http:/,'https:'),name:r.name};break}
+      }catch(e){}
+    }
+  }
+  const av=info&&safeAvatar(info.avatar);
+  if(av&&st.user&&st.user.id===u.id){
+    st.user.avatar=av;
+    if(info.name&&typeof info.name==='string')st.user.name=info.name.slice(0,32);
+    draw();
+  }else avatarTried[u.id]=false; // не вышло — попробуем при следующем входе/загрузке
+}
+function demoLogin(){st.user=applyRole({id:OWNER_STEAM_ID,name:'Демо',coins:15,avatar:null});draw();loadSteamAvatar()}
+
+function steamLogin(){
+  if(!location.protocol.startsWith('http')){
+    alert('Вход через Steam работает, только когда сайт открыт по адресу http(s):// — из файла на компьютере Steam не сможет вернуть вас обратно.\n\nДля проверки запустите в папке с index.html команду:\npython -m http.server 8000\nи откройте http://localhost:8000\n\nПока можно нажать «демо».');
+    return;
+  }
+  const p=new URLSearchParams({'openid.ns':'http://specs.openid.net/auth/2.0','openid.mode':'checkid_setup',
+   'openid.return_to':location.origin+location.pathname,'openid.realm':location.origin,
+   'openid.identity':'http://specs.openid.net/auth/2.0/identifier_select','openid.claimed_id':'http://specs.openid.net/auth/2.0/identifier_select'});
+  location.href='https://steamcommunity.com/openid/login?'+p;
+}
+const THEMES={
+  blue:['Синий','linear-gradient(135deg,#4a6cf7,#9b5cf6)'],
+  red:['Красный','linear-gradient(135deg,#e5484d,#ff8a3d)'],
+  yellow:['Жёлтый','linear-gradient(135deg,#f5c518,#ff9f1c)'],
+  green:['Зелёный','linear-gradient(135deg,#22c55e,#14b8a6)'],
+  rgb:['RGB','conic-gradient(#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)']
+};
+const RGB_VARS=['--r','--g','--b','--ar','--ag','--ab','--on-acc'];
+let rgbRaf=0;
+function hsl2rgb(h,s,l){const a=s*Math.min(l,1-l),f=n=>{const k=(n+h/30)%12;return l-a*Math.max(-1,Math.min(k-3,9-k,1))};return[f(0),f(8),f(4)].map(v=>Math.round(v*255))}
+function paintRgb(h){
+  const [r,g,b]=hsl2rgb(h,.9,.58),[ar,ag,ab]=hsl2rgb((h+55)%360,.9,.6),st=document.documentElement.style;
+  st.setProperty('--r',r);st.setProperty('--g',g);st.setProperty('--b',b);
+  st.setProperty('--ar',ar);st.setProperty('--ag',ag);st.setProperty('--ab',ab);
+}
+function applyTheme(name){
+  if(!THEMES[name])name='blue';
+  const root=document.documentElement;
+  cancelAnimationFrame(rgbRaf);rgbRaf=0;
+  root.classList.remove('rgb-live');RGB_VARS.forEach(v=>root.style.removeProperty(v));
+  root.dataset.theme=name;
+  if(name==='rgb'){
+    root.classList.add('rgb-live');
+    if(reduce)paintRgb(210);
+    else{let last=0;const loop=t=>{if(t-last>33){last=t;paintRgb((t/30)%360)}rgbRaf=requestAnimationFrame(loop)};rgbRaf=requestAnimationFrame(loop)}
+  }
+  LS.set('theme',name);
+  document.querySelectorAll('.theme-btn').forEach(b=>b.classList.toggle('on',b.dataset.t===name));
+}
+function themeCard(){
+  const cur=LS.get('theme','blue');
+  return `<div class="set-card col"><div class="set-name">Тема оформления</div><div class="themes">${Object.entries(THEMES).map(([k,[n,g]])=>`<button class="theme-btn${k===cur?' on':''}" data-t="${k}" onclick="applyTheme('${k}')"><i style="background:${g}"></i>${n}</button>`).join('')}</div></div>`;
+}
+function logout(){st.user=null;st.menu=false;st.promoOpen=false;st.adminMsg={};if(st.page==='settings'||st.page==='admin')st.page='home';draw()}
+function go(p){st.page=p;st.menu=false;st.adminMsg={};try{window.scrollTo(0,0)}catch(e){}draw()}
+
+const servers=[['Public #1','de_dust2',32,32,21],['Public #2','de_mirage',30,32,25],['Public #3','de_inferno',28,32,19],['Public #4','de_nuke',24,32,30],['Public #5','de_ancient',22,32,27]];
+const leaders={exp:[['Игрок 1','483 039','51 462','1.65','493 ч.'],['Игрок 2','381 447','45 760','2.73','485 ч.'],['Игрок 3','366 928','49 153','1.30','1007 ч.'],['Игрок 4','348 826','33 100','2.53','436 ч.'],['Игрок 5','332 129','36 242','1.43','467 ч.']],
+ drop:[['Игрок 6','128','—','—','310 ч.'],['Игрок 7','97','—','—','254 ч.'],['Игрок 8','85','—','—','402 ч.']]};
+const bans=[['Игрок A','Админ 1','Использование читов',1,'2 месяца','19.09.2026, 00:05'],['Игрок B','Админ 2','Отказ от проверки',1,'1 месяц','19.09.2026, 00:05'],['Игрок C','Админ 1','Использование читов',0,'2 месяца','19.09.2026, 00:03']];
+const mutes=[['Игрок D','Админ 3','Оскорбления в чате',1,'1 день','19.09.2026, 00:10'],['Игрок E','Админ 2','Спам в голосовом чате',1,'3 дня','18.09.2026, 23:40']];
+const prem=['Больше денег в начале раунда','Выделение в чате и серверов','Прокачка опыта x2','Резервный слот для подключения','Улучшенный дроп скинов'];
+const plus=['Все возможности премиума','Заглушить игрока','Заморозить игрока','Ослепить игрока','Убить игрока','Изменить урон игроку','Изменить здоровье игроку','Отключить прыжок игроку'];
+const periods=['7 дней','30 дней','90 дней','180 дней'];
+const price={prem:[65,200,470,840],plus:[150,450,1000,1800]}; // временные цены, замени на свои
+const rcats=['Основные','Общение','Игровой процесс','Никнеймы и аватарки','Прочее','Для администрации','Условия проверки'];
+
+function head(){
+  const nav=$('#nav');
+  if(!nav.children.length) nav.innerHTML=PAGES.map(([k,t,ic])=>`<button data-k="${k}" onclick="go('${k}')">${I(ic)}${t}${k==='shop'?'<span class="tag">-50%</span>':''}</button>`).join('');
+  [...nav.children].forEach(b=>{const k=b.dataset.k;b.classList.toggle('on',st.page===k||(k==='home'&&st.page==='public'))});
+  const logged=!!st.user,coins=logged?(st.user.coins||0):0,from=prev.coins;
+  const menuFresh=st.menu&&!prev.menu,promoFresh=st.promoOpen&&!prev.promo;
+  const coinsChanged=logged&&prev.logged&&from!==null&&coins!==from,loginChanged=logged!==prev.logged;
+  prev.menu=st.menu;prev.promo=st.promoOpen;prev.logged=logged;prev.coins=logged?coins:null;
+  $('#right').classList.toggle('swap',loginChanged);
+  const menuItems=(st.user&&st.user.isAdmin?[['Админ-панель','shield',"go('admin')"]]:[]).concat([['Профиль','user'],['Скинченджер','skin'],['Хранилище','box'],['Настройки','gear',"go('settings')"]]);
+  $('#right').innerHTML=st.user?
+   `<div class="promo-wrap"><button class="promo-btn" onclick="togglePromo()">${I('promo')}Промокод</button>`+
+   (st.promoOpen?`<div class="promo-pop${promoFresh?' pop':''}"><input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="Введите код" aria-label="Промокод" autofocus><button onclick="activatePromo()">Активировать</button><div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?st.promoMsg.text:''}</div></div>`:'')+
+   `</div>`+
+   (st.user.isAdmin?`<button class="promo-btn gold" onclick="go('admin')">${I('shield')}Админ-панель</button>`:'')+
+   `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="alert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
+   `<button class="ava" aria-label="Профиль" style="${st.user.avatar?`background-image:url('${st.user.avatar}')`:''}" onclick="st.menu=!st.menu;st.promoOpen=false;head()">${st.user.avatar?'':esc((st.user.name||'?').trim().charAt(0).toUpperCase())}</button>`+
+   `<button class="gear${st.page==='settings'?' on':''}" aria-label="Настройки" title="Настройки" onclick="go('settings')">${I('gear')}</button>`+
+   (st.menu?`<div class="menu${menuFresh?' pop':''}">${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти</button></div>`:'')
+   :`<button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button><a class="demo" href="#" onclick="demoLogin();return false">демо</a>`;
+  if(coinsChanged&&!reduce)countTo(from,coins);
+}
+function view(){
+  if(st.page==='admin'&&!(st.user&&st.user.isAdmin)){st.page='home'}
+  if(st.page==='home') return `<div class="cards"><div class="mode" onclick="go('public')" role="button" tabindex="0"><b>PUBLIC</b><span class="online">Онлайн: 256<i class="dot"></i></span></div></div>
+   <div class="scroll-hint">Листай вниз<span>↓</span></div>
+   <section class="reveal-zone" aria-hidden="true"><div class="reveal-stage"><div class="burst"></div><div class="reveal-bob"><img class="reveal-img" src="${IMG67}" alt="6 7"></div></div></section>`;
+  if(st.page==='public') return `<h1>Public: серверы</h1><table><tr><th>Сервер</th><th>Карта</th><th>Игроки</th><th>Пинг</th><th></th></tr>${servers.map(s=>`<tr><td>${s[0]}</td><td>${s[1]}</td><td>${s[2]}/${s[3]}</td><td>${s[4]} мс</td><td><button class="join" onclick="alert('Здесь будет подключение: steam://connect/IP:порт')">Играть</button></td></tr>`).join('')}</table><p class="stat">Адреса и названия серверов временные.</p>`;
+  if(st.page==='shop') return `<h1 style="text-align:center">Магазин</h1><div class="plans">${[['prem','Премиум',prem,'p'],['plus','Админ+',plus,'g']].map(([k,n,l,c])=>`<div class="plan ${c}"><h2>${n}</h2><ul>${l.map(x=>`<li>${x}</li>`).join('')}</ul><div class="periods">${periods.map((p,i)=>`<button class="${st.plan[k]===i?'on':''}" onclick="setPeriod('${k}',${i},this)">${p}</button>`).join('')}</div><div class="price">${price[k][st.plan[k]]} ₽</div><button class="buy" onclick="buyPlan('${k}','${n}')">Купить</button></div>`).join('')}</div>`;
+  if(st.page==='leaders'){const rows=leaders[st.lb];return `<h1>Лидеры</h1><div class="bar"><div class="tabs"><button class="${st.lb==='exp'?'on':''}" onclick="st.lb='exp';draw()">По опыту</button><button class="${st.lb==='drop'?'on':''}" onclick="st.lb='drop';draw()">По дропу</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Место</th><th>Игрок</th><th>Очков</th><th>Убийств</th><th>У/С</th><th>Время игры</th></tr>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${i<2&&st.lb==='exp'?'<span class="prem">ПРЕМИУМ</span>':''}${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`).join('')}</table>`}
+  if(st.page==='bans'){const rows=st.bt==='bans'?bans:mutes;return `<h1>Баны</h1><div class="bar"><div class="tabs"><button class="${st.bt==='bans'?'on':''}" onclick="st.bt='bans';draw()">Баны</button><button class="${st.bt==='mutes'?'on':''}" onclick="st.bt='mutes';draw()">Муты</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Игрок</th><th>Админ</th><th>Причина</th><th>Статус</th><th>Срок</th><th>Дата</th></tr>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="${r[3]?'ban':'ok'}">${r[3]?(st.bt==='bans'?'Забанен':'Замучен'):'Разбанен'}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`).join('')}</table>`}
+  if(st.page==='rules') return `<h1>Правила</h1><div class="rules"><div class="side">${rcats.map((c,i)=>`<button class="${st.rule===i?'on':''}" onclick="st.rule=${i};draw()">${c}</button>`).join('')}</div><div class="empty">Раздел «${rcats[st.rule]}»: текст правил добавим позже.</div></div>`;
+  if(st.page==='settings'){
+    const u=st.user;
+    if(!u) return `<h1>Настройки</h1><div class="empty">Вы не вошли в аккаунт. Войдите через Steam, чтобы увидеть настройки.<br><br><button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button></div>${themeCard()}`;
+    return `<h1>Настройки</h1>
+     <div class="set-card"><div class="set-ava" style="${u.avatar?`background-image:url('${u.avatar}')`:''}">${u.avatar?'':esc((u.name||'?').trim().charAt(0).toUpperCase())}</div>
+       <div><div class="set-name">${esc(u.name||'Игрок')}${u.role?`<span class="admin-badge">${u.role}</span>`:''}</div><div class="stat">SteamID: ${esc(u.id)}</div><div class="stat">Баланс: ${(u.coins||0).toFixed(2)}</div></div></div>
+     ${themeCard()}
+     <div class="set-card"><div><div class="set-name">Аккаунт</div><div class="stat">Выйти из аккаунта на этом устройстве. Вернуться можно в любой момент через Steam.</div></div>
+       <button class="out-btn" onclick="logout()">${I('out')}Выйти из аккаунта</button></div>`;
+  }
+  if(st.page==='admin') return `<h1>Админ-панель<span class="admin-badge">${st.user.role}</span></h1>
+   <div class="admin-grid">
+     <div class="admin-card"><div class="n">376</div><div class="l">Игроков онлайн</div></div>
+     <div class="admin-card"><div class="n">37</div><div class="l">Админов в сети</div></div>
+     <div class="admin-card"><div class="n">${bans.filter(b=>b[3]).length}</div><div class="l">Активных банов</div></div>
+     <div class="admin-card"><div class="n">${mutes.filter(m=>m[3]).length}</div><div class="l">Активных мутов</div></div>
+   </div>
+   <div class="admin-tools"><input id="adminTarget" placeholder="Ник или SteamID игрока" aria-label="Игрок">
+     ${(st.user.canManage?[['Кикнут','Кикнуть'],['Замьючен','Замьютить'],['Заглушен','Заглушить'],['Заморожен','Заморозить'],['Ослеплён','Ослепить'],['Убит','Убить']]:[['Заглушен','Заглушить'],['Заморожен','Заморозить'],['Ослеплён','Ослепить'],['Убит','Убить']]).map(([v,t])=>`<button onclick="adminAction('${v}')">${t}</button>`).join('')}
+     ${st.user.canManage?`<button class="danger" onclick="adminAction('Забанен')">Забанить</button>`:''}
+   </div>
+   ${st.user.canManage?adminOwnerSections():''}
+   <p class="stat">Панель — заготовка для интерфейса: реальные баны/муты/кики нужно подключить к серверу игры и базе данных.</p>`;
+}
+function adminMsgNow(id,text){const e=$(id);if(e){e.textContent=text;e.className='promo-msg err'}}
+function adminOk(kind,text){st.adminMsg={[kind]:{ok:true,text}};draw()}
+function grantAdmin(){
+  if(!(st.user&&st.user.canManage))return;
+  const id=($('#grantId').value||'').trim(),sel=$('#grantDays').value;
+  if(!/^\d{17}$/.test(id))return adminMsgNow('#grantMsg','SteamID64 — это 17 цифр (например 76561198…)');
+  if(id===OWNER_STEAM_ID)return adminMsgNow('#grantMsg','Этот игрок уже владелец');
+  const g=getGrants(),cur=g[id]?+g[id].until:0,base=Math.max(Date.now(),cur<FOREVER?cur:0);
+  g[id]={until:sel==='0'?FOREVER:base+(+sel)*864e5,by:st.user.id,at:Date.now()};
+  LS.set('adminGrants',g);
+  if(st.user.id===id)applyRole(st.user);
+  adminOk('grant','Админка выдана: '+id+' — '+(sel==='0'?'навсегда':sel+' дн.'));
+}
+function revokeAdmin(id){
+  if(!(st.user&&st.user.canManage)||!/^\d{17}$/.test(id))return;
+  const g=getGrants();delete g[id];LS.set('adminGrants',g);
+  if(st.user.id===id)applyRole(st.user);
+  adminOk('grant','Админка снята: '+id);
+}
+function addDeputy(){
+  if(!(st.user&&st.user.isOwner))return;
+  const id=($('#depId').value||'').trim();
+  if(!/^\d{17}$/.test(id))return adminMsgNow('#depMsg','SteamID64 — это 17 цифр (например 76561198…)');
+  if(id===OWNER_STEAM_ID)return adminMsgNow('#depMsg','Это вы — владелец');
+  const d=getDeputies();
+  if(d[id])return adminMsgNow('#depMsg','Этот игрок уже зам');
+  d[id]={at:Date.now(),by:st.user.id};LS.set('deputies',d);
+  adminOk('deputy','Зам назначен: '+id);
+}
+function removeDeputy(id){
+  if(!(st.user&&st.user.isOwner)||!/^\d{17}$/.test(id))return;
+  const d=getDeputies();delete d[id];LS.set('deputies',d);
+  adminOk('deputy','Зам снят: '+id);
+}
+function genPromo(){
+  const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let c='';
+  for(let i=0;i<8;i++)c+=a[Math.floor(Math.random()*a.length)];
+  $('#pCode').value='PROMO-'+c;
+}
+function createPromo(){
+  if(!(st.user&&st.user.isOwner))return;
+  const code=($('#pCode').value||'').trim().toUpperCase(),coins=+$('#pCoins').value,max=Math.floor(+$('#pMax').value||0);
+  if(!/^[A-Z0-9_-]{3,24}$/.test(code))return adminMsgNow('#promoMsgA','Код: 3–24 символа — латиница, цифры, _ или -');
+  if(!(coins>0&&coins<=100000))return adminMsgNow('#promoMsgA','Награда: число от 1 до 100 000');
+  if(max<0||max>1000000)return adminMsgNow('#promoMsgA','Лимит активаций: от 0 (без лимита) до 1 000 000');
+  if(allPromos()[code])return adminMsgNow('#promoMsgA','Такой код уже существует');
+  const list=getCustomPromos();
+  list.push({code,coins,max,used:0,by:st.user.id,at:Date.now()});LS.set('customPromos',list);
+  adminOk('promo','Промокод создан: '+code+' (+'+coins+' монет)');
+}
+function deletePromo(code){
+  if(!(st.user&&st.user.isOwner)||!/^[A-Z0-9_-]{3,24}$/.test(code))return;
+  LS.set('customPromos',getCustomPromos().filter(p=>p.code!==code));
+  adminOk('promo','Промокод удалён: '+code);
+}
+function adminOwnerSections(){
+  const m=st.adminMsg||{},now=Date.now();
+  const msg=(k,id)=>`<div id="${id}" class="promo-msg ${m[k]?(m[k].ok?'ok':'err'):''}">${m[k]?esc(m[k].text):''}</div>`;
+  const grants=Object.entries(getGrants()).sort((a,b)=>b[1].at-a[1].at);
+  const promos=Object.values(allPromos());
+  const deps=Object.entries(getDeputies()).sort((a,b)=>b[1].at-a[1].at);
+  const deputyBlock=`<h2 class="sec">Заместители</h2>
+   <div class="admin-tools"><input id="depId" placeholder="SteamID64 игрока (17 цифр)" inputmode="numeric" maxlength="17" aria-label="SteamID64 зама"><button class="ok" onclick="addDeputy()">Назначить замом</button>${msg('deputy','depMsg')}</div>
+   <p class="stat" style="margin-bottom:10px">Зам может кикать, мутить, банить и выдавать/снимать «Админ+». Промокоды и назначение замов доступны только владельцу.</p>
+   ${deps.length?`<table><tr><th>Заместитель (SteamID64)</th><th>Назначен</th><th></th></tr>${deps.map(([id,d])=>`<tr><td><a class="lnk" href="https://steamcommunity.com/profiles/${id}" target="_blank" rel="noopener">${id}</a></td><td>${fmtDate(+d.at)}</td><td><button class="join del" onclick="removeDeputy('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока нет заместителей.</div>'}`;
+  return `<h2 class="sec">Выдать админку</h2>
+   <div class="admin-tools"><input id="grantId" placeholder="SteamID64 игрока (17 цифр)" inputmode="numeric" maxlength="17" aria-label="SteamID64">
+     <select id="grantDays" aria-label="Срок"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option><option value="180">180 дней</option><option value="0">Навсегда</option></select>
+     <button class="ok" onclick="grantAdmin()">Выдать</button>${msg('grant','grantMsg')}</div>
+   ${grants.length?`<table><tr><th>Игрок (SteamID64)</th><th>Роль</th><th>Действует до</th><th></th></tr>${grants.map(([id,g])=>`<tr><td><a class="lnk" href="https://steamcommunity.com/profiles/${id}" target="_blank" rel="noopener">${id}</a></td><td>Админ+</td><td class="${+g.until>now?'ok':'ban'}">${+g.until>now?fmtDate(+g.until):'истёк '+fmtDate(+g.until)}</td><td><button class="join del" onclick="revokeAdmin('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока никому не выдано.</div>'}`+(st.user.isOwner?`${deputyBlock}
+   <h2 class="sec">Промокоды</h2>
+   <div class="admin-tools"><input id="pCode" placeholder="Код (например SUMMER100)" maxlength="24" aria-label="Код">
+     <button onclick="genPromo()">Случайный</button>
+     <input id="pCoins" type="number" min="1" max="100000" placeholder="Награда, монет" aria-label="Награда">
+     <input id="pMax" type="number" min="0" placeholder="Лимит активаций (0 = без лимита)" aria-label="Лимит">
+     <button class="ok" onclick="createPromo()">Создать</button>${msg('promo','promoMsgA')}</div>
+   <table><tr><th>Код</th><th>Награда</th><th>Активаций</th><th></th></tr>${promos.map(p=>`<tr><td>${p.code}</td><td>+${p.coins}</td><td>${p.used||0}${p.max?' / '+p.max:' / ∞'}</td><td>${p.builtin?'<span class="stat">встроенный</span>':`<button class="join del" onclick="deletePromo('${p.code}')">Удалить</button>`}</td></tr>`).join('')}</table>`:'');
+}
+function adminAction(verb){
+  const t=($('#adminTarget')?.value||'').trim();
+  if(!t){alert('Укажите ник или SteamID игрока');return}
+  alert(`${t}: ${verb.toLowerCase()}`);
+}
+let scrollTick=false;
+function updateReveal(){
+  scrollTick=false;
+  const z=document.querySelector('.reveal-zone');
+  if(!z)return;
+  const r=z.getBoundingClientRect(),vh=window.innerHeight||800;
+  const e=reduce?1:Math.min(1,Math.max(0,(vh-r.top)/(vh*.9)));              // появление
+  const q=reduce?.5:Math.min(1,Math.max(0,-r.top/Math.max(1,r.height-vh))); // прогресс, пока картинка закреплена
+  z.style.setProperty('--e',e.toFixed(3));z.style.setProperty('--q',q.toFixed(3));
+}
+window.addEventListener('scroll',()=>{if(!scrollTick){scrollTick=true;requestAnimationFrame(updateReveal)}},{passive:true});
+window.addEventListener('resize',updateReveal);
+function draw(){
+  saveUser();
+  head();
+  const app=$('#app'),html=view(),key=st.page+'|'+st.lb+'|'+st.bt+'|'+st.rule,changed=key!==prev.key;
+  prev.key=key;
+  app.classList.toggle('enter',changed);
+  app.innerHTML=html;
+  if(changed)app.querySelectorAll('tr,.plan,.mode,.admin-card,.admin-tools,.bar,.side,.empty,.stat,.set-card').forEach((e,i)=>e.style.setProperty('--i',Math.min(i,14)));
+  updateReveal();
+}
+const IMG67='data:image/webp;base64,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';
+applyTheme(LS.get('theme','blue'));
+draw();
+loadSteamAvatar();
+</script>
+</body>
+</html>
