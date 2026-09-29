@@ -159,14 +159,20 @@ app.post('/api/buy', level('user'), async (req, res) => {
 });
 app.post('/api/promo', level('user'), async (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase();
-  const p = (await db.query('select * from promos where code=$1', [code])).rows[0];
-  if (!p) return res.status(404).json({ error: 'Код не найден' });
-  if (p.max > 0 && p.used >= p.max) return bad(res, 'Лимит активаций этого кода исчерпан');
-  const ins = await db.query('insert into promo_used values($1,$2) on conflict do nothing', [req.u.steam_id, code]);
-  if (!ins.rowCount) return bad(res, 'Этот код уже был использован');
-  await db.query('update promos set used=used+1 where code=$1', [code]);
-  await db.query('update users set coins=coins+$1 where steam_id=$2', [p.coins, req.u.steam_id]);
-  res.json({ ok: true, coins: +p.coins });
+  const c = await db.connect();
+  try {
+    await c.query('begin');
+    const p = (await c.query('select * from promos where code=$1 for update', [code])).rows[0]; // блокируем строку: лимит не обойти двумя запросами сразу
+    if (!p) { await c.query('rollback'); return res.status(404).json({ error: 'Код не найден' }); }
+    if (p.max > 0 && p.used >= p.max) { await c.query('rollback'); return bad(res, 'Лимит активаций этого кода исчерпан'); }
+    const ins = await c.query('insert into promo_used values($1,$2) on conflict do nothing', [req.u.steam_id, code]);
+    if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Этот код уже был использован'); }
+    await c.query('update promos set used=used+1 where code=$1', [code]);
+    await c.query('update users set coins=coins+$1 where steam_id=$2', [p.coins, req.u.steam_id]);
+    await c.query('commit');
+    res.json({ ok: true, coins: +p.coins });
+  } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo:', e.message); res.status(500).json({ error: 'Не удалось активировать код, попробуйте позже' }); }
+  finally { c.release(); }
 });
 
 // --- админка ---
@@ -274,12 +280,19 @@ async function loadSkins() { // список скинов с картинкам�
   if (SKINS.list.length && Date.now() - SKINS.t < 864e5) return SKINS.list;
   const r = await fetch('https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json');
   if (!r.ok) throw new Error('Не удалось загрузить список скинов');
-  const list = [];
+  const byDef = {}, byName = {};
+  for (const [id, [def, name]] of Object.entries(WEAPONS)) { byDef[def] = id; byName[name.toLowerCase()] = id; }
+  const list = []; let skipped = 0;
   for (const s of await r.json()) {
-    const w = s.weapon && s.weapon.id, p = +s.paint_index;
-    if (!WEAPONS[w] || !p) continue;
-    list.push([w, String((s.pattern && s.pattern.name) || String(s.name).split(' | ')[1] || s.name), p, s.image, (s.rarity && s.rarity.color) || '#888']);
+    const p = +s.paint_index; if (!p) continue;
+    let w = s.weapon && s.weapon.id;
+    if (!WEAPONS[w]) w = byDef[+(s.weapon && s.weapon.weapon_id)] || byDef[+s.def_index]; // по номеру оружия
+    if (!WEAPONS[w]) w = byName[String(s.name).split(' | ')[0].replace(/^★\s*/, '').replace(/^StatTrak™\s*/, '').toLowerCase()]; // по названию
+    if (!WEAPONS[w] || !s.image) { skipped++; continue; }
+    const pat = String((s.pattern && s.pattern.name) || String(s.name).split(' | ')[1] || s.name);
+    list.push([w, pat + (s.phase ? ' (' + s.phase + ')' : ''), p, s.image, (s.rarity && s.rarity.color) || '#888']);
   }
+  console.log('skins loaded:', list.length, 'knife skins:', list.filter(x => WEAPONS[x[0]][2] === 'Ножи').length, 'skipped:', skipped);
   SKINS = { t: Date.now(), list }; return list;
 }
 app.get('/api/skins', async (req, res) => {
