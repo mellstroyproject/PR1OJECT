@@ -109,14 +109,12 @@ app.get('/api/me', async (req, res) => {
 
 
 // --- выдача админки в игре при покупке Админ+ (запись в iks_admins) ---
+const ADMIN_FLAGS = process.env.ADMIN_FLAGS || 'z', ADMIN_IMMUNITY = +process.env.ADMIN_IMMUNITY || 0;
 async function adminPurchaseCheck(id) {
   if (!game) return 'Выдача админки сейчас недоступна, попробуйте позже';
-  if (!process.env.ADMIN_TEMPLATE_STEAMID) return 'Выдача админки не настроена';
   try {
     const ex = (await gq('select end_at,is_disabled,deleted_at from iks_admins where steam_id=? limit 1', [id]))[0];
     if (ex && !ex.deleted_at && !ex.is_disabled && !(+ex.end_at)) return 'Вы уже постоянный админ сервера — покупка не нужна';
-    const t = (await gq('select id from iks_admins where steam_id=? and deleted_at is null limit 1', [process.env.ADMIN_TEMPLATE_STEAMID]))[0];
-    if (!t) return 'Шаблон админки не найден в базе';
   } catch (e) { console.error('adminCheck:', e.message); return 'Не удалось связаться с базой игрового сервера'; }
   return null;
 }
@@ -124,20 +122,18 @@ async function grantGameAdmin(u, days) {
   const conn = await game.getConnection();
   try {
     await conn.beginTransaction();
-    const tpl = (await conn.query('select * from iks_admins where steam_id=? and deleted_at is null limit 1', [process.env.ADMIN_TEMPLATE_STEAMID]))[0][0];
-    if (!tpl) throw new Error('шаблон админки не найден');
     const n = nowS(), ex = (await conn.query('select id,end_at from iks_admins where steam_id=? limit 1', [u.steam_id]))[0][0];
     if (ex) { // продлеваем срок и включаем обратно
       await conn.query('update iks_admins set end_at=?, is_disabled=0, deleted_at=NULL, updated_at=? where id=?', [Math.max(n, +ex.end_at || 0) + days * 86400, n, ex.id]);
     } else {
-      const [ins] = await conn.query('insert into iks_admins(steam_id,name,flags,immunity,group_id,is_disabled,end_at,created_at,updated_at) values(?,?,?,?,?,0,?,?,?)',
-        [u.steam_id, String(u.name || u.steam_id).slice(0, 64), tpl.flags, tpl.immunity, tpl.group_id, n + days * 86400, n, n]);
-      // привязка к серверам — копируем у шаблонного админа
+      const [ins] = await conn.query('insert into iks_admins(steam_id,name,flags,immunity,is_disabled,end_at,created_at,updated_at) values(?,?,?,?,0,?,?,?)',
+        [u.steam_id, String(u.name || u.steam_id).slice(0, 64), ADMIN_FLAGS, ADMIN_IMMUNITY, n + days * 86400, n, n]);
+      // привязка админа к серверу (iks_admin_to_server)
+      const srv = (await conn.query('select id from iks_servers order by id limit 1'))[0][0];
       const cols = (await conn.query('show columns from iks_admin_to_server'))[0].filter(c => !/auto_increment/i.test(c.Extra));
-      const links = (await conn.query('select * from iks_admin_to_server where admin_id=?', [tpl.id]))[0];
-      for (const l of links)
-        await conn.query(`insert into iks_admin_to_server(${cols.map(c => '`' + c.Field + '`').join(',')}) values(${cols.map(() => '?').join(',')})`,
-          cols.map(c => c.Field === 'admin_id' ? ins.insertId : l[c.Field]));
+      const val = c => c.Field === 'admin_id' ? ins.insertId : c.Field === 'server_id' ? (srv ? srv.id : null)
+        : /created_at|updated_at/.test(c.Field) ? n : (c.Null === 'NO' && c.Default === null ? (/int|decimal/i.test(c.Type) ? 0 : '') : c.Default);
+      await conn.query(`insert into iks_admin_to_server(${cols.map(c => '`' + c.Field + '`').join(',')}) values(${cols.map(() => '?').join(',')})`, cols.map(val));
     }
     await conn.commit(); gaCache.delete(u.steam_id);
   } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
