@@ -483,7 +483,7 @@ function head(){
   const menuItems=(st.user&&st.user.isAdmin?[['Админ-панель','shield',"go('admin')"]]:[]).concat([['Профиль','user'],['Скинченджер','skin'],['Хранилище','box'],['Настройки','gear',"go('settings')"]]);
   $('#right').innerHTML=st.user?
    `<div class="promo-wrap"><button class="promo-btn" onclick="togglePromo()">${I('promo')}Промокод</button>`+
-   (st.promoOpen?`<div class="promo-pop${promoFresh?' pop':''}"><input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="Введите код" aria-label="Промокод" autofocus><button onclick="activatePromo()">Активировать</button><div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?st.promoMsg.text:''}</div></div>`:'')+
+   (st.promoOpen?`<div class="promo-pop${promoFresh?' pop':''}"><input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="Введите код" aria-label="Промокод" autofocus><button onclick="activatePromo()">Активировать</button><div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?esc(st.promoMsg.text):''}</div></div>`:'')+
    `</div>`+
    (st.user.isAdmin?`<button class="promo-btn gold" onclick="go('admin')">${I('shield')}Админ-панель</button>`:'')+
    `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="alert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
@@ -838,7 +838,7 @@ function skinsView(){
   }
   const D=SKN.data,cats=[...new Set(D.weapons.map(w=>w.cat))],ws=D.weapons.filter(w=>w.cat===SKN.cat);
   const cur=D.weapons.find(w=>w.id===SKN.w)||ws[0],my=SKN.mine.skins[cur.def],q=SKN.q.toLowerCase();
-  const list=D.skins.filter(s=>s[0]===cur.id&&s[3].startsWith('https://raw.githubusercontent.com/'));
+  const list=D.skins.filter(s=>s[0]===cur.id&&/^https:/.test(s[3]));
   return `<h1>Скины</h1>
   <div class="bar"><div class="tabs">${cats.map(c=>`<button class="${c===SKN.cat?'on':''}" onclick="skCat('${c}')">${c}</button>`).join('')}</div></div>
   <div class="sk-ws">${ws.map(w=>`<button class="${w.id===cur.id?'on':''}" onclick="skW('${w.id}')">${w.name}${SKN.mine.skins[w.def]?' ✓':''}</button>`).join('')}</div>
@@ -881,6 +881,99 @@ async function skPick(paint){
 </style>
 <script>
 function settingsSkins(){return skinsView().replace('<h1>Скины</h1>','<h2 style="margin:28px 0 6px">Скины оружия</h2>')}
+</script>
+<style>
+/* ===== Исправление: всплывающее окно промокода пряталось под панелями ===== */
+header{position:relative;z-index:30}
+/* ===== Красивые уведомления ===== */
+.toasts{position:fixed;top:18px;right:18px;z-index:200;display:flex;flex-direction:column;gap:10px;width:min(92vw,370px);pointer-events:none}
+.toast{pointer-events:auto;position:relative;overflow:hidden;display:flex;gap:12px;align-items:flex-start;padding:14px 16px 17px;border-radius:16px;cursor:pointer;color:#fff;font-weight:600;font-size:14px;line-height:1.4;
+  background:color-mix(in srgb,rgb(var(--tc)) 10%,rgba(8,12,28,.92));border:1px solid rgba(var(--tc),.5);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  box-shadow:0 18px 50px -12px rgba(var(--tc),.65),inset 0 1px 0 rgba(255,255,255,.07);animation:tin .6s cubic-bezier(.2,1.25,.3,1) both}
+.toast.out{animation:tout .35s ease forwards}
+.toast .ti{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(var(--tc),.2);color:rgb(var(--tc));box-shadow:0 0 18px rgba(var(--tc),.6)}
+.toast .ti svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.toast .ti path{stroke-dasharray:30;stroke-dashoffset:30;animation:tdraw .5s .25s ease forwards}
+.toast .tb{position:absolute;left:0;bottom:0;height:3px;width:100%;background:linear-gradient(90deg,rgb(var(--tc)),transparent);transform-origin:left;animation:tbar var(--td,4.5s) linear forwards}
+.toast:hover .tb{animation-play-state:paused}
+.toast.ok{--tc:52,211,153}.toast.err{--tc:248,113,113}.toast.info{--tc:var(--acc-rgb)}
+@keyframes tin{from{opacity:0;transform:translateX(70px) scale(.88)}to{opacity:1;transform:none}}
+@keyframes tout{to{opacity:0;transform:translateX(80px) scale(.9)}}
+@keyframes tbar{to{transform:scaleX(0)}}
+@keyframes tdraw{to{stroke-dashoffset:0}}
+@media(max-width:600px){.toasts{top:auto;bottom:16px;right:50%;transform:translateX(50%)}}
+/* ===== Окно ввода вместо системного prompt ===== */
+.ask-back{position:fixed;inset:0;z-index:150;display:grid;place-items:center;background:rgba(2,5,14,.72);backdrop-filter:blur(7px);animation:askfade .25s ease both}
+.ask-back.out{opacity:0;transition:opacity .25s}
+.ask-box{width:min(92vw,400px);padding:24px;border-radius:20px;background:color-mix(in srgb,var(--acc) 9%,#080d1e);border:1px solid rgba(var(--acc-rgb),.4);box-shadow:0 30px 80px -20px rgba(var(--acc-rgb),.6);animation:askpop .4s cubic-bezier(.2,1.2,.3,1) both}
+.ask-box h3{margin:0 0 14px;font-size:18px;word-break:break-all}
+.ask-box label{display:block;text-align:left;font-size:13px;color:var(--mut);margin-top:10px}
+.ask-box input,.ask-box select{display:block;width:100%;margin-top:6px;padding:11px 14px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);color:#fff;font:inherit}
+.ask-box input:focus,.ask-box select:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px rgba(var(--acc-rgb),.25)}
+.ask-row{display:flex;gap:10px;margin-top:20px}
+.ask-row button{flex:1;padding:11px;border-radius:12px;font-weight:700;background:var(--panel2)}
+.ask-row .ask-ok{background:linear-gradient(135deg,var(--acc),var(--acc-b));color:var(--on-acc);box-shadow:0 8px 24px -6px rgba(var(--acc-rgb),.7)}
+@keyframes askfade{from{opacity:0}}@keyframes askpop{from{opacity:0;transform:translateY(20px) scale(.92)}}
+</style>
+<script>
+// ===== Уведомления (заменяют системные alert) =====
+(function(){
+  let box;
+  const ICON={ok:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',err:'<path d="M6 6l12 12M18 6L6 18"/>',info:'<path d="M12 7.5h.01M11 11.5h1.2v5.5"/>'};
+  const ERR=/^(не |нельзя|ошибк|недостаточно|неверн|нет |укажите|введите|сначала|такого|такой|лимит|этот код|войдите|вашего|для разбана)|не удалось|не найден|не настроен|исчерпан/i;
+  const OK=/успешн|применён|сохранён|активирован|выдана|снята|записан|разбанен|создан|удалён|назначен|скопировано|мут снят/i;
+  window.toast=function(msg,type){
+    msg=String(msg==null?'':msg);type=type||(ERR.test(msg)?'err':OK.test(msg)?'ok':'info');
+    if(!box){box=document.createElement('div');box.className='toasts';document.body.appendChild(box)}
+    const t=document.createElement('div'),ms=Math.min(9000,3500+msg.length*45);
+    t.className='toast '+type;t.style.setProperty('--td',ms+'ms');
+    t.innerHTML='<div class="ti"><svg viewBox="0 0 24 24">'+ICON[type]+'</svg></div><div>'+esc(msg)+'</div><i class="tb"></i>';
+    const close=()=>{if(t.classList.contains('out'))return;t.classList.add('out');setTimeout(()=>t.remove(),350)};
+    let timer=setTimeout(close,ms);
+    t.onclick=close;t.onmouseenter=()=>clearTimeout(timer);t.onmouseleave=()=>{timer=setTimeout(close,1500)};
+    box.appendChild(t);while(box.children.length>4)box.firstChild.remove();
+  };
+  window.alert=m=>window.toast(m);
+  window.ask=function(title,fields,okText){return new Promise(res=>{
+    const o=document.createElement('div');o.className='ask-back';
+    o.innerHTML='<div class="ask-box"><h3>'+esc(title)+'</h3>'+fields.map((f,i)=>'<label>'+esc(f.label)+(f.options
+      ?'<select data-i="'+i+'">'+f.options.map(([v,t])=>'<option value="'+v+'"'+(v==f.value?' selected':'')+'>'+esc(t)+'</option>').join('')+'</select>'
+      :'<input data-i="'+i+'" type="text" value="'+esc(f.value||'')+'" placeholder="'+esc(f.ph||'')+'">')+'</label>').join('')
+      +'<div class="ask-row"><button class="ask-no">Отмена</button><button class="ask-ok">'+esc(okText||'Подтвердить')+'</button></div></div>';
+    document.body.appendChild(o);
+    const els=[...o.querySelectorAll('[data-i]')],done=v=>{o.classList.add('out');setTimeout(()=>o.remove(),250);res(v)};
+    o.querySelector('.ask-ok').onclick=()=>done(els.map(e=>e.value));
+    o.querySelector('.ask-no').onclick=()=>done(null);
+    o.onclick=e=>{if(e.target===o)done(null)};
+    o.onkeydown=e=>{if(e.key==='Enter')o.querySelector('.ask-ok').click();if(e.key==='Escape')done(null)};
+    if(els[0])els[0].focus();
+  })};
+})();
+async function activatePromo(){
+  if(!st.user){toast('Сначала войдите через Steam');return}
+  const code=st.promo.trim().toUpperCase();
+  if(!code){st.promoMsg={ok:false,text:'Введите код'};draw();return}
+  try{const r=await api('promo',{code});st.promo='';st.promoOpen=false;st.promoMsg=null;await loadMe();toast('Код активирован: +'+r.coins+' монет','ok')}
+  catch(e){st.promoMsg={ok:false,text:e.message};draw()}
+}
+async function adminAction(verb){
+  const t=($('#adminTarget')?.value||'').trim();
+  if(!t){toast('Укажите SteamID64 игрока (17 цифр)');return}
+  const unb=verb==='Разбанен'||verb==='Размьючен',pun=verb==='Забанен'||verb==='Замьючен',isBan=verb==='Забанен'||verb==='Разбанен';
+  if(!unb&&!pun){toast('Это действие выполняется прямо в игре — нужен плагин на игровом сервере.','info');return}
+  if(!/^\d{17}$/.test(t)){toast('Укажите SteamID64 игрока (17 цифр)');return}
+  if(unb){
+    const v=await ask((isBan?'Разбанить ':'Снять мут: ')+t,[{label:'Причина',value:'Разбан с сайта'}],'Подтвердить');if(!v)return;
+    try{const r=await api('admin/unban',{target:t,kind:isBan?'bans':'mutes',reason:v[0]});await loadBans();
+      toast(r.count?((isBan?'Разбанен: ':'Мут снят: ')+t):('У этого игрока нет активных '+(isBan?'банов':'мутов')),r.count?'ok':'info')}
+    catch(e){toast(e.message,'err')}
+    return;
+  }
+  const v=await ask((isBan?'Забанить ':'Замьютить ')+t,[{label:'Причина',ph:'Например: читы'},{label:'Срок',value:'7',options:[['1','1 день'],['7','7 дней'],['30','30 дней'],['90','90 дней'],['0','Навсегда']]}],isBan?'Забанить':'Замьютить');
+  if(!v)return;
+  try{await api('admin/punish',{target:t,kind:isBan?'bans':'mutes',reason:v[0],days:+v[1]});await loadBans();toast((isBan?'Бан':'Мут')+' записан: '+t,'ok')}
+  catch(e){toast(e.message,'err')}
+}
 </script>
 </body>
 </html>
