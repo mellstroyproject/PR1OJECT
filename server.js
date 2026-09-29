@@ -250,6 +250,70 @@ app.post('/api/admin/unban', level('manage'), async (req, res) => {
   } catch (e) { console.error('unban:', e.message); res.status(500).json({ error: 'Не удалось изменить базу игрового сервера: ' + e.message }); }
 });
 
+// --- Скин-ченджер (плагин WeaponPaints: таблицы wp_player_skins и wp_player_knife) ---
+const WEAPONS = { // defindex, название, категория
+  weapon_deagle: [1, 'Desert Eagle', 'Пистолеты'], weapon_elite: [2, 'Dual Berettas', 'Пистолеты'], weapon_fiveseven: [3, 'Five-SeveN', 'Пистолеты'],
+  weapon_glock: [4, 'Glock-18', 'Пистолеты'], weapon_hkp2000: [32, 'P2000', 'Пистолеты'], weapon_p250: [36, 'P250', 'Пистолеты'],
+  weapon_tec9: [30, 'Tec-9', 'Пистолеты'], weapon_cz75a: [63, 'CZ75-Auto', 'Пистолеты'], weapon_usp_silencer: [61, 'USP-S', 'Пистолеты'], weapon_revolver: [64, 'R8 Revolver', 'Пистолеты'],
+  weapon_mac10: [17, 'MAC-10', 'ПП'], weapon_mp5sd: [23, 'MP5-SD', 'ПП'], weapon_mp7: [33, 'MP7', 'ПП'], weapon_mp9: [34, 'MP9', 'ПП'],
+  weapon_p90: [19, 'P90', 'ПП'], weapon_bizon: [26, 'PP-Bizon', 'ПП'], weapon_ump45: [24, 'UMP-45', 'ПП'],
+  weapon_ak47: [7, 'AK-47', 'Винтовки'], weapon_aug: [8, 'AUG', 'Винтовки'], weapon_famas: [10, 'FAMAS', 'Винтовки'], weapon_galilar: [13, 'Galil AR', 'Винтовки'],
+  weapon_m4a1: [16, 'M4A4', 'Винтовки'], weapon_m4a1_silencer: [60, 'M4A1-S', 'Винтовки'], weapon_sg556: [39, 'SG 553', 'Винтовки'],
+  weapon_awp: [9, 'AWP', 'Снайперские'], weapon_g3sg1: [11, 'G3SG1', 'Снайперские'], weapon_scar20: [38, 'SCAR-20', 'Снайперские'], weapon_ssg08: [40, 'SSG 08', 'Снайперские'],
+  weapon_m249: [14, 'M249', 'Тяжёлое'], weapon_negev: [28, 'Negev', 'Тяжёлое'], weapon_mag7: [27, 'MAG-7', 'Тяжёлое'],
+  weapon_nova: [35, 'Nova', 'Тяжёлое'], weapon_sawedoff: [29, 'Sawed-Off', 'Тяжёлое'], weapon_xm1014: [25, 'XM1014', 'Тяжёлое'],
+  weapon_bayonet: [500, 'Bayonet', 'Ножи'], weapon_knife_css: [503, 'Classic Knife', 'Ножи'], weapon_knife_flip: [505, 'Flip Knife', 'Ножи'],
+  weapon_knife_gut: [506, 'Gut Knife', 'Ножи'], weapon_knife_karambit: [507, 'Karambit', 'Ножи'], weapon_knife_m9_bayonet: [508, 'M9 Bayonet', 'Ножи'],
+  weapon_knife_tactical: [509, 'Huntsman Knife', 'Ножи'], weapon_knife_falchion: [512, 'Falchion Knife', 'Ножи'], weapon_knife_survival_bowie: [514, 'Bowie Knife', 'Ножи'],
+  weapon_knife_butterfly: [515, 'Butterfly Knife', 'Ножи'], weapon_knife_push: [516, 'Shadow Daggers', 'Ножи'], weapon_knife_cord: [517, 'Paracord Knife', 'Ножи'],
+  weapon_knife_canis: [518, 'Survival Knife', 'Ножи'], weapon_knife_ursus: [519, 'Ursus Knife', 'Ножи'], weapon_knife_gypsy_jackknife: [520, 'Navaja Knife', 'Ножи'],
+  weapon_knife_outdoor: [521, 'Nomad Knife', 'Ножи'], weapon_knife_stiletto: [522, 'Stiletto Knife', 'Ножи'], weapon_knife_widowmaker: [523, 'Talon Knife', 'Ножи'],
+  weapon_knife_skeleton: [525, 'Skeleton Knife', 'Ножи'], weapon_knife_kukri: [526, 'Kukri Knife', 'Ножи'] };
+let SKINS = { t: 0, list: [] };
+async function loadSkins() { // список скинов с картинками из открытой базы CS2, кэш на сутки
+  if (SKINS.list.length && Date.now() - SKINS.t < 864e5) return SKINS.list;
+  const r = await fetch('https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json');
+  if (!r.ok) throw new Error('Не удалось загрузить список скинов');
+  const list = [];
+  for (const s of await r.json()) {
+    const w = s.weapon && s.weapon.id, p = +s.paint_index;
+    if (!WEAPONS[w] || !p) continue;
+    list.push([w, String((s.pattern && s.pattern.name) || String(s.name).split(' | ')[1] || s.name), p, s.image, (s.rarity && s.rarity.color) || '#888']);
+  }
+  SKINS = { t: Date.now(), list }; return list;
+}
+app.get('/api/skins', async (req, res) => {
+  try { res.json({ weapons: Object.entries(WEAPONS).map(([id, [def, name, cat]]) => ({ id, def, name, cat })), skins: await loadSkins() }); }
+  catch (e) { console.error('skins:', e.message); res.status(502).json({ error: e.message }); }
+});
+app.get('/api/myskins', level('user'), async (req, res) => {
+  try {
+    const rows = await gq('select weapon_defindex d, weapon_paint_id p, weapon_wear w, weapon_seed s from wp_player_skins where steamid=? and weapon_team=2', [req.u.steam_id]);
+    const k = (await gq('select knife from wp_player_knife where steamid=? and weapon_team=2', [req.u.steam_id]))[0];
+    const skins = {}; rows.forEach(r => skins[r.d] = { paint: r.p, wear: r.w, seed: r.s });
+    res.json({ skins, knife: k ? k.knife : null });
+  } catch (e) { console.error('myskins:', e.message); res.status(500).json({ error: 'Не удалось прочитать скины: ' + e.message }); }
+});
+app.post('/api/skin', level('user'), async (req, res) => {
+  try {
+    const weapon = req.body.weapon, W = WEAPONS[weapon]; if (!W) return bad(res, 'Неизвестное оружие');
+    const id = req.u.steam_id, isKnife = W[2] === 'Ножи', paint = Math.floor(+req.body.paint || 0);
+    if (paint === 0) { // сброс
+      await gq('delete from wp_player_skins where steamid=? and weapon_defindex=?', [id, W[0]]);
+      if (isKnife) await gq('delete from wp_player_knife where steamid=? and knife=?', [id, weapon]);
+      return res.json({ ok: true });
+    }
+    if (!(await loadSkins()).some(s => s[0] === weapon && s[2] === paint)) return bad(res, 'Такого скина нет');
+    const wear = Math.min(1, Math.max(0.000001, +req.body.wear || 0.000001)), seed = Math.min(1000, Math.max(0, Math.floor(+req.body.seed || 0)));
+    for (const team of [2, 3]) { // T и CT
+      await gq(`insert into wp_player_skins(steamid,weapon_team,weapon_defindex,weapon_paint_id,weapon_wear,weapon_seed) values(?,?,?,?,?,?)
+        on duplicate key update weapon_paint_id=values(weapon_paint_id), weapon_wear=values(weapon_wear), weapon_seed=values(weapon_seed)`, [id, team, W[0], paint, wear, seed]);
+      if (isKnife) await gq('insert into wp_player_knife(steamid,weapon_team,knife) values(?,?,?) on duplicate key update knife=values(knife)', [id, team, weapon]);
+    }
+    res.json({ ok: true });
+  } catch (e) { console.error('skin:', e.message); res.status(500).json({ error: 'Не удалось сохранить скин: ' + e.message }); }
+});
+
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 init().then(() => app.listen(process.env.PORT || 3000, () => console.log('ok')))
   .catch(e => { console.error('DB error:', e.message); process.exit(1); });
