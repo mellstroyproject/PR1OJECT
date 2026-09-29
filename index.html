@@ -526,7 +526,7 @@ function view(){
      ${st.user.canManage?`<button class="danger" onclick="adminAction('Забанен')">Забанить</button>`:''}
    </div>
    ${st.user.canManage?adminOwnerSections():''}
-   <p class="stat">Панель — заготовка для интерфейса: реальные баны/муты/кики нужно подключить к серверу игры и базе данных.</p>`;
+   <p class="stat">Баны и муты сохраняются в базе и видны на странице «Баны». Кик, заморозка и другие действия прямо в игре требуют плагина на игровом сервере.</p>`;
 }
 function adminMsgNow(id,text){const e=$(id);if(e){e.textContent=text;e.className='promo-msg err'}}
 function adminOk(kind,text){st.adminMsg={[kind]:{ok:true,text}};draw()}
@@ -608,7 +608,7 @@ function adminOwnerSections(){
 }
 function adminAction(verb){
   const t=($('#adminTarget')?.value||'').trim();
-  if(!t){alert('Укажите ник или SteamID игрока');return}
+  if(!t){alert('Укажите SteamID64 игрока (17 цифр)');return}
   alert(`${t}: ${verb.toLowerCase()}`);
 }
 let scrollTick=false;
@@ -638,6 +638,110 @@ applyTheme(LS.get('theme','blue'));
 draw();
 loadSteamAvatar();
 </script>
-<script src="api.js"></script>
+<script>
+// ===== Данные в базе: вход, баланс, покупки, промокоды и админка идут через сервер =====
+try{localStorage.removeItem('account')}catch(e){}
+st.user=null;
+async function api(p,b){
+  const r=await fetch('/api/'+p,{method:b?'POST':'GET',headers:{'content-type':'application/json'},body:b?JSON.stringify(b):undefined});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error||'Ошибка');
+  return j;
+}
+let SV={grants:{},deputies:{},promos:[]};
+function getGrants(){return SV.grants}
+function getDeputies(){return SV.deputies}
+function getCustomPromos(){return SV.promos}
+function allPromos(){const m={};for(const p of SV.promos)m[p.code]=p;return m}
+function applyRole(u){
+  u.avatar=safeAvatar(u.avatar);
+  u.isOwner=u.id===OWNER_STEAM_ID;
+  u.plusUntil=Math.max(u.plus||0,u.grant||0);
+  u.hasPlus=u.plusUntil>Date.now();
+  u.isDeputy=!u.isOwner&&!!u.deputy;
+  u.canManage=u.isOwner||u.isDeputy;
+  u.isAdmin=u.canManage||u.hasPlus;
+  u.role=u.isOwner?'Владелец':(u.isDeputy?'Зам':(u.hasPlus?'Админ+':null));
+  return u;
+}
+async function loadMe(){
+  try{const m=await api('me');if(m){SV=m.adm||SV;delete m.adm;st.user=applyRole(m)}else st.user=null}catch(e){}
+  draw();
+}
+function steamLogin(){location.href='/auth/steam'}
+function demoLogin(){alert('Демо отключено — войдите через Steam')}
+async function logout(){
+  try{await fetch('/auth/logout',{method:'POST'})}catch(e){}
+  st.user=null;st.menu=false;st.promoOpen=false;st.adminMsg={};
+  if(st.page==='settings'||st.page==='admin')st.page='home';
+  draw();
+}
+async function buyPlan(key,name){
+  if(!st.user){alert('Сначала войдите через Steam, чтобы купить');return}
+  try{
+    await api('buy',{key,idx:st.plan[key]});await loadMe();
+    alert(`Покупка успешна: ${name} на ${periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
+  }catch(e){alert(e.message)}
+}
+async function activatePromo(){
+  if(!st.user){st.promoMsg={ok:false,text:'Сначала войдите через Steam'};draw();return}
+  const code=st.promo.trim().toUpperCase();
+  if(!code){st.promoMsg={ok:false,text:'Введите код'};draw();return}
+  try{const r=await api('promo',{code});st.promo='';st.promoMsg={ok:true,text:'Код активирован: +'+r.coins+' монет'}}
+  catch(e){st.promoMsg={ok:false,text:e.message}}
+  await loadMe();
+}
+const MID={grant:'#grantMsg',deputy:'#depMsg',promo:'#promoMsgA'};
+async function adm(kind,path,body,ok){
+  try{await api('admin/'+path,body);await loadMe();adminOk(kind,ok)}
+  catch(e){adminMsgNow(MID[kind],e.message)}
+}
+function grantAdmin(){adm('grant','grant',{id:($('#grantId').value||'').trim(),days:+$('#grantDays').value},'Админка выдана')}
+function revokeAdmin(id){adm('grant','revoke',{id},'Админка снята: '+id)}
+function addDeputy(){adm('deputy','deputy',{id:($('#depId').value||'').trim(),on:true},'Зам назначен')}
+function removeDeputy(id){adm('deputy','deputy',{id,on:false},'Зам снят: '+id)}
+function createPromo(){adm('promo','promo',{code:($('#pCode').value||'').trim().toUpperCase(),coins:+$('#pCoins').value,max:Math.floor(+$('#pMax').value||0)},'Промокод создан')}
+function deletePromo(code){adm('promo','promo-delete',{code},'Промокод удалён: '+code)}
+loadMe();
+</script>
+<script>
+// ===== Баны и муты через сайт =====
+async function loadBans(){
+  try{
+    for(const k of ['bans','mutes']){
+      const rows=await api('bans?type='+k),arr=k==='bans'?bans:mutes;
+      arr.length=0;
+      rows.forEach(r=>arr.push([r.player,r.admin,r.reason,r.active?1:0,r.term,new Date(r.at).toLocaleString('ru-RU',{dateStyle:'short',timeStyle:'short'})]));
+    }
+  }catch(e){}
+  draw();
+}
+async function adminAction(verb){
+  const t=($('#adminTarget')?.value||'').trim();
+  if(!t){alert('Укажите SteamID64 игрока (17 цифр)');return}
+  if(verb!=='Забанен'&&verb!=='Замьючен'){alert('Это действие выполняется прямо в игре — нужен плагин на игровом сервере.');return}
+  const reason=prompt('Причина:');if(reason===null)return;
+  const d=prompt('На сколько дней? (0 = навсегда)','7');if(d===null)return;
+  try{
+    await api('admin/punish',{target:t,kind:verb==='Забанен'?'bans':'mutes',reason,days:+d||0});
+    await loadBans();
+    alert((verb==='Забанен'?'Бан':'Мут')+' записан: '+t);
+  }catch(e){alert(e.message)}
+}
+loadBans();
+</script>
+<script>
+// ===== Лидеры из базы игрового сервера (LevelsRanks) =====
+async function loadLeaders(){
+  try{
+    const rows=await api('leaders');
+    if(rows.length){
+      leaders.exp=rows.map(r=>[r.name,r.exp.toLocaleString('ru-RU'),r.kills.toLocaleString('ru-RU'),(r.deaths?r.kills/r.deaths:r.kills).toFixed(2),r.hours+' ч.']);
+      draw();
+    }
+  }catch(e){}
+}
+loadLeaders();
+</script>
 </body>
 </html>
