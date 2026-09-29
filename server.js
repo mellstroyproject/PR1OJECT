@@ -49,7 +49,7 @@ async function getUser(req) {
   const m = (req.headers.cookie || '').match(/(?:^|;\s*)s=(\d{17})\.([\w-]+)/);
   if (!m || m[2] !== sign(m[1])) return null;
   const u = (await db.query('select * from users where steam_id=$1', [m[1]])).rows[0] || null;
-  if (u && await gameAdmin(u.steam_id)) u.deputy = true;
+  if (u && +u.plus_until <= Date.now() && await gameAdmin(u.steam_id)) u.deputy = true; // штатные админы; купившие Админ+ сюда не входят
   return u;
 }
 const level = need => async (req, res, next) => {
@@ -107,15 +107,60 @@ app.get('/api/me', async (req, res) => {
   res.json(out);
 });
 
+
+// --- выдача админки в игре при покупке Админ+ (запись в iks_admins) ---
+async function adminPurchaseCheck(id) {
+  if (!game) return 'Выдача админки сейчас недоступна, попробуйте позже';
+  if (!process.env.ADMIN_TEMPLATE_STEAMID) return 'Выдача админки не настроена';
+  try {
+    const ex = (await gq('select end_at,is_disabled,deleted_at from iks_admins where steam_id=? limit 1', [id]))[0];
+    if (ex && !ex.deleted_at && !ex.is_disabled && !(+ex.end_at)) return 'Вы уже постоянный админ сервера — покупка не нужна';
+    const t = (await gq('select id from iks_admins where steam_id=? and deleted_at is null limit 1', [process.env.ADMIN_TEMPLATE_STEAMID]))[0];
+    if (!t) return 'Шаблон админки не найден в базе';
+  } catch (e) { console.error('adminCheck:', e.message); return 'Не удалось связаться с базой игрового сервера'; }
+  return null;
+}
+async function grantGameAdmin(u, days) {
+  const conn = await game.getConnection();
+  try {
+    await conn.beginTransaction();
+    const tpl = (await conn.query('select * from iks_admins where steam_id=? and deleted_at is null limit 1', [process.env.ADMIN_TEMPLATE_STEAMID]))[0][0];
+    if (!tpl) throw new Error('шаблон админки не найден');
+    const n = nowS(), ex = (await conn.query('select id,end_at from iks_admins where steam_id=? limit 1', [u.steam_id]))[0][0];
+    if (ex) { // продлеваем срок и включаем обратно
+      await conn.query('update iks_admins set end_at=?, is_disabled=0, deleted_at=NULL, updated_at=? where id=?', [Math.max(n, +ex.end_at || 0) + days * 86400, n, ex.id]);
+    } else {
+      const [ins] = await conn.query('insert into iks_admins(steam_id,name,flags,immunity,group_id,is_disabled,end_at,created_at,updated_at) values(?,?,?,?,?,0,?,?,?)',
+        [u.steam_id, String(u.name || u.steam_id).slice(0, 64), tpl.flags, tpl.immunity, tpl.group_id, n + days * 86400, n, n]);
+      // привязка к серверам — копируем у шаблонного админа
+      const cols = (await conn.query('show columns from iks_admin_to_server'))[0].filter(c => !/auto_increment/i.test(c.Extra));
+      const links = (await conn.query('select * from iks_admin_to_server where admin_id=?', [tpl.id]))[0];
+      for (const l of links)
+        await conn.query(`insert into iks_admin_to_server(${cols.map(c => '`' + c.Field + '`').join(',')}) values(${cols.map(() => '?').join(',')})`,
+          cols.map(c => c.Field === 'admin_id' ? ins.insertId : l[c.Field]));
+    }
+    await conn.commit(); gaCache.delete(u.steam_id);
+  } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
+}
+
 app.post('/api/buy', level('user'), async (req, res) => {
   const { key, idx } = req.body, cost = PRICE[key]?.[idx];
   if (cost === undefined) return bad(res, 'Неверный тариф');
-  const col = key === 'plus' ? 'plus_until' : 'prem_until';
+  const col = key === 'plus' ? 'plus_until' : 'prem_until', days = DAYS[idx], prev = req.u[col];
+  if (key === 'plus') { const err = await adminPurchaseCheck(req.u.steam_id); if (err) return bad(res, err); }
   const r = await db.query(`update users set coins=coins-$1, ${col}=greatest(${col},$2)+$3 where steam_id=$4 and coins>=$1`,
-    [cost, Date.now(), DAYS[idx] * 864e5, req.u.steam_id]);
-  r.rowCount ? res.json({ ok: true }) : bad(res, 'Недостаточно монет');
+    [cost, Date.now(), days * 864e5, req.u.steam_id]);
+  if (!r.rowCount) return bad(res, 'Недостаточно монет');
+  if (key === 'plus') {
+    try { await grantGameAdmin(req.u, days); }
+    catch (e) { // не получилось выдать в игре — возвращаем монеты
+      console.error('grantAdmin:', e.message);
+      await db.query(`update users set coins=coins+$1, ${col}=$2 where steam_id=$3`, [cost, prev, req.u.steam_id]);
+      return res.status(500).json({ error: 'Не удалось выдать админку в игре, монеты возвращены. Попробуйте позже.' });
+    }
+  }
+  res.json({ ok: true });
 });
-
 app.post('/api/promo', level('user'), async (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase();
   const p = (await db.query('select * from promos where code=$1', [code])).rows[0];
@@ -194,6 +239,19 @@ app.post('/api/admin/punish', level('manage'), async (req, res) => {
       [t, (u && u.name) || t, dur, reason, kind === 'mutes' ? 2 : 0, srv ? srv.id : null, adm.id, n, dur ? n + dur : 0, n]);
     res.json({ ok: true });
   } catch (e) { console.error('punish:', e.message); res.status(500).json({ error: 'Не удалось записать в базу игрового сервера: ' + e.message }); }
+});
+
+app.post('/api/admin/unban', level('manage'), async (req, res) => {
+  try {
+    const t = String(req.body.target || '').trim(), T = req.body.kind === 'mutes' ? 'iks_comms' : 'iks_bans';
+    if (!/^\d{17}$/.test(t)) return bad(res, 'Укажите SteamID64 игрока (17 цифр)');
+    const adm = await gameAdmin(req.u.steam_id);
+    if (!adm) return bad(res, 'Вашего SteamID нет в списке админов игрового сервера (iks_admins)');
+    const n = nowS();
+    const r = await gq(`update ${T} set unbanned_by=?, unban_reason=?, updated_at=? where steam_id=? and unbanned_by is null and deleted_at is null and (end_at=0 or end_at>?)`,
+      [adm.id, String(req.body.reason || 'Разбан с сайта').slice(0, 120), n, t, n]);
+    res.json({ ok: true, count: r.affectedRows });
+  } catch (e) { console.error('unban:', e.message); res.status(500).json({ error: 'Не удалось изменить базу игрового сервера: ' + e.message }); }
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
