@@ -212,7 +212,7 @@ app.get('/api/bans', async (req, res) => {
   try {
     const T = req.query.type === 'mutes' ? 'iks_comms' : 'iks_bans', n = nowS();
     const rows = await gq(`select b.name, b.steam_id, b.reason, b.duration, b.created_at, b.end_at, b.unbanned_by, a.name as admin_name
-      from ${T} b left join iks_admins a on a.id=b.admin_id where b.deleted_at is null order by b.id desc limit 200`);
+      from ${T} b left join iks_admins a on a.id=b.admin_id where b.deleted_at is null and b.unbanned_by is null order by b.id desc limit 200`);
     res.json(rows.map(r => ({ player: r.name || r.steam_id, admin: r.admin_name || 'Консоль', reason: r.reason,
       term: +r.duration ? fmtDur(+r.duration) : 'Навсегда', at: r.created_at * 1000,
       active: !r.unbanned_by && (+r.end_at === 0 || +r.end_at > n) })));
@@ -248,8 +248,8 @@ app.post('/api/admin/unban', level('manage'), async (req, res) => {
     const adm = await gameAdmin(req.u.steam_id);
     if (!adm) return bad(res, 'Вашего SteamID нет в списке админов игрового сервера (iks_admins)');
     const n = nowS();
-    const r = await gq(`update ${T} set unbanned_by=?, unban_reason=?, updated_at=? where steam_id=? and unbanned_by is null and deleted_at is null and (end_at=0 or end_at>?)`,
-      [adm.id, String(req.body.reason || 'Разбан с сайта').slice(0, 120), n, t, n]);
+    const r = await gq(`update ${T} set unbanned_by=?, unban_reason=?, updated_at=?, deleted_at=? where steam_id=? and unbanned_by is null and deleted_at is null and (end_at=0 or end_at>?)`,
+      [adm.id, String(req.body.reason || 'Разбан с сайта').slice(0, 120), n, n, t, n]);
     res.json({ ok: true, count: r.affectedRows });
   } catch (e) { console.error('unban:', e.message); res.status(500).json({ error: 'Не удалось изменить базу игрового сервера: ' + e.message }); }
 });
