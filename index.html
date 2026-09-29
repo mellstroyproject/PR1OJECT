@@ -819,7 +819,7 @@ tr:hover td{background:rgba(var(--acc-rgb),.09)}
 </style>
 <script>
 // ===== Скин-ченджер: страница «Скины» =====
-const SKN={data:null,mine:{skins:{},knife:null},cat:'Винтовки',w:'weapon_ak47',wear:0.01,seed:0,msg:'',busy:false,q:''};
+const SKN={data:null,mine:{skins:{},knife:null,agents:{}},cat:'Винтовки',w:'weapon_ak47',wear:0.01,seed:0,msg:'',busy:false,q:''};
 const skEsc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 {const n=document.getElementById('nav');if(n){n.innerHTML='';head()}}
 const _view=view;
@@ -836,7 +836,8 @@ function skinsView(){
     if(!SKN.busy&&!SKN.msg)skLoad();
     return '<h1>Скины</h1><div class="empty">'+(SKN.msg?skEsc(SKN.msg)+'<br><br><button class="join" onclick="SKN.msg=\'\';draw()">Повторить</button>':'Загружаем скины…')+'</div>';
   }
-  const D=SKN.data,cats=[...new Set(D.weapons.map(w=>w.cat))],ws=D.weapons.filter(w=>w.cat===SKN.cat);
+  const D=SKN.data,cats=[...new Set(D.weapons.map(w=>w.cat)),'Агенты'],ws=D.weapons.filter(w=>w.cat===SKN.cat);
+  if(SKN.cat==='Агенты')return agentsView(cats);
   const cur=D.weapons.find(w=>w.id===SKN.w)||ws[0],my=SKN.mine.skins[cur.def],q=SKN.q.toLowerCase();
   const list=D.skins.filter(s=>s[0]===cur.id&&/^https:/.test(s[3]));
   return `<h1>Скины</h1>
@@ -851,7 +852,27 @@ function skinsView(){
   <p class="stat">${skEsc(SKN.msg)}</p>
   <div class="sk-grid">${list.map(s=>{const n=s[1].toLowerCase();return `<div class="sk-card${my&&my.paint===s[2]?' cur':''}" data-n="${skEsc(n)}" style="--c:${skEsc(s[4])}${q&&!n.includes(q)?';display:none':''}" onclick="skPick(${s[2]})"><img loading="lazy" src="${skEsc(s[3])}" alt=""><b>${skEsc(s[1])}</b></div>`}).join('')||'<div class="empty">Для этого оружия скинов нет</div>'}</div>`;
 }
-function skCat(c){SKN.cat=c;SKN.w=SKN.data.weapons.find(w=>w.cat===c).id;SKN.q='';draw()}
+function agentsView(cats){
+  const A=SKN.data.agents||[],my=SKN.mine.agents||{},q=SKN.q.toLowerCase();
+  const sec=(t,title)=>{
+    const l=A.filter(a=>a[2]===t&&/^https:/.test(a[3]));
+    return `<h2 style="margin:22px 0 8px">${title}${my[t]?' <button class="join del" onclick="agPick(\'\',\''+t+'\')">Сбросить</button>':''}</h2>
+    <div class="sk-grid">${l.map(a=>{const n=a[1].toLowerCase();return `<div class="sk-card${my[t]===a[0]?' cur':''}" data-n="${skEsc(n)}" style="--c:${skEsc(a[4])}${q&&!n.includes(q)?';display:none':''}" onclick="agPick('${skEsc(a[0])}','${t}')"><img loading="lazy" src="${skEsc(a[3])}" alt=""><b>${skEsc(a[1])}</b></div>`}).join('')||'<div class="empty">Агенты не загрузились</div>'}</div>`};
+  return `<h1>Скины</h1>
+  <div class="bar"><div class="tabs">${cats.map(c=>`<button class="${c===SKN.cat?'on':''}" onclick="skCat('${c}')">${c}</button>`).join('')}</div></div>
+  <div class="sk-ctl"><input placeholder="Поиск агента" value="${skEsc(SKN.q)}" oninput="skQ(this.value)"></div>
+  <p class="stat">${skEsc(SKN.msg)}</p>
+  ${sec('ct','Спецназ (CT)')}${sec('t','Террористы (T)')}`;
+}
+async function agPick(id,team){
+  try{
+    await api('agent',{agent:id,team});
+    SKN.mine.agents=SKN.mine.agents||{};SKN.mine.agents[team]=id||null;
+    SKN.msg=id?'Агент сохранён. В игре напишите !wp, чтобы применить.':'Агент сброшен. В игре напишите !wp.';
+  }catch(e){SKN.msg=e.message}
+  draw();
+}
+function skCat(c){SKN.cat=c;if(c!=='Агенты')SKN.w=SKN.data.weapons.find(w=>w.cat===c).id;SKN.q='';draw()}
 function skW(id){SKN.w=id;SKN.q='';draw()}
 function skQ(v){SKN.q=v;const q=v.toLowerCase();document.querySelectorAll('.sk-card').forEach(c=>c.style.display=c.dataset.n.includes(q)?'':'none')}
 async function skPick(paint){
