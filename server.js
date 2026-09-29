@@ -37,6 +37,8 @@ async function init() {
       code text primary key, coins numeric not null, max int not null default 0,
       used int not null default 0, by text, at bigint);
     create table if not exists promo_used(steam_id text, code text, primary key(steam_id, code));
+    create table if not exists servers(id serial primary key, name text not null, address text not null);
+    insert into servers(name,address) select 'Мираж (карта меняется)','45.95.31.64:27215' where not exists (select 1 from servers);
     create table if not exists bans(
       id serial primary key, kind text not null, steam_id text, player text, admin text, admin_id text,
       reason text, term text, until bigint not null default 0, active boolean not null default true, at bigint);
@@ -173,6 +175,23 @@ app.post('/api/promo', level('user'), async (req, res) => {
     res.json({ ok: true, coins: +p.coins });
   } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo:', e.message); res.status(500).json({ error: 'Не удалось активировать код, попробуйте позже' }); }
   finally { c.release(); }
+});
+
+// --- список серверов на странице Public ---
+app.get('/api/servers', async (req, res) => {
+  try { res.json((await db.query('select id,name,address from servers order by id')).rows); }
+  catch (e) { console.error('servers:', e.message); res.json([]); }
+});
+app.post('/api/admin/server', level('owner'), async (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 60), addr = String(req.body.address || '').trim();
+  if (!name) return bad(res, 'Укажите название сервера');
+  if (!/^[\w.-]{3,64}:\d{2,5}$/.test(addr)) return bad(res, 'Адрес должен быть вида 45.95.31.64:27215');
+  if (+(await db.query('select count(*) c from servers')).rows[0].c >= 20) return bad(res, 'Достигнут лимит: 20 серверов');
+  await db.query('insert into servers(name,address) values($1,$2)', [name, addr]);
+  res.json({ ok: true });
+});
+app.post('/api/admin/server-delete', level('owner'), async (req, res) => {
+  await db.query('delete from servers where id=$1', [+req.body.id || 0]); res.json({ ok: true });
 });
 
 // --- админка ---
