@@ -510,6 +510,7 @@ function view(){
      <div class="set-card"><div class="set-ava" style="${u.avatar?`background-image:url('${u.avatar}')`:''}">${u.avatar?'':esc((u.name||'?').trim().charAt(0).toUpperCase())}</div>
        <div><div class="set-name">${esc(u.name||'Игрок')}${u.role?`<span class="admin-badge">${u.role}</span>`:''}</div><div class="stat">SteamID: ${esc(u.id)}</div><div class="stat">Баланс: ${(u.coins||0).toFixed(2)}</div></div></div>
      ${themeCard()}
+     ${settingsSkins()}
      <div class="set-card"><div><div class="set-name">Аккаунт</div><div class="stat">Выйти из аккаунта на этом устройстве. Вернуться можно в любой момент через Steam.</div></div>
        <button class="out-btn" onclick="logout()">${I('out')}Выйти из аккаунта</button></div>`;
   }
@@ -816,5 +817,70 @@ tr:hover td{background:rgba(var(--acc-rgb),.09)}
 .mode:hover .mode-go{transform:translateY(-3px)}
 @media (prefers-reduced-motion:reduce){.mode-art .ring2{animation:none}}
 </style>
+<script>
+// ===== Скин-ченджер: страница «Скины» =====
+const SKN={data:null,mine:{skins:{},knife:null},cat:'Винтовки',w:'weapon_ak47',wear:0.01,seed:0,msg:'',busy:false,q:''};
+const skEsc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+{const n=document.getElementById('nav');if(n){n.innerHTML='';head()}}
+const _view=view;
+view=function(){return st.page==='skins'?skinsView():_view()};
+async function skLoad(){
+  if(SKN.busy)return;SKN.busy=true;
+  try{SKN.data=await api('skins')}catch(e){SKN.msg=e.message}
+  if(SKN.data&&st.user){try{SKN.mine=await api('myskins')}catch(e){SKN.msg=e.message}}
+  SKN.busy=false;draw();
+}
+function skinsView(){
+  if(!st.user)return '<h1>Скины</h1><div class="empty">Войдите через Steam, чтобы выбрать скины для оружия.</div>';
+  if(!SKN.data){
+    if(!SKN.busy&&!SKN.msg)skLoad();
+    return '<h1>Скины</h1><div class="empty">'+(SKN.msg?skEsc(SKN.msg)+'<br><br><button class="join" onclick="SKN.msg=\'\';draw()">Повторить</button>':'Загружаем скины…')+'</div>';
+  }
+  const D=SKN.data,cats=[...new Set(D.weapons.map(w=>w.cat))],ws=D.weapons.filter(w=>w.cat===SKN.cat);
+  const cur=D.weapons.find(w=>w.id===SKN.w)||ws[0],my=SKN.mine.skins[cur.def],q=SKN.q.toLowerCase();
+  const list=D.skins.filter(s=>s[0]===cur.id&&s[3].startsWith('https://raw.githubusercontent.com/'));
+  return `<h1>Скины</h1>
+  <div class="bar"><div class="tabs">${cats.map(c=>`<button class="${c===SKN.cat?'on':''}" onclick="skCat('${c}')">${c}</button>`).join('')}</div></div>
+  <div class="sk-ws">${ws.map(w=>`<button class="${w.id===cur.id?'on':''}" onclick="skW('${w.id}')">${w.name}${SKN.mine.skins[w.def]?' ✓':''}</button>`).join('')}</div>
+  <div class="sk-ctl">
+    <label>Износ <select onchange="SKN.wear=+this.value">${[['Factory New',0.01],['Minimal Wear',0.10],['Field-Tested',0.25],['Well-Worn',0.40],['Battle-Scarred',0.70]].map(([n,v])=>`<option value="${v}"${SKN.wear===v?' selected':''}>${n}</option>`).join('')}</select></label>
+    <label>Seed <input type="number" min="0" max="1000" value="${SKN.seed}" onchange="SKN.seed=+this.value||0"></label>
+    <input placeholder="Поиск скина" value="${skEsc(SKN.q)}" oninput="skQ(this.value)">
+    ${my?'<button class="join del" onclick="skPick(0)">Сбросить скин</button>':''}
+  </div>
+  <p class="stat">${skEsc(SKN.msg)}</p>
+  <div class="sk-grid">${list.map(s=>{const n=s[1].toLowerCase();return `<div class="sk-card${my&&my.paint===s[2]?' cur':''}" data-n="${skEsc(n)}" style="--c:${skEsc(s[4])}${q&&!n.includes(q)?';display:none':''}" onclick="skPick(${s[2]})"><img loading="lazy" src="${skEsc(s[3])}" alt=""><b>${skEsc(s[1])}</b></div>`}).join('')||'<div class="empty">Для этого оружия скинов нет</div>'}</div>`;
+}
+function skCat(c){SKN.cat=c;SKN.w=SKN.data.weapons.find(w=>w.cat===c).id;SKN.q='';draw()}
+function skW(id){SKN.w=id;SKN.q='';draw()}
+function skQ(v){SKN.q=v;const q=v.toLowerCase();document.querySelectorAll('.sk-card').forEach(c=>c.style.display=c.dataset.n.includes(q)?'':'none')}
+async function skPick(paint){
+  const cur=SKN.data.weapons.find(w=>w.id===SKN.w);
+  try{
+    await api('skin',{weapon:cur.id,paint,wear:SKN.wear,seed:SKN.seed});
+    if(paint){SKN.mine.skins[cur.def]={paint,wear:SKN.wear,seed:SKN.seed};if(cur.cat==='Ножи')SKN.mine.knife=cur.id}else delete SKN.mine.skins[cur.def];
+    SKN.msg=paint?'Скин сохранён. В игре напишите !wp, чтобы применить.':'Скин сброшен. В игре напишите !wp.';
+  }catch(e){SKN.msg=e.message}
+  draw();
+}
+</script>
+<style>
+.sk-ws{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.sk-ws button{padding:8px 14px;border-radius:10px;background:var(--panel2);font-weight:600;border:1px solid var(--line)}
+.sk-ws button.on{background:linear-gradient(135deg,var(--acc),var(--acc-b));color:var(--on-acc);border-color:transparent}
+.sk-ctl{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:8px}
+.sk-ctl label{display:flex;gap:8px;align-items:center;color:var(--mut)}
+.sk-ctl select,.sk-ctl input{background:var(--panel2);border:1px solid var(--line);color:var(--tx);border-radius:10px;padding:8px 10px;font:inherit}
+.sk-ctl input[type=number]{width:90px}
+.sk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:10px}
+.sk-card{background:var(--panel);border:1px solid var(--line);border-bottom:3px solid var(--c,#888);border-radius:12px;padding:10px;cursor:pointer;text-align:center;transition:transform .3s var(--ease),box-shadow .3s var(--ease)}
+.sk-card img{width:100%;aspect-ratio:4/3;object-fit:contain;display:block}
+.sk-card b{display:block;font-size:13px;margin-top:6px}
+.sk-card:hover{transform:translateY(-4px);box-shadow:0 14px 34px -10px rgba(var(--acc-rgb),.6)}
+.sk-card.cur{outline:2px solid var(--acc);box-shadow:0 0 26px -4px rgba(var(--acc-rgb),.8)}
+</style>
+<script>
+function settingsSkins(){return skinsView().replace('<h1>Скины</h1>','<h2 style="margin:28px 0 6px">Скины оружия</h2>')}
+</script>
 </body>
 </html>
