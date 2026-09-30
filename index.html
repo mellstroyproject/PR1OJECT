@@ -819,7 +819,7 @@ tr:hover td{background:rgba(var(--acc-rgb),.09)}
 </style>
 <script>
 // ===== Скин-ченджер: страница «Скины» =====
-const SKN={data:null,mine:{skins:{},knife:null,agents:{}},cat:'Винтовки',w:'weapon_ak47',wear:0.01,seed:0,msg:'',busy:false,q:''};
+const SKN={data:null,mine:{skins:{},knife:null},cat:'Винтовки',w:'weapon_ak47',wear:0.01,seed:0,msg:'',busy:false,q:''};
 const skEsc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 {const n=document.getElementById('nav');if(n){n.innerHTML='';head()}}
 const _view=view;
@@ -836,8 +836,7 @@ function skinsView(){
     if(!SKN.busy&&!SKN.msg)skLoad();
     return '<h1>Скины</h1><div class="empty">'+(SKN.msg?skEsc(SKN.msg)+'<br><br><button class="join" onclick="SKN.msg=\'\';draw()">Повторить</button>':'Загружаем скины…')+'</div>';
   }
-  const D=SKN.data,cats=[...new Set(D.weapons.map(w=>w.cat)),'Агенты'],ws=D.weapons.filter(w=>w.cat===SKN.cat);
-  if(SKN.cat==='Агенты')return agentsView(cats);
+  const D=SKN.data,cats=[...new Set(D.weapons.map(w=>w.cat))],ws=D.weapons.filter(w=>w.cat===SKN.cat);
   const cur=D.weapons.find(w=>w.id===SKN.w)||ws[0],my=SKN.mine.skins[cur.def],q=SKN.q.toLowerCase();
   const list=D.skins.filter(s=>s[0]===cur.id&&/^https:/.test(s[3]));
   return `<h1>Скины</h1>
@@ -852,27 +851,7 @@ function skinsView(){
   <p class="stat">${skEsc(SKN.msg)}</p>
   <div class="sk-grid">${list.map(s=>{const n=s[1].toLowerCase();return `<div class="sk-card${my&&my.paint===s[2]?' cur':''}" data-n="${skEsc(n)}" style="--c:${skEsc(s[4])}${q&&!n.includes(q)?';display:none':''}" onclick="skPick(${s[2]})"><img loading="lazy" src="${skEsc(s[3])}" alt=""><b>${skEsc(s[1])}</b></div>`}).join('')||'<div class="empty">Для этого оружия скинов нет</div>'}</div>`;
 }
-function agentsView(cats){
-  const A=SKN.data.agents||[],my=SKN.mine.agents||{},q=SKN.q.toLowerCase();
-  const sec=(t,title)=>{
-    const l=A.filter(a=>a[2]===t&&/^https:/.test(a[3]));
-    return `<h2 style="margin:22px 0 8px">${title}${my[t]?' <button class="join del" onclick="agPick(\'\',\''+t+'\')">Сбросить</button>':''}</h2>
-    <div class="sk-grid">${l.map(a=>{const n=a[1].toLowerCase();return `<div class="sk-card${my[t]===a[0]?' cur':''}" data-n="${skEsc(n)}" style="--c:${skEsc(a[4])}${q&&!n.includes(q)?';display:none':''}" onclick="agPick('${skEsc(a[0])}','${t}')"><img loading="lazy" src="${skEsc(a[3])}" alt=""><b>${skEsc(a[1])}</b></div>`}).join('')||'<div class="empty">Агенты не загрузились</div>'}</div>`};
-  return `<h1>Скины</h1>
-  <div class="bar"><div class="tabs">${cats.map(c=>`<button class="${c===SKN.cat?'on':''}" onclick="skCat('${c}')">${c}</button>`).join('')}</div></div>
-  <div class="sk-ctl"><input placeholder="Поиск агента" value="${skEsc(SKN.q)}" oninput="skQ(this.value)"></div>
-  <p class="stat">${skEsc(SKN.msg)}</p>
-  ${sec('ct','Спецназ (CT)')}${sec('t','Террористы (T)')}`;
-}
-async function agPick(id,team){
-  try{
-    await api('agent',{agent:id,team});
-    SKN.mine.agents=SKN.mine.agents||{};SKN.mine.agents[team]=id||null;
-    SKN.msg=id?'Агент сохранён. В игре напишите !wp, чтобы применить.':'Агент сброшен. В игре напишите !wp.';
-  }catch(e){SKN.msg=e.message}
-  draw();
-}
-function skCat(c){SKN.cat=c;if(c!=='Агенты')SKN.w=SKN.data.weapons.find(w=>w.cat===c).id;SKN.q='';draw()}
+function skCat(c){SKN.cat=c;SKN.w=SKN.data.weapons.find(w=>w.cat===c).id;SKN.q='';draw()}
 function skW(id){SKN.w=id;SKN.q='';draw()}
 function skQ(v){SKN.q=v;const q=v.toLowerCase();document.querySelectorAll('.sk-card').forEach(c=>c.style.display=c.dataset.n.includes(q)?'':'none')}
 async function skPick(paint){
@@ -1025,6 +1004,113 @@ async function delServer(id){
   try{await api('admin/server-delete',{id});await loadServers();toast('Сервер удалён','ok')}catch(e){toast(e.message,'err')}
 }
 loadServers();
+</script>
+<style>
+/* ===== Анимации: переходы между страницами, плашка меню, сообщения ===== */
+@keyframes pgin{from{opacity:0;transform:translateY(34px) scale(.965);filter:blur(8px)}55%{filter:blur(0)}to{opacity:1;transform:none;filter:none}}
+#app.enter h1{animation:pgin .7s cubic-bezier(.2,.9,.3,1.08) backwards}
+#app.enter :is(tr,.plan,.mode,.admin-card,.admin-tools,.bar,.side,.empty,.stat,.set-card){animation:pgin .8s cubic-bezier(.2,.9,.3,1.06) backwards;animation-delay:calc(var(--i,0)*75ms + 90ms)}
+nav{position:relative}
+nav button{position:relative;z-index:1}
+nav button.on{background:transparent}
+.navpill{position:absolute;top:0;left:0;z-index:0;pointer-events:none;border-radius:12px;opacity:0;
+  background:linear-gradient(135deg,rgba(var(--acc-rgb),.38),rgba(var(--acc-b-rgb),.28));box-shadow:0 0 24px -2px rgba(var(--acc-rgb),.65),inset 0 0 0 1px rgba(var(--acc-rgb),.55);
+  transition:transform .55s cubic-bezier(.3,1.35,.4,1),width .55s cubic-bezier(.3,1.35,.4,1),height .4s,opacity .3s}
+nav button.on .ic{animation:navpop .5s cubic-bezier(.2,1.6,.4,1)}
+@keyframes navpop{from{transform:scale(.5) rotate(-25deg)}to{transform:none}}
+.promo-msg.ok,.promo-msg.err{animation:msgin .4s cubic-bezier(.2,1.3,.3,1) both}
+.promo-msg.err{animation:msgin .4s cubic-bezier(.2,1.3,.3,1) both,shake .45s .1s}
+@keyframes msgin{from{opacity:0;transform:translateY(-10px) scale(.96)}}
+@keyframes shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+button:active:not(:disabled){transform:scale(.95)}
+/* ===== Агенты ===== */
+.ag-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.ag-tabs button{padding:8px 14px;border-radius:10px;background:var(--panel2);font-weight:600}
+.ag-tabs button.on{background:linear-gradient(135deg,var(--acc),var(--acc-b));color:var(--on-acc)}
+.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-top:14px}
+.ag-card{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;cursor:pointer;text-align:center;transition:transform .3s cubic-bezier(.2,1.3,.4,1),box-shadow .3s}
+.ag-card::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--rc,#888)}
+.ag-card:hover{transform:translateY(-6px) scale(1.02);box-shadow:0 16px 40px -10px var(--rc,var(--acc))}
+.ag-card.on{border-color:var(--acc);box-shadow:0 0 0 2px rgba(var(--acc-rgb),.6)}
+.ag-card img{width:100%;height:170px;object-fit:contain}
+.ag-card b{display:block;font-size:12.5px;margin-top:6px;line-height:1.3}
+</style>
+<script>
+// ===== Плавающая плашка под активным пунктом меню =====
+function movePill(){
+  const nav=document.getElementById('nav');if(!nav)return;
+  const on=nav.querySelector('button.on');let pill=nav.querySelector('.navpill');
+  if(!pill){if(!nav.children.length)return;pill=document.createElement('div');pill.className='navpill';nav.appendChild(pill)}
+  if(!on){pill.style.opacity=0;return}
+  pill.style.width=on.offsetWidth+'px';pill.style.height=on.offsetHeight+'px';
+  pill.style.transform='translate('+on.offsetLeft+'px,'+on.offsetTop+'px)';pill.style.opacity=1;
+}
+{const _d=draw;draw=function(){_d.apply(this,arguments);requestAnimationFrame(movePill)}}
+addEventListener('resize',movePill);
+setTimeout(()=>{movePill();draw()},60);
+// ===== Агенты (в настройках, под скинами) =====
+const AG={data:null,loading:false,err:'',team:'ct',mine:{ct:null,t:null}};
+async function agLoad(){
+  if(AG.loading||AG.data)return;AG.loading=true;AG.err='';
+  try{AG.data=(await api('agents')).agents}catch(e){AG.err=e.message}
+  try{const m=await api('myagents');AG.mine={ct:m.ct||null,t:m.t||null}}catch(e){}
+  AG.loading=false;draw();
+}
+function agentsBlock(){
+  if(!st.user)return '';
+  const head='<h2 style="margin:28px 0 6px">Агенты</h2>';
+  if(!AG.data){if(!AG.err)agLoad();return head+'<p class="stat">'+esc(AG.err||'Загружаем агентов…')+'</p>'+(AG.err?'<button class="join" onclick="AG.err=\'\';draw()">Повторить</button>':'')}
+  if(!AG.data.length)return head+'<p class="stat">Список агентов пока пуст.</p>';
+  const cur=AG.mine[AG.team];
+  return head+`<p class="stat">Выберите агента для каждой команды, затем в игре введите <b>!wp</b>.</p>
+   <div class="ag-tabs"><button class="${AG.team==='ct'?'on':''}" onclick="AG.team='ct';draw()">Спецназ (CT)</button><button class="${AG.team==='t'?'on':''}" onclick="AG.team='t';draw()">Террористы (T)</button>${cur?'<button class="join del" onclick="agReset()">Сбросить агента</button>':''}</div>
+   <div class="ag-grid">${AG.data.map((a,i)=>a.team!==AG.team?'':`<div class="ag-card${a.model===cur?' on':''}" style="--rc:${esc(a.col)}" onclick="agPick(${i})"><img loading="lazy" src="${esc(a.image)}" alt=""><b>${esc(a.name)}</b></div>`).join('')}</div>`;
+}
+async function agPick(i){
+  const a=AG.data[i];if(!a)return;
+  try{await api('agent',{team:a.team,model:a.model});AG.mine[a.team]=a.model;draw();toast('Агент выбран: '+a.name+'. В игре введите !wp, чтобы обновить.','ok')}
+  catch(e){toast(e.message,'err')}
+}
+async function agReset(){
+  try{await api('agent-reset',{team:AG.team});AG.mine[AG.team]=null;draw();toast('Агент сброшен','ok')}catch(e){toast(e.message,'err')}
+}
+{const _ss=settingsSkins;settingsSkins=function(){return _ss()+agentsBlock()}}
+</script>
+<style>
+/* ===== Дополнительные анимации: уход страницы, волна на кнопках, пульс выбранного, кольцо на успехе ===== */
+#app{transition:opacity .15s ease,transform .15s ease,filter .15s ease}
+#app.leave{opacity:0;transform:translateY(-10px) scale(.99);filter:blur(5px)}
+.toast .ti{position:relative}
+.toast.ok .ti::before{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid rgb(var(--tc));animation:tring .9s .2s ease-out both}
+@keyframes tring{from{transform:scale(.7);opacity:.9}to{transform:scale(2.4);opacity:0}}
+.sk-card.cur,.ag-card.on{animation:curpulse 2.4s ease-in-out infinite}
+@keyframes curpulse{50%{box-shadow:0 0 0 2px rgba(var(--acc-rgb),.6),0 0 30px rgba(var(--acc-rgb),.6)}}
+.rip{position:relative;overflow:hidden}
+.ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.4);transform:scale(0);animation:ripple .6s ease-out forwards;pointer-events:none}
+@keyframes ripple{to{transform:scale(1);opacity:0}}
+@media (prefers-reduced-motion:reduce){#app.leave{opacity:1;transform:none;filter:none}.sk-card.cur,.ag-card.on{animation:none}}
+</style>
+<script>
+(function(){
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // плавный уход страницы перед показом новой
+  const _go=go;
+  window.go=function(p){
+    const a=document.getElementById('app');
+    if(reduce||!a||p===st.page){_go(p);return}
+    a.classList.add('leave');
+    setTimeout(()=>{a.classList.remove('leave');_go(p)},150);
+  };
+  // волна при нажатии на кнопки
+  document.addEventListener('pointerdown',e=>{
+    if(reduce||!e.target.closest)return;
+    const b=e.target.closest('.join,.steam,.promo-btn,nav button,.plan .buy,.ask-row button,.sk-ws button,.tabs button,.ag-tabs button,.promo-pop>button,.admin-tools button');
+    if(!b)return;b.classList.add('rip');
+    const r=b.getBoundingClientRect(),s=Math.max(r.width,r.height)*2,x=document.createElement('span');
+    x.className='ripple';x.style.cssText='width:'+s+'px;height:'+s+'px;left:'+(e.clientX-r.left-s/2)+'px;top:'+(e.clientY-r.top-s/2)+'px';
+    b.appendChild(x);setTimeout(()=>x.remove(),650);
+  });
+})();
 </script>
 </body>
 </html>
