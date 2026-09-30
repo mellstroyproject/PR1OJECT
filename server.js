@@ -37,6 +37,8 @@ async function init() {
       code text primary key, coins numeric not null, max int not null default 0,
       used int not null default 0, by text, at bigint);
     create table if not exists promo_used(steam_id text, code text, primary key(steam_id, code));
+    create table if not exists servers(id serial primary key, name text not null, address text not null);
+    insert into servers(name,address) select 'Мираж (карта меняется)','45.95.31.64:27215' where not exists (select 1 from servers);
     create table if not exists bans(
       id serial primary key, kind text not null, steam_id text, player text, admin text, admin_id text,
       reason text, term text, until bigint not null default 0, active boolean not null default true, at bigint);
@@ -159,14 +161,70 @@ app.post('/api/buy', level('user'), async (req, res) => {
 });
 app.post('/api/promo', level('user'), async (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase();
-  const p = (await db.query('select * from promos where code=$1', [code])).rows[0];
-  if (!p) return res.status(404).json({ error: 'Код не найден' });
-  if (p.max > 0 && p.used >= p.max) return bad(res, 'Лимит активаций этого кода исчерпан');
-  const ins = await db.query('insert into promo_used values($1,$2) on conflict do nothing', [req.u.steam_id, code]);
-  if (!ins.rowCount) return bad(res, 'Этот код уже был использован');
-  await db.query('update promos set used=used+1 where code=$1', [code]);
-  await db.query('update users set coins=coins+$1 where steam_id=$2', [p.coins, req.u.steam_id]);
-  res.json({ ok: true, coins: +p.coins });
+  const c = await db.connect();
+  try {
+    await c.query('begin');
+    const p = (await c.query('select * from promos where code=$1 for update', [code])).rows[0]; // блокируем строку: лимит не обойти двумя запросами сразу
+    if (!p) { await c.query('rollback'); return res.status(404).json({ error: 'Код не найден' }); }
+    if (p.max > 0 && p.used >= p.max) { await c.query('rollback'); return bad(res, 'Лимит активаций этого кода исчерпан'); }
+    const ins = await c.query('insert into promo_used values($1,$2) on conflict do nothing', [req.u.steam_id, code]);
+    if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Этот код уже был использован'); }
+    await c.query('update promos set used=used+1 where code=$1', [code]);
+    await c.query('update users set coins=coins+$1 where steam_id=$2', [p.coins, req.u.steam_id]);
+    await c.query('commit');
+    res.json({ ok: true, coins: +p.coins });
+  } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo:', e.message); res.status(500).json({ error: 'Не удалось активировать код, попробуйте позже' }); }
+  finally { c.release(); }
+});
+
+// --- список серверов на странице Public ---
+app.get('/api/servers', async (req, res) => {
+  try { res.json((await db.query('select id,name,address from servers order by id')).rows); }
+  catch (e) { console.error('servers:', e.message); res.json([]); }
+});
+app.post('/api/admin/server', level('owner'), async (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 60), addr = String(req.body.address || '').trim();
+  if (!name) return bad(res, 'Укажите название сервера');
+  if (!/^[\w.-]{3,64}:\d{2,5}$/.test(addr)) return bad(res, 'Адрес должен быть вида 45.95.31.64:27215');
+  if (+(await db.query('select count(*) c from servers')).rows[0].c >= 20) return bad(res, 'Достигнут лимит: 20 серверов');
+  await db.query('insert into servers(name,address) values($1,$2)', [name, addr]);
+  res.json({ ok: true });
+});
+app.post('/api/admin/server-delete', level('owner'), async (req, res) => {
+  await db.query('delete from servers where id=$1', [+req.body.id || 0]); res.json({ ok: true });
+});
+
+// --- агенты (плагин WeaponPaints: wp_player_agents) ---
+let AGC = null, AGT = 0;
+async function agentCatalog() {
+  if (AGC && Date.now() - AGT < 864e5) return AGC;
+  const r = await fetch('https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/agents.json');
+  if (!r.ok) throw new Error('agents.json ' + r.status);
+  AGC = (await r.json()).map(a => ({ id: a.id, name: a.name, image: a.image, model: a.model_player || a.model || '',
+    team: /counter/i.test((a.team && (a.team.id || a.team.name)) || '') ? 'ct' : 't', col: (a.rarity && a.rarity.color) || '#888' })).filter(a => a.model && a.image);
+  AGT = Date.now(); console.log('agents loaded:', AGC.length); return AGC;
+}
+app.get('/api/agents', async (req, res) => {
+  try { res.json({ agents: await agentCatalog() }); }
+  catch (e) { console.error('agents:', e.message); res.status(502).json({ error: 'Не удалось загрузить список агентов' }); }
+});
+app.get('/api/myagents', level('user'), async (req, res) => {
+  try { const r = (await gq('select agent_ct, agent_t from wp_player_agents where steamid=? limit 1', [req.u.steam_id]))[0]; res.json({ ct: r ? r.agent_ct : null, t: r ? r.agent_t : null }); }
+  catch (e) { console.error('myagents:', e.message); res.json({ ct: null, t: null }); }
+});
+app.post('/api/agent', level('user'), async (req, res) => {
+  try {
+    const a = (await agentCatalog()).find(x => x.team === req.body.team && x.model === req.body.model);
+    if (!a) return bad(res, 'Такого агента нет в списке');
+    const col = a.team === 'ct' ? 'agent_ct' : 'agent_t', id = req.u.steam_id;
+    const u = await gq(`update wp_player_agents set ${col}=? where steamid=?`, [a.model, id]);
+    if (!u.affectedRows) await gq(`insert into wp_player_agents(steamid,${col}) values(?,?)`, [id, a.model]);
+    res.json({ ok: true });
+  } catch (e) { console.error('agent:', e.message); res.status(500).json({ error: 'Не удалось записать агента в базу игрового сервера' }); }
+});
+app.post('/api/agent-reset', level('user'), async (req, res) => {
+  try { await gq(`update wp_player_agents set ${req.body.team === 'ct' ? 'agent_ct' : 'agent_t'}=NULL where steamid=?`, [req.u.steam_id]); res.json({ ok: true }); }
+  catch (e) { console.error('agent-reset:', e.message); res.status(500).json({ error: 'Не удалось сбросить агента' }); }
 });
 
 // --- админка ---
@@ -274,33 +332,23 @@ async function loadSkins() { // список скинов с картинкам�
   if (SKINS.list.length && Date.now() - SKINS.t < 864e5) return SKINS.list;
   const r = await fetch('https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json');
   if (!r.ok) throw new Error('Не удалось загрузить список скинов');
-  const list = [];
+  const byDef = {}, byName = {};
+  for (const [id, [def, name]] of Object.entries(WEAPONS)) { byDef[def] = id; byName[name.toLowerCase()] = id; }
+  const list = []; let skipped = 0;
   for (const s of await r.json()) {
-    const w = s.weapon && s.weapon.id, p = +s.paint_index;
-    if (!WEAPONS[w] || !p) continue;
-    list.push([w, String((s.pattern && s.pattern.name) || String(s.name).split(' | ')[1] || s.name), p, s.image, (s.rarity && s.rarity.color) || '#888']);
+    const p = +s.paint_index; if (!p) continue;
+    let w = s.weapon && s.weapon.id;
+    if (!WEAPONS[w]) w = byDef[+(s.weapon && s.weapon.weapon_id)] || byDef[+s.def_index]; // по номеру оружия
+    if (!WEAPONS[w]) w = byName[String(s.name).split(' | ')[0].replace(/^★\s*/, '').replace(/^StatTrak™\s*/, '').toLowerCase()]; // по названию
+    if (!WEAPONS[w] || !s.image) { skipped++; continue; }
+    const pat = String((s.pattern && s.pattern.name) || String(s.name).split(' | ')[1] || s.name);
+    list.push([w, pat + (s.phase ? ' (' + s.phase + ')' : ''), p, s.image, (s.rarity && s.rarity.color) || '#888']);
   }
+  console.log('skins loaded:', list.length, 'knife skins:', list.filter(x => WEAPONS[x[0]][2] === 'Ножи').length, 'skipped:', skipped);
   SKINS = { t: Date.now(), list }; return list;
 }
-// --- Агенты (плагин WeaponPaints: таблица wp_player_agents, модели agent_ct / agent_t) ---
-let AGENTS = { t: 0, list: [] };
-async function loadAgents() { // [id, имя, 't'|'ct', картинка, путь модели, цвет редкости]
-  if (AGENTS.list.length && Date.now() - AGENTS.t < 864e5) return AGENTS.list;
-  const r = await fetch('https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/agents.json');
-  if (!r.ok) throw new Error('Не удалось загрузить список агентов');
-  const list = [];
-  for (const a of await r.json()) {
-    const tid = a.team && a.team.id, team = tid === 'terrorists' ? 't' : tid === 'counter-terrorists' ? 'ct' : null;
-    if (!team || !a.model_player) continue;
-    list.push([String(a.id), String(a.name).split(' | ')[0], team, a.image, a.model_player, (a.rarity && a.rarity.color) || '#888']);
-  }
-  AGENTS = { t: Date.now(), list }; return list;
-}
 app.get('/api/skins', async (req, res) => {
-  try {
-    const agents = await loadAgents().then(l => l.map(a => [a[0], a[1], a[2], a[3], a[5]])).catch(e => { console.error('agents:', e.message); return []; });
-    res.json({ weapons: Object.entries(WEAPONS).map(([id, [def, name, cat]]) => ({ id, def, name, cat })), skins: await loadSkins(), agents });
-  }
+  try { res.json({ weapons: Object.entries(WEAPONS).map(([id, [def, name, cat]]) => ({ id, def, name, cat })), skins: await loadSkins() }); }
   catch (e) { console.error('skins:', e.message); res.status(502).json({ error: e.message }); }
 });
 app.get('/api/myskins', level('user'), async (req, res) => {
@@ -308,10 +356,7 @@ app.get('/api/myskins', level('user'), async (req, res) => {
     const rows = await gq('select weapon_defindex d, weapon_paint_id p, weapon_wear w, weapon_seed s from wp_player_skins where steamid=? and weapon_team=2', [req.u.steam_id]);
     const k = (await gq('select knife from wp_player_knife where steamid=? and weapon_team=2', [req.u.steam_id]))[0];
     const skins = {}; rows.forEach(r => skins[r.d] = { paint: r.p, wear: r.w, seed: r.s });
-    const agents = { ct: null, t: null };
-    try { const a = (await gq('select agent_ct, agent_t from wp_player_agents where steamid=?', [req.u.steam_id]))[0]; if (a) { const L = await loadAgents().catch(() => []), f = m => (L.find(x => x[4] === m) || [])[0] || null; agents.ct = f(a.agent_ct); agents.t = f(a.agent_t); } }
-    catch (e) { console.error('myagents:', e.message); }
-    res.json({ skins, knife: k ? k.knife : null, agents });
+    res.json({ skins, knife: k ? k.knife : null });
   } catch (e) { console.error('myskins:', e.message); res.status(500).json({ error: 'Не удалось прочитать скины: ' + e.message }); }
 });
 app.post('/api/skin', level('user'), async (req, res) => {
@@ -332,21 +377,6 @@ app.post('/api/skin', level('user'), async (req, res) => {
     }
     res.json({ ok: true });
   } catch (e) { console.error('skin:', e.message); res.status(500).json({ error: 'Не удалось сохранить скин: ' + e.message }); }
-});
-
-app.post('/api/agent', level('user'), async (req, res) => {
-  try {
-    const team = req.body.team; if (team !== 'ct' && team !== 't') return bad(res, 'Неизвестная команда');
-    const col = team === 'ct' ? 'agent_ct' : 'agent_t', id = req.u.steam_id;
-    let model = null;
-    if (req.body.agent) {
-      const a = (await loadAgents()).find(x => x[0] === String(req.body.agent) && x[2] === team);
-      if (!a) return bad(res, 'Такого агента нет');
-      model = a[4];
-    }
-    await gq(`insert into wp_player_agents(steamid,${col}) values(?,?) on duplicate key update ${col}=values(${col})`, [id, model]);
-    res.json({ ok: true, model });
-  } catch (e) { console.error('agent:', e.message); res.status(500).json({ error: 'Не удалось сохранить агента: ' + e.message }); }
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
