@@ -179,6 +179,7 @@ app.post('/api/promo', level('user'), async (req, res) => {
     await c.query('begin');
     const p = (await c.query('select * from promos where code=$1 for update', [code])).rows[0]; // блокируем строку: лимит не обойти двумя запросами сразу
     if (!p) { await c.query('rollback'); return res.status(404).json({ error: 'Код не найден' }); }
+    if (p.by === req.u.steam_id && req.u.steam_id !== OWNER) { await c.query('rollback'); return bad(res, 'Свой код активировать нельзя'); }
     if (p.max > 0 && p.used >= p.max) { await c.query('rollback'); return bad(res, 'Лимит активаций этого кода исчерпан'); }
     const ins = await c.query('insert into promo_used values($1,$2) on conflict do nothing', [req.u.steam_id, code]);
     if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Этот код уже был использован'); }
@@ -187,6 +188,46 @@ app.post('/api/promo', level('user'), async (req, res) => {
     await c.query('commit');
     res.json({ ok: true, coins: +p.coins });
   } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo:', e.message); res.status(500).json({ error: 'Не удалось активировать код, попробуйте позже' }); }
+  finally { c.release(); }
+});
+
+// --- свои промокоды игроков: оплачиваются монетами с баланса (награда × активации + плата за создание) ---
+const PROMO_FEE = +process.env.PROMO_FEE || 100, PROMO_ACTIVE_MAX = 10;
+app.get('/api/promo-mine', level('user'), async (req, res) => {
+  const r = (await db.query('select code,coins,max,used,at from promos where by=$1 order by at desc nulls last limit 50', [req.u.steam_id])).rows;
+  res.json({ fee: PROMO_FEE, promos: r.map(p => ({ code: p.code, coins: +p.coins, max: +p.max, used: +p.used, at: +p.at })) });
+});
+app.post('/api/promo-create', level('user'), async (req, res) => {
+  const id = req.u.steam_id, code = String(req.body.code || '').trim().toUpperCase(), coins = Math.floor(+req.body.coins), max = Math.floor(+req.body.max);
+  if (!/^[A-Z0-9_-]{3,24}$/.test(code)) return bad(res, 'Код: 3–24 символа — латиница, цифры, _ или -');
+  if (!(coins >= 1 && coins <= 1000)) return bad(res, 'Награда за активацию: от 1 до 1000 монет');
+  if (!(max >= 1 && max <= 500)) return bad(res, 'Число активаций: от 1 до 500');
+  const cost = coins * max + PROMO_FEE, c = await db.connect();
+  try {
+    await c.query('begin');
+    const act = +(await c.query('select count(*) c from promos where by=$1 and max>0 and used<max', [id])).rows[0].c;
+    if (act >= PROMO_ACTIVE_MAX) { await c.query('rollback'); return bad(res, 'Не больше ' + PROMO_ACTIVE_MAX + ' действующих своих кодов одновременно'); }
+    const ins = await c.query('insert into promos(code,coins,max,by,at) values($1,$2,$3,$4,$5) on conflict do nothing', [code, coins, max, id, Date.now()]);
+    if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Такой код уже существует'); }
+    const u = await c.query('update users set coins=coins-$1 where steam_id=$2 and coins>=$1 returning coins', [cost, id]);
+    if (!u.rowCount) { await c.query('rollback'); return bad(res, 'Недостаточно монет: нужно ' + cost); }
+    await c.query('commit');
+    res.json({ ok: true, cost, coins: +u.rows[0].coins });
+  } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo-create:', e.message); res.status(500).json({ error: 'Не удалось создать код, попробуйте позже' }); }
+  finally { c.release(); }
+});
+app.post('/api/promo-delete-own', level('user'), async (req, res) => { // удалить свой код: неиспользованные активации возвращаются монетами, плата за создание — нет
+  const c = await db.connect();
+  try {
+    await c.query('begin');
+    const p = (await c.query('select * from promos where code=$1 and by=$2 for update', [String(req.body.code || ''), req.u.steam_id])).rows[0];
+    if (!p) { await c.query('rollback'); return res.status(404).json({ error: 'Код не найден' }); }
+    const refund = p.max > 0 ? Math.max(0, p.max - p.used) * +p.coins : 0;
+    await c.query('delete from promos where code=$1', [p.code]);
+    if (refund) await c.query('update users set coins=coins+$1 where steam_id=$2', [refund, req.u.steam_id]);
+    await c.query('commit');
+    res.json({ ok: true, refund });
+  } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo-delete-own:', e.message); res.status(500).json({ error: 'Не удалось удалить код' }); }
   finally { c.release(); }
 });
 
