@@ -122,7 +122,7 @@ async function adminPurchaseCheck(id, self = true) {
   return null;
 }
 // untilMs — до какого момента админка по данным сайта (>= FOREVER — навсегда, в игре end_at=0)
-async function grantGameAdmin(u, untilMs) {
+async function grantGameAdmin(u, untilMs, opt = {}) { // opt: { name, flags, immunity } — задаёт только владелец
   const conn = await game.getConnection();
   try {
     await conn.beginTransaction();
@@ -132,10 +132,14 @@ async function grantGameAdmin(u, untilMs) {
     let adminId;
     if (ex) { // включаем обратно; срок не уменьшаем, если в игре он уже длиннее
       adminId = ex.id;
-      await q('update iks_admins set end_at=?, is_disabled=0, deleted_at=NULL, updated_at=? where id=?', [end === 0 ? 0 : Math.max(+ex.end_at || 0, end), n, ex.id]);
+      const sets = ['end_at=?', 'is_disabled=0', 'deleted_at=NULL', 'updated_at=?'], vals = [end === 0 ? 0 : Math.max(+ex.end_at || 0, end), n];
+      if (opt.name) { sets.push('name=?'); vals.push(opt.name); }
+      if (opt.flags) { sets.push('flags=?'); vals.push(opt.flags); }
+      if (opt.immunity !== undefined) { sets.push('immunity=?'); vals.push(opt.immunity); }
+      await q('update iks_admins set ' + sets.join(', ') + ' where id=?', [...vals, ex.id]);
     } else {
       adminId = (await q('insert into iks_admins(steam_id,name,flags,immunity,is_disabled,end_at,created_at,updated_at) values(?,?,?,?,0,?,?,?)',
-        [u.steam_id, String(u.name || u.steam_id).slice(0, 64), ADMIN_FLAGS, ADMIN_IMMUNITY, end, n, n])).insertId;
+        [u.steam_id, String(opt.name || u.name || u.steam_id).slice(0, 64), opt.flags || ADMIN_FLAGS, opt.immunity !== undefined ? opt.immunity : ADMIN_IMMUNITY, end, n, n])).insertId;
     }
     // привязка админа к серверу (iks_admin_to_server) — проверяем и у существующих, иначе в игре прав не будет
     if (!(await q('select 1 from iks_admin_to_server where admin_id=? limit 1', [adminId])).length) {
@@ -285,12 +289,21 @@ app.post('/api/agent-reset', level('user'), async (req, res) => {
 app.post('/api/admin/grant', level('manage'), async (req, res) => {
   const { id, days } = req.body;
   if (!/^\d{17}$/.test(id) || id === OWNER) return bad(res, 'Неверный SteamID64 (17 цифр)');
+  const opt = {};
+  if (req.u.steam_id === OWNER) { // ник, флаги и иммунитет задаёт только владелец; у замов — значения по умолчанию
+    const nm = String(req.body.name || '').trim().slice(0, 64); if (nm) opt.name = nm;
+    const fl = String(req.body.flags || '').trim();
+    if (fl) { if (!/^[a-zA-Z0-9@#]{1,40}$/.test(fl)) return bad(res, 'Флаги: только латинские буквы и цифры, до 40 символов'); opt.flags = fl; }
+    if (req.body.immunity !== undefined && req.body.immunity !== '' && req.body.immunity !== null) {
+      const im = Math.floor(+req.body.immunity); if (!(im >= 0 && im <= 1000)) return bad(res, 'Иммунитет: число от 0 до 1000'); opt.immunity = im;
+    }
+  }
   try {
     const err = await adminPurchaseCheck(id, false); if (err) return bad(res, err);
     const row = (await db.query('select name, grant_until from users where steam_id=$1', [id])).rows[0] || {};
     const cur = +row.grant_until || 0, d = +days === 0 ? 0 : Math.min(+days || 30, 3650);
     const until = d === 0 ? FOREVER : Math.max(Date.now(), cur < FOREVER ? cur : 0) + d * 864e5;
-    await grantGameAdmin({ steam_id: id, name: row.name }, until); // сначала игра: если не вышло — на сайте ничего не меняем
+    await grantGameAdmin({ steam_id: id, name: row.name }, until, opt); // сначала игра: если не вышло — на сайте ничего не меняем
     await db.query('insert into users(steam_id) values($1) on conflict do nothing', [id]);
     await db.query('update users set grant_until=$2, grant_by=$3, grant_at=$4 where steam_id=$1', [id, until, req.u.steam_id, Date.now()]);
     res.json({ ok: true });
