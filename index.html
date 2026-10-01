@@ -1144,6 +1144,8 @@ async function agReset(){
 #pm .pm-logo img{width:96px;height:96px;border-radius:26px;object-fit:cover;border:3px solid var(--panel);box-shadow:0 10px 30px #000a;background:var(--acc)}
 #pm .pm-brand{text-align:center;font-size:19px;font-weight:800;letter-spacing:.01em}
 #pm .pm-brand.lg{padding-top:34px}
+#pm .pm-bal{font-size:13px;color:var(--mut);text-align:right;margin-bottom:-6px}#pm .pm-bal b{color:var(--tx)}
+#pm .pm-r button.cp:hover{background:var(--acc)}
 @keyframes pmfade{from{opacity:0}to{opacity:1}}
 @keyframes pmin{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
 </style>
@@ -1175,8 +1177,16 @@ const src=()=>{const i=document.querySelector('body>header .logo img');return i&
 const logo=()=>src()?`<div class="pm-logo"><img src="${src()}" alt=""></div>`:'';
 const brand=()=>`<div class="pm-brand${src()?' lg':''}">MellstroyProject</div>`;
 const x=`<button class="pm-x" aria-label="Закрыть" onclick="closePromo()">✕</button>`;
+let PEND='';
+try{const q=new URLSearchParams(location.search).get('promo');
+  if(q&&/^[\w-]{3,24}$/.test(q)){PEND=q.toUpperCase();sessionStorage.setItem('pmCode',PEND);history.replaceState(null,'',location.pathname)}
+  else PEND=sessionStorage.getItem('pmCode')||''}catch(e){}
+window.pmCopy=async code=>{const u=location.origin+'/?promo='+code;
+  try{await navigator.clipboard.writeText(u);PM.msg={ok:true,text:'Ссылка скопирована — отправьте её друзьям'}}
+  catch(e){PM.msg={ok:false,text:'Не удалось скопировать: '+u}}head()};
 const _h=head;
 head=function(){
+  if(st.user&&PEND){st.promo=PEND;PEND='';try{sessionStorage.removeItem('pmCode')}catch(e){}st.promoOpen=true;st.menu=false;PM.view='use';st.promoMsg=null}
   _h.apply(this,arguments);
   const open=!!(st.user&&st.promoOpen),was=pm.classList.contains('on'),had=pm.dataset.v;
   pm.classList.toggle('on',open);
@@ -1193,11 +1203,12 @@ head=function(){
      <div class="pm-cost" id="pmCost"></div>
      <button class="pm-go" onclick="pmCreate()">Создать промокод</button>
      <div class="promo-msg ${m?(m.ok?'ok':'err'):''}">${m?esc(m.text):''}</div>
-     ${PM.mine.length?`<div class="pm-mine"><div class="pm-h">Мои коды</div>${PM.mine.map(p=>`<div class="pm-r"><span class="pm-c">${esc(p.code)}</span><span class="pm-u">${p.used} / ${p.max} · +${p.coins}</span><button onclick="pmDel('${esc(p.code)}')" aria-label="Удалить код">✕</button></div>`).join('')}</div>`:''}</div>
+     ${PM.mine.length?`<div class="pm-mine"><div class="pm-h">Мои коды</div>${PM.mine.map(p=>`<div class="pm-r"><span class="pm-c">${esc(p.code)}</span><span class="pm-u">${p.used} / ${p.max} · +${p.coins}</span><button class="cp" onclick="pmCopy('${esc(p.code)}')" aria-label="Скопировать ссылку" title="Скопировать ссылку на код">🔗</button><button onclick="pmDel('${esc(p.code)}')" aria-label="Удалить код" title="Удалить код">✕</button></div>`).join('')}</div>`:''}</div>
      <button class="pm-new" onclick="pmBack()">← К активации</button></div>`;
   }else{
     body=`<div class="pm-wrap" role="dialog" aria-modal="true" aria-label="Промокод">${logo()}<div class="pm-card">${brand()}
      <div class="pm-top"><h2>Промокод</h2>${x}</div>
+     <div class="pm-bal">Ваш баланс: <b>${(+st.user.coins).toFixed(2)}</b> монет</div>
      <input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="XXXXXXXX" aria-label="Промокод" autocomplete="off" spellcheck="false" maxlength="24">
      <button class="pm-go" onclick="activatePromo()">${I('promo')}Активировать промокод</button>
      <div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?esc(st.promoMsg.text):''}</div></div>
