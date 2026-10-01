@@ -1112,5 +1112,357 @@ async function agReset(){
   });
 })();
 </script>
+<style id="dz-css">
+#app{position:relative}
+#dz-layer{position:absolute;top:0;left:max(0px,calc(50% - 640px));width:min(100%,1280px);height:0;z-index:40}
+.dz-add{position:absolute;left:0;top:0;z-index:5;max-width:100%}
+.dz-text{color:var(--tx);font-size:16px}
+.dz-btn{background:var(--acc);color:var(--on-acc);border-radius:12px;padding:10px 18px;font-weight:700;cursor:pointer}
+.dz-box{background:var(--panel);border-radius:16px;min-width:40px;min-height:40px}
+.dz-img{display:block;border-radius:12px;object-fit:cover}
+.dz-img:not([src]){background:var(--panel2);min-width:120px;min-height:80px}
+@media(max-width:899px){#dz-layer{position:static;width:auto;height:auto;padding:0 16px 16px}.dz-add{position:static;display:block;margin:8px 0}.dz-box{width:auto}}
+body.dz-edit{user-select:none;-webkit-user-select:none}
+body.dz-edit .dz-add{cursor:move}
+body.dz-edit [data-dz-hid]{opacity:.28!important;outline:1px dashed #f5a524}
+#dz-ui,#dz-ui *{box-sizing:border-box;margin:0}
+#dz-ui{font:12.5px/1.3 "Segoe UI",system-ui,sans-serif;color:#f2f2fa;user-select:text;-webkit-user-select:text}
+#dz-ui button,#dz-ui select,#dz-ui input,#dz-ui textarea{font:inherit;color:#f2f2fa;background:#22223a;border:1px solid #38385c;border-radius:8px;padding:6px 9px}
+#dz-ui button{cursor:pointer}#dz-ui button:hover{background:#2e2e50}#dz-ui button:disabled{opacity:.35;cursor:default}
+#dz-ui button.pri{background:#4a6cf7;border-color:#4a6cf7;font-weight:700}
+#dz-ui button.dng{background:#4a1f26;border-color:#7a2a35}
+#dz-ui input[type=color]{padding:0;width:44px;height:26px;cursor:pointer}
+#dz-bar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:99999;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);padding:8px;background:#14141f;border:1px solid #2b2b45;border-radius:14px;box-shadow:0 10px 40px #000b}
+#dz-bar label{display:flex;gap:4px;align-items:center;color:#b9b9d6;cursor:pointer}
+#dz-bar input[type=checkbox]{width:auto;padding:0}
+#dz-pan{position:fixed;top:12px;right:12px;width:292px;max-height:calc(100vh - 96px);overflow:auto;z-index:99999;background:#14141f;border:1px solid #2b2b45;border-radius:14px;box-shadow:0 10px 40px #000b}
+#dz-pan .hd{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;background:#14141f;border-bottom:1px solid #2b2b45;font-weight:700;cursor:move}
+#dz-pan.col .bd{display:none}
+#dz-pan .sc{padding:12px 12px 4px;color:#8b8ba7;font-weight:600}
+#dz-pan .f{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 12px}
+#dz-pan .f>span:first-child{color:#c9c9e4}
+#dz-pan .f input[type=number]{width:70px}#dz-pan .f input[type=text],#dz-pan .f select{flex:1;min-width:0}
+#dz-pan .g2{display:grid;grid-template-columns:1fr 1fr}#dz-pan .g2 .f{flex-direction:column;align-items:stretch;gap:2px}#dz-pan .g2 input{width:100%}
+#dz-pan textarea{display:block;width:calc(100% - 24px);margin:3px 12px;resize:vertical}
+#dz-pan .cr{display:flex;gap:4px}#dz-pan .cr.set input{outline:2px solid #4a6cf7}#dz-pan .cr button{padding:2px 8px}
+#dz-pan .tl{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px 0}
+#dz-pan .hint{padding:10px 12px 12px;color:#8b8ba7;font-size:11.5px}
+#dz-sel{position:fixed;display:none;z-index:99990;border:2px solid #5b8cff;pointer-events:none;box-shadow:0 0 0 1px #0007}
+#dz-hov{position:fixed;display:none;z-index:99989;border:1px dashed #5b8cffcc;pointer-events:none}
+.dz-h{position:absolute;width:11px;height:11px;background:#fff;border:2px solid #5b8cff;border-radius:3px;pointer-events:auto}
+.dz-h[data-d=n]{left:50%;top:-7px;margin-left:-6px;cursor:ns-resize}.dz-h[data-d=s]{left:50%;bottom:-7px;margin-left:-6px;cursor:ns-resize}
+.dz-h[data-d=e]{top:50%;right:-7px;margin-top:-6px;cursor:ew-resize}.dz-h[data-d=w]{top:50%;left:-7px;margin-top:-6px;cursor:ew-resize}
+.dz-h[data-d=ne]{top:-7px;right:-7px;cursor:nesw-resize}.dz-h[data-d=nw]{top:-7px;left:-7px;cursor:nwse-resize}
+.dz-h[data-d=se]{bottom:-7px;right:-7px;cursor:nwse-resize}.dz-h[data-d=sw]{bottom:-7px;left:-7px;cursor:nesw-resize}
+#dz-toast{position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:100000;background:#14141f;border:1px solid #38385c;border-radius:10px;padding:9px 14px;opacity:0;pointer-events:none;transition:opacity .2s}
+#dz-toast.on{opacity:1}
+</style>
+<script>
+// ===== Конструктор дизайна: владелец двигает, красит и правит всё прямо на сайте =====
+(()=>{
+'use strict';
+const GEO=900,KEYS=['home','public','shop','leaders','bans','rules','settings','skins'];
+const NAMES={home:'Главная',public:'Public',shop:'Магазин',leaders:'Лидеры',bans:'Баны',rules:'Правила',settings:'Настройки',skins:'Скины'};
+const FONTS={'':['Как сейчас',''],arial:['Arial','Arial,Helvetica,sans-serif'],tre:['Trebuchet','"Trebuchet MS",Tahoma,sans-serif'],serif:['Georgia (с засечками)','Georgia,"Times New Roman",serif'],mono:['Моноширинный','"Courier New",monospace'],imp:['Impact (заголовки)','Impact,"Arial Black",sans-serif']};
+const M=['translate','rotate','width','height','flex','max-width','z-index','position','display','opacity','font-size','font-weight','color','background','border-color','border-width','border-style','border-radius','text-align'];
+const NUM=new Set(['x','y','w','h','r','fs','fw','bw','br','op','z']);
+const APPLIED=new Set();
+let D={v:1,o:{},a:{},g:{}},base='',editing=false,applying=false,sel=null,selId=null,hist=[],redo=[],lastP=0,snapOn=true,dragging=false,geoNow=innerWidth>=GEO,tt;
+const norm=j=>({v:1,o:j&&j.o||{},a:j&&j.a||{},g:j&&j.g||{}});
+const num=(v,a,b)=>Math.min(b,Math.max(a,+v||0));
+const e2=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const colorOk=v=>typeof v==='string'&&/^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%\/]+\)|transparent)$/i.test(v);
+const urlOk=v=>typeof v==='string'&&/^https:\/\/[^\s"'()<>\\]{3,400}$/.test(v);
+const toHex=s=>{s=String(s||'').trim();if(/^#[0-9a-f]{6}$/i.test(s))return s;if(/^#[0-9a-f]{3}$/i.test(s))return'#'+[...s.slice(1)].map(c=>c+c).join('');const m=s.match(/(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)/);return m?'#'+[1,2,3].map(i=>Math.round(+m[i]).toString(16).padStart(2,'0')).join(''):'#000000'};
+const tn=el=>[...el.childNodes].filter(n=>n.nodeType===3&&n.data.trim());
+const pageScope=()=>'P:'+st.page+(st.page==='leaders'?'|'+st.lb:st.page==='bans'?'|'+st.bt:st.page==='rules'?'|'+st.rule:'');
+const rootFor=el=>el.closest('body>header')||el.closest('#app');
+const scopeOf=el=>el.closest('body>header')?'H':pageScope();
+const toast=m=>{const t=$('#dz-toast');if(!t)return;t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),3200)};
+const sn=v=>snapOn?Math.round(v/10)*10:Math.round(v);
+
+// --- путь к элементу: он не меняется, пока страница строится одинаково ---
+function keyOf(el){const root=rootFor(el);if(!root)return null;const p=[];for(let n=el;n&&n!==root;n=n.parentElement)p.unshift(n.tagName.toLowerCase()+':'+[...n.parentElement.children].indexOf(n));return p.length?p.join('>'):'@'}
+function find(root,k){if(!root)return null;if(k==='@')return root;let n=root;for(const s of k.split('>')){const i=s.lastIndexOf(':'),c=n.children[+s.slice(i+1)];if(!c||c.tagName.toLowerCase()!==s.slice(0,i))return null;n=c}return n}
+const idOf=el=>el.dataset.dzAdd?'a:'+el.dataset.dzAdd:scopeOf(el)+'#'+keyOf(el);
+function resolve(id){if(id.startsWith('a:'))return document.querySelector('[data-dz-add="'+id.slice(2)+'"]');const i=id.indexOf('#'),sc=id.slice(0,i);if(sc!=='H'&&sc!==pageScope())return null;return find(sc==='H'?$('body>header'):$('#app'),id.slice(i+1))}
+function ov(el,mk){
+  if(el.dataset.dzAdd){for(const l of Object.values(D.a)){const a=l.find(x=>x.id===el.dataset.dzAdd);if(a)return a}return null}
+  const sc=scopeOf(el),k=keyOf(el);if(!k)return null;const m=D.o[sc]||(mk?D.o[sc]={}:null);if(!m)return null;return m[k]||(mk?m[k]={}:null);
+}
+
+// --- применить настройки к элементу ---
+function applyEl(el,o,noreg){
+  const org=el._dzo||(el._dzo=Object.fromEntries(M.map(p=>[p,[el.style.getPropertyValue(p),el.style.getPropertyPriority(p)]])));
+  for(const p of M){const[v,pr]=org[p];v?el.style.setProperty(p,v,pr):el.style.removeProperty(p)}
+  if(!noreg)APPLIED.add(el);
+  const ad=!!el.dataset.dzAdd,S=(p,v)=>{if(v!=null&&v!=='')el.style.setProperty(p,String(v),'important')};
+  const geo=innerWidth>=GEO,x=geo?num(o.x,-5000,5000):0,y=geo?num(o.y,-5000,5000):0,gm=geo&&(o.w||o.h);
+  if(x||y)S('translate',x+'px '+y+'px');
+  if(o.r)S('rotate',num(o.r,-360,360)+'deg');
+  if(gm){if(o.w)S('width',num(o.w,8,4000)+'px');if(o.h)S('height',num(o.h,8,4000)+'px');S('flex','none');S('max-width','none')}
+  if(o.z){if(!ad&&getComputedStyle(el).position==='static')S('position','relative');S('z-index',num(o.z,-50,999))}
+  if((x||y||o.r||gm)&&getComputedStyle(el).display==='inline')S('display','inline-block');
+  if(o.op!=null&&o.op!=='')S('opacity',num(o.op,0,100)/100);
+  if(o.fs)S('font-size',num(o.fs,6,200)+'px');
+  if(o.fw)S('font-weight',num(o.fw,100,900));
+  if(colorOk(o.c))S('color',o.c);
+  if(colorOk(o.bg))S('background',o.bg);
+  if(colorOk(o.bc))S('border-color',o.bc);
+  if(o.bw!=null&&o.bw!==''){S('border-width',num(o.bw,0,40)+'px');S('border-style',+o.bw?'solid':'none')}
+  if(o.br!=null&&o.br!=='')S('border-radius',num(o.br,0,999)+'px');
+  if(/^(left|center|right)$/.test(o.ta))S('text-align',o.ta);
+  el.toggleAttribute('data-dz-hid',!!o.hid);
+  if(o.hid&&!editing)S('display','none');
+  if(!ad){
+    const ns=tn(el);
+    if(o.t){if(!el._dzt)el._dzt=ns.map(n=>n.data);ns.forEach((n,i)=>{if(typeof o.t[i]==='string')n.data=o.t[i].slice(0,600)})}
+    else if(el._dzt){ns.forEach((n,i)=>{if(el._dzt[i]!=null)n.data=el._dzt[i]});el._dzt=null}
+  }
+}
+function applyGlobals(){
+  const G=D.g||{},r=document.documentElement.style,b=document.body.style;
+  [['--bg','bg'],['--panel','panel'],['--panel2','panel2'],['--tx','tx']].forEach(([v,k])=>colorOk(G[k])?r.setProperty(v,G[k]):r.removeProperty(v));
+  if(/^#[0-9a-f]{6}$/i.test(G.acc||'')){r.setProperty('--acc',G.acc);r.setProperty('--acc-rgb',[1,3,5].map(i=>parseInt(G.acc.substr(i,2),16)).join(','))}else{r.removeProperty('--acc');r.removeProperty('--acc-rgb')}
+  FONTS[G.font]&&G.font?b.setProperty('font-family',FONTS[G.font][1],'important'):b.removeProperty('font-family');
+  if(urlOk(G.bgi)){b.setProperty('background-image','url("'+G.bgi+'")');b.setProperty('background-size','cover');b.setProperty('background-attachment','fixed');b.setProperty('background-position','center')}
+  else['background-image','background-size','background-attachment','background-position'].forEach(p=>b.removeProperty(p));
+}
+const go2=h=>{h=String(h||'');if(urlOk(h))open(h,'_blank','noopener');else if(KEYS.includes(h))go(h)};
+function mk(a){
+  const t=a.type,el=document.createElement(t==='img'?'img':t==='btn'?'button':'div');
+  el.className='dz-add dz-'+t;el.dataset.dzAdd=a.id;
+  if(t==='img'){if(urlOk(a.src))el.src=a.src;el.alt='';el.draggable=false}
+  else if(t!=='box')el.textContent=a.text||'';
+  if(t==='btn'){el.type='button';el.onclick=()=>go2((ov(el)||a).href)}
+  return el;
+}
+const layer=()=>{let l=$('#dz-layer');if(!l){l=document.createElement('div');l.id='dz-layer';document.body.appendChild(l)}return l};
+function renderAdds(kind){
+  const fill=(list,cont)=>{cont.querySelectorAll(':scope>[data-dz-add]').forEach(n=>n.remove());list.forEach(a=>{const el=mk(a);cont.appendChild(el);applyEl(el,a)})};
+  if(kind!=='all')fill(D.a[pageScope()]||[],$('#app'));
+  if(kind!=='page')fill(D.a['*']||[],layer());
+}
+function applyScope(sc){
+  const H=sc==='H',root=H?$('body>header'):$('#app'),m=D.o[sc];
+  applying=true;
+  try{if(m)for(const[k,o]of Object.entries(m)){const el=find(root,k);if(el)applyEl(el,o)}if(!H)renderAdds('page')}
+  finally{oH.takeRecords();oA.takeRecords();applying=false}
+  for(const el of APPLIED)if(!el.isConnected)APPLIED.delete(el);
+}
+const applyAll=()=>{applyGlobals();applyScope('H');applyScope(pageScope());renderAdds('all')};
+function restoreAll(){applying=true;for(const el of[...APPLIED]){APPLIED.delete(el);if(el.isConnected)applyEl(el,{},1)}applying=false}
+const oH=new MutationObserver(()=>{if(!applying){applyScope('H');if(editing)syncSel()}});
+const oA=new MutationObserver(()=>{if(!applying){applyScope(pageScope());if(editing)syncSel()}});
+oH.observe($('body>header'),{childList:true,subtree:true});oA.observe($('#app'),{childList:true,subtree:true});
+addEventListener('resize',()=>{const g=innerWidth>=GEO;if(g!==geoNow){geoNow=g;restoreAll();applyAll()}});
+
+// --- история и сохранение ---
+const pushH=f=>{const n=Date.now();if(f||n-lastP>700){hist.push(JSON.stringify(D));if(hist.length>80)hist.shift();redo=[]}lastP=n};
+function full(){restoreAll();applyAll();sel=selId?resolve(selId):null;if(!sel)selId=null;pan()}
+const undo=()=>{if(!hist.length)return;redo.push(JSON.stringify(D));D=JSON.parse(hist.pop());full()};
+const redoF=()=>{if(!redo.length)return;hist.push(JSON.stringify(D));D=JSON.parse(redo.pop());full()};
+function prune(){for(const sc of Object.keys(D.o)){const m=D.o[sc];for(const k of Object.keys(m))if(!Object.keys(m[k]).length)delete m[k];if(!Object.keys(m).length)delete D.o[sc]}for(const sc of Object.keys(D.a))if(!D.a[sc].length)delete D.a[sc];D.v=1}
+const dirty=()=>{prune();return JSON.stringify(D)!==base};
+async function publish(){prune();try{await api('admin/design',{design:D});base=JSON.stringify(D);toast('✅ Опубликовано — все посетители видят новый дизайн')}catch(e){toast('❌ '+e.message)}}
+async function restoreServer(){
+  if(!confirm('Вернуть предыдущую опубликованную версию дизайна?'))return;
+  try{await api('admin/design-restore',{});D=norm(await api('design'));base=JSON.stringify(D);hist=[];redo=[];full();toast('Вернул предыдущую версию')}catch(e){toast('❌ '+e.message)}
+}
+function exit(){
+  if(dirty()&&!confirm('Есть неопубликованные изменения. Выйти без сохранения?'))return;
+  if(JSON.stringify(D)!==base)D=JSON.parse(base);
+  editing=false;document.body.classList.remove('dz-edit');const u=$('#dz-ui');if(u)u.remove();sel=null;selId=null;restoreAll();applyAll();
+}
+addEventListener('beforeunload',e=>{if(editing&&dirty()){e.preventDefault();e.returnValue=''}});
+
+// --- выбор и правка элемента ---
+function select(el){sel=el;selId=el?idOf(el):null;pan()}
+function syncSel(){
+  const p=$('#dz-page');if(p)p.value=KEYS.includes(st.page)?st.page:'home';
+  if(selId){const n=resolve(selId);if(n!==sel){sel=n;if(!n)selId=null;pan()}}
+}
+function pick(t){
+  if(!t||!t.closest||t.closest('#dz-ui'))return null;
+  if(t.closest('svg'))t=t.closest('svg');
+  if(t===document.body||t===document.documentElement||t.id==='dz-layer')return null;
+  if(t.classList&&t.classList.contains('navpill'))return t.parentElement;
+  return t.closest('body>header,#app,.dz-add')?t:null;
+}
+function upd(){
+  const o=ov(sel);if(!o)return;applyEl(sel,o);
+  if(sel.dataset.dzAdd){if(o.type==='img'){urlOk(o.src)?sel.src=o.src:sel.removeAttribute('src')}else if(o.type!=='box')sel.textContent=o.text||''}
+}
+function setProp(f,v){const o=ov(sel,true);if(!o)return;pushH();if(v===''||v==null)delete o[f];else o[f]=NUM.has(f)?+v:v;upd()}
+function setText(i,val){
+  if(!val.trim())return;const o=ov(sel,true),ns=tn(sel);if(!ns[i])return;pushH();
+  const orig=sel._dzt?sel._dzt[i]:ns[i].data,ld=orig.match(/^\s*/)[0],tr=orig.match(/\s*$/)[0];
+  if(!o.t)o.t=ns.map((n,j)=>sel._dzt?sel._dzt[j]:n.data);
+  o.t[i]=ld+val+tr;applyEl(sel,o);
+}
+function setG(f,v){pushH();if(v===''||v==null)delete D.g[f];else D.g[f]=v;applyGlobals()}
+function addEl(type){
+  const sc=$('#dz-allp').checked?'*':pageScope(),c=sc==='*'?layer():$('#app'),r=c.getBoundingClientRect();
+  const a={id:'n'+Date.now().toString(36)+Math.floor(Math.random()*999),type,x:Math.max(0,sn(innerWidth/2-r.left-70)),y:Math.max(0,sn(innerHeight/2-r.top-30))};
+  if(type==='text')a.text='Новый текст';
+  if(type==='btn'){a.text='Кнопка';a.href='shop'}
+  if(type==='img'||type==='box'){a.w=200;a.h=120;if(type==='img')a.src=''}
+  pushH(true);(D.a[sc]=D.a[sc]||[]).push(a);renderAdds(sc==='*'?'all':'page');
+  const el=document.querySelector('[data-dz-add="'+a.id+'"]');if(el)select(el);
+}
+function delAdd(){const id=sel.dataset.dzAdd;pushH(true);for(const sc of Object.keys(D.a))D.a[sc]=D.a[sc].filter(x=>x.id!==id);renderAdds();select(null)}
+function resetEl(){const sc=scopeOf(sel),k=keyOf(sel);pushH(true);applyEl(sel,{});if(D.o[sc])delete D.o[sc][k];pan()}
+
+function drag(e){
+  const o=ov(sel,true),el=sel;if(!o)return;const x0=+o.x||0,y0=+o.y||0,mx=e.clientX,my=e.clientY;let moved=false;
+  const mv=ev=>{const dx=ev.clientX-mx,dy=ev.clientY-my;if(!moved){if(Math.abs(dx)+Math.abs(dy)<4)return;moved=true;dragging=true;pushH(true)}o.x=sn(x0+dx);o.y=sn(y0+dy);applyEl(el,o);syncNums()};
+  const up=()=>{dragging=false;removeEventListener('pointermove',mv);removeEventListener('pointerup',up);removeEventListener('pointercancel',up)};
+  addEventListener('pointermove',mv);addEventListener('pointerup',up);addEventListener('pointercancel',up);
+}
+function resize(e,d){
+  if(!sel||innerWidth<GEO)return;const o=ov(sel,true),el=sel,r=el.getBoundingClientRect(),s0={w:r.width,h:r.height,x:+o.x||0,y:+o.y||0},mx=e.clientX,my=e.clientY;pushH(true);dragging=true;
+  const mv=ev=>{const dx=ev.clientX-mx,dy=ev.clientY-my;let w=s0.w,h=s0.h,x=s0.x,y=s0.y;
+    if(d.includes('e'))w+=dx;if(d.includes('w')){w-=dx;x+=dx}if(d.includes('s'))h+=dy;if(d.includes('n')){h-=dy;y+=dy}
+    o.w=Math.max(12,sn(w));o.h=Math.max(12,sn(h));o.x=sn(x);o.y=sn(y);applyEl(el,o);syncNums()};
+  const up=()=>{dragging=false;removeEventListener('pointermove',mv);removeEventListener('pointerup',up)};
+  addEventListener('pointermove',mv);addEventListener('pointerup',up);
+}
+function syncNums(){const o=ov(sel)||{},P=$('#dz-pan');if(!P)return;['x','y','w','h'].forEach(f=>{const i=P.querySelector('[data-f='+f+']');if(i&&document.activeElement!==i)i.value=o[f]==null?'':o[f]})}
+
+// --- панель свойств ---
+const fld=(l,f,v,ph,t,ex)=>`<label class="f"><span>${l}</span><input data-f="${f}" type="${t||'number'}" value="${v==null?'':e2(v)}" placeholder="${e2(ph==null?'':ph)}" ${ex||''}></label>`;
+const clr=(l,f,o,cur,at)=>`<label class="f"><span>${l}</span><span class="cr${o[f]?' set':''}"><input ${at||'data-f'}="${f}" type="color" value="${/^#[0-9a-f]{6}$/i.test(o[f]||'')?o[f]:cur}"><button ${at?'data-gclr':'data-clr'}="${f}" title="Сбросить">✕</button></span></label>`;
+const sel2=(l,f,o,opts,at)=>`<label class="f"><span>${l}</span><select ${at||'data-f'}="${f}">${opts.map(([v,n])=>`<option value="${v}"${String(o[f]||'')===v?' selected':''}>${n}</option>`).join('')}</select></label>`;
+const lbl=el=>{if(el.dataset.dzAdd)return'Свой элемент';const c=[...el.classList].find(x=>!/^(on|pop|bump|swap|enter|leave)$/.test(x)),t=(tn(el)[0]||{data:''}).data.trim().slice(0,20);return el.tagName.toLowerCase()+(c?'.'+c:'')+(t?' «'+t+'»':'')};
+function pan(){
+  const P=$('#dz-pan');if(!P)return;
+  P.innerHTML=`<div class="hd"><span>${sel?e2(lbl(sel)):'Весь сайт'}</span><button data-a="pc" title="Свернуть / развернуть">▁</button></div><div class="bd">${sel?elHTML():globHTML()}</div>`;
+}
+function elHTML(){
+  const o=ov(sel)||{},add=!!sel.dataset.dzAdd,cs=getComputedStyle(sel),r=sel.getBoundingClientRect(),t=add?o.type:'';
+  let h=`<div class="tl"><button data-a="up"${add?' disabled':''} title="Выбрать, в чём лежит этот элемент">⬆ Родитель</button><button data-a="down" title="Выбрать то, что внутри">⬇ Вложенный</button></div>`;
+  if(add){
+    if(t==='text'||t==='btn')h+=`<div class="sc">Текст</div><textarea data-f="text" rows="2">${e2(o.text||'')}</textarea>`;
+    if(t==='btn')h+=fld('Куда ведёт','href',o.href,'shop или https://…','text','list="dz-pages"')+`<datalist id="dz-pages">${KEYS.map(k=>`<option value="${k}">`).join('')}</datalist>`;
+    if(t==='img')h+=fld('Картинка','src',o.src,'https://…','text');
+  }else{
+    const ns=tn(sel);
+    if(ns.length)h+=`<div class="sc">Текст (числа и имена игроков подставляются сами — их лучше не трогать)</div>`+ns.map((n,i)=>`<textarea data-t="${i}" rows="2">${e2(n.data.trim())}</textarea>`).join('');
+  }
+  h+=`<div class="sc">Положение и размер${innerWidth<GEO?' (работает на экране шире 900 px)':''}</div><div class="g2">${fld('X','x',o.x,'0')}${fld('Y','y',o.y,'0')}${fld('Ширина','w',o.w,Math.round(r.width))}${fld('Высота','h',o.h,Math.round(r.height))}${fld('Угол °','r',o.r,'0')}${fld('Слой','z',o.z,'0')}</div>`;
+  h+=`<div class="sc">Вид</div>`+fld('Размер шрифта','fs',o.fs,parseInt(cs.fontSize))
+   +sel2('Толщина','fw',o,[['','как есть'],['400','обычный'],['600','полужирный'],['800','жирный']])
+   +sel2('Выравнивание','ta',o,[['','как есть'],['left','слева'],['center','по центру'],['right','справа']])
+   +clr('Цвет текста','c',o,toHex(cs.color))+clr('Фон','bg',o,toHex(cs.backgroundColor))+clr('Цвет рамки','bc',o,toHex(cs.borderTopColor))
+   +fld('Толщина рамки','bw',o.bw,'0')+fld('Скругление','br',o.br,parseInt(cs.borderTopLeftRadius)||0)+fld('Прозрачность %','op',o.op,'100');
+  h+=`<div class="tl"><button data-a="hide">${o.hid?'👁 Показать':'🙈 Скрыть'}</button><button data-a="zup">⬆ Вперёд</button><button data-a="zdn">⬇ Назад</button></div>`
+   +`<div class="tl">${add?'<button class="dng" data-a="del">🗑 Удалить</button>':'<button data-a="reset">↺ Сбросить элемент</button>'}</div>`
+   +`<p class="hint">Тяните элемент мышью. Стрелки — сдвиг на 1 px (Shift — на 10). Двойной клик — править текст. Delete — скрыть. Ctrl+Z — отмена. Клик мимо — настройки всего сайта.</p>`;
+  return h;
+}
+function globHTML(){
+  const G=D.g,cv=n=>toHex(getComputedStyle(document.documentElement).getPropertyValue(n).trim()||'#000');
+  return `<div class="sc">Цвета</div>`+clr('Фон страницы','bg',G,cv('--bg'),'data-g')+clr('Панели','panel',G,cv('--panel'),'data-g')+clr('Панели светлее','panel2',G,cv('--panel2'),'data-g')
+   +clr('Акцент (кнопки)','acc',G,toHex(getComputedStyle(document.documentElement).getPropertyValue('--acc')),'data-g')+clr('Цвет текста','tx',G,cv('--tx'),'data-g')
+   +`<div class="sc">Шрифт и фон</div>`+sel2('Шрифт','font',G,Object.entries(FONTS).map(([k,v])=>[k,v[0]]),'data-g')+fld('Фон-картинка','bgi',G.bgi,'https://…','text').replace('data-f="bgi"','data-g="bgi"')
+   +`<div class="tl"><button data-a="restore">⏪ Прошлая опубликованная версия</button></div><div class="tl"><button class="dng" data-a="resetall">Сбросить весь дизайн</button></div>`
+   +`<p class="hint">Кликните по любому элементу сайта, чтобы выбрать его, и тяните мышью. Свой текст, кнопку, картинку или блок добавляйте кнопками внизу. Пока вы не нажали «Опубликовать», изменения видите только вы. Положение и размеры работают на экранах шире 900 px, цвета и тексты — везде.</p>`;
+}
+function onPanel(e){
+  const t=e.target;
+  if(e.type==='input'||e.type==='change'){
+    if((e.type==='change')!==(t.tagName==='SELECT'))return;
+    if(t.dataset.f!==undefined)return setProp(t.dataset.f,t.value),t.type==='color'&&t.closest('.cr').classList.add('set');
+    if(t.dataset.t!==undefined)return setText(+t.dataset.t,t.value);
+    if(t.dataset.g!==undefined)return setG(t.dataset.g,t.value),t.type==='color'&&t.closest('.cr').classList.add('set');
+    return;
+  }
+  const b=t.closest('button');if(!b)return;
+  if(b.dataset.clr){setProp(b.dataset.clr,'');return pan()}
+  if(b.dataset.gclr){setG(b.dataset.gclr,'');return pan()}
+  const a=b.dataset.a,o=sel&&ov(sel,true);
+  if(a==='pc')$('#dz-pan').classList.toggle('col');
+  else if(a==='up'){const p=sel.parentElement;if(p&&p.closest('body>header,#app'))select(p)}
+  else if(a==='down'){if(sel.firstElementChild)select(sel.firstElementChild)}
+  else if(a==='hide'){pushH(true);o.hid?delete o.hid:o.hid=1;upd();pan()}
+  else if(a==='zup'){pushH();o.z=(+o.z||0)+1;upd();pan()}
+  else if(a==='zdn'){pushH();o.z=(+o.z||0)-1;upd();pan()}
+  else if(a==='del')delAdd();
+  else if(a==='reset')resetEl();
+  else if(a==='restore')restoreServer();
+  else if(a==='resetall'){if(confirm('Сбросить весь дизайн к заводскому? (опубликовано будет только после кнопки «Опубликовать»)')){pushH(true);D=norm({});selId=null;full()}}
+}
+
+// --- запуск редактора ---
+function start(){
+  if(editing||!(st.user&&st.user.isOwner))return;
+  editing=true;base=JSON.stringify(D);hist=[];redo=[];sel=null;selId=null;
+  document.body.classList.add('dz-edit');
+  const u=document.createElement('div');u.id='dz-ui';
+  u.innerHTML=`<div id="dz-bar"><b>🎨 Редактор</b><select id="dz-page" title="Страница">${KEYS.map(k=>`<option value="${k}">${NAMES[k]}</option>`).join('')}</select>
+   <button data-a="text">＋ Текст</button><button data-a="btn">＋ Кнопка</button><button data-a="img">＋ Картинка</button><button data-a="box">＋ Блок</button>
+   <label title="Добавлять новые элементы на все страницы"><input type="checkbox" id="dz-allp">на всех страницах</label>
+   <button data-a="undo" title="Ctrl+Z">↶</button><button data-a="redo" title="Ctrl+Y">↷</button>
+   <label><input type="checkbox" id="dz-snap" checked>сетка 10 px</label>
+   <button class="pri" data-a="pub">Опубликовать</button><button data-a="exit">Выйти</button></div>
+   <div id="dz-pan"></div><div id="dz-hov"></div><div id="dz-sel">${['n','s','e','w','ne','nw','se','sw'].map(d=>`<i class="dz-h" data-d="${d}"></i>`).join('')}</div><div id="dz-toast"></div>`;
+  document.body.appendChild(u);
+  $('#dz-page').onchange=e=>go(e.target.value);
+  $('#dz-snap').onchange=e=>{snapOn=e.target.checked};
+  $('#dz-bar').onclick=e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.a;
+    if(['text','btn','img','box'].includes(a))addEl(a);else if(a==='undo')undo();else if(a==='redo')redoF();else if(a==='pub')publish();else if(a==='exit')exit()};
+  const P=$('#dz-pan');P.addEventListener('input',onPanel);P.addEventListener('change',onPanel);P.addEventListener('click',onPanel);
+  P.addEventListener('pointerdown',e=>{const hd=e.target.closest('.hd');if(!hd||e.target.closest('button'))return;const r=P.getBoundingClientRect(),dx=e.clientX-r.left,dy=e.clientY-r.top;P.style.right='auto';
+    const mv=ev=>{P.style.left=Math.max(0,Math.min(innerWidth-80,ev.clientX-dx))+'px';P.style.top=Math.max(0,Math.min(innerHeight-40,ev.clientY-dy))+'px'};
+    const up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up)};addEventListener('pointermove',mv);addEventListener('pointerup',up)});
+  u.querySelectorAll('.dz-h').forEach(h=>h.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();resize(e,h.dataset.d)}));
+  restoreAll();go('home');applyAll();pan();requestAnimationFrame(loop);
+}
+function loop(){
+  if(!editing)return;
+  const B=$('#dz-sel');
+  if(selId&&(!sel||!sel.isConnected))sel=resolve(selId);
+  if(sel&&sel.isConnected){const r=sel.getBoundingClientRect();Object.assign(B.style,{display:'block',left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'})}else B.style.display='none';
+  requestAnimationFrame(loop);
+}
+// перехват мыши и клавиатуры в режиме правки
+const blk=e=>{if(editing&&!(e.target.closest&&e.target.closest('#dz-ui'))){e.preventDefault();e.stopPropagation();if(e.type==='dblclick'){const i=$('#dz-pan [data-t],#dz-pan [data-f=text]');if(i)i.focus()}}};
+['click','dblclick','contextmenu','auxclick','submit','mousedown','mouseup'].forEach(t=>document.addEventListener(t,blk,true));
+document.addEventListener('pointerdown',e=>{
+  if(!editing||e.button||(e.target.closest&&e.target.closest('#dz-ui')))return;
+  e.preventDefault();e.stopPropagation();
+  const el=pick(e.target);if(!el){select(null);return}
+  if(el!==sel)select(el);
+  if(innerWidth<GEO){toast('Перемещать можно на экране шире 900 px');return}
+  drag(e);
+},true);
+document.addEventListener('pointermove',e=>{
+  if(!editing)return;const H=$('#dz-hov');if(!H)return;
+  const el=dragging?null:pick(e.target);
+  if(!el||el===sel){H.style.display='none';return}
+  const r=el.getBoundingClientRect();Object.assign(H.style,{display:'block',left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'});
+},true);
+document.addEventListener('keydown',e=>{
+  if(!editing)return;
+  if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){if(e.key==='Escape')e.target.blur();return}
+  const k=e.key,mod=e.ctrlKey||e.metaKey;
+  if(mod&&k.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redoF():undo();return}
+  if(mod&&k.toLowerCase()==='y'){e.preventDefault();redoF();return}
+  if(k==='Escape'){select(null);return}
+  if(!sel)return;
+  if(k.startsWith('Arrow')&&innerWidth>=GEO){e.preventDefault();const o=ov(sel,true),s=e.shiftKey?10:1;pushH();
+    if(k==='ArrowLeft')o.x=(+o.x||0)-s;if(k==='ArrowRight')o.x=(+o.x||0)+s;if(k==='ArrowUp')o.y=(+o.y||0)-s;if(k==='ArrowDown')o.y=(+o.y||0)+s;applyEl(sel,o);syncNums()}
+  else if(k==='Delete'||k==='Backspace'){e.preventDefault();if(sel.dataset.dzAdd)delAdd();else{const o=ov(sel,true);pushH(true);o.hid=1;upd();pan()}}
+},true);
+
+// --- загрузка опубликованного дизайна (для всех посетителей) и кнопка в админ-панели ---
+window.DZ={start};
+const designCard=()=>`<h2 class="sec">Дизайн сайта</h2><div class="admin-tools"><button class="ok" onclick="DZ.start()">🎨 Открыть редактор дизайна</button></div><p class="stat" style="margin-bottom:10px">Двигайте любые кнопки и блоки мышью, меняйте цвета, шрифты и тексты, добавляйте свои элементы. Все увидят изменения только после «Опубликовать».</p>`;
+{const _a=adminOwnerSections;adminOwnerSections=function(){return(st.user&&st.user.isOwner?designCard():'')+_a.apply(this,arguments)}}
+{const _t=applyTheme;applyTheme=function(){_t.apply(this,arguments);applyGlobals()}}
+api('design').then(j=>{D=norm(j);base=JSON.stringify(D);applyAll()}).catch(()=>{});
+})();
+</script>
+
 </body>
 </html>
