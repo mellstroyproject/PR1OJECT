@@ -483,7 +483,7 @@ function head(){
   const menuItems=(st.user&&st.user.isAdmin?[['Админ-панель','shield',"go('admin')"]]:[]).concat([['Профиль','user'],['Скинченджер','skin'],['Хранилище','box'],['Настройки','gear',"go('settings')"]]);
   $('#right').innerHTML=st.user?
    `<div class="promo-wrap"><button class="promo-btn" onclick="togglePromo()">${I('promo')}Промокод</button>`+
-   (st.promoOpen?`<div class="promo-pop${promoFresh?' pop':''}"><input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="Введите код" aria-label="Промокод" autofocus><button onclick="activatePromo()">Активировать</button><div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?esc(st.promoMsg.text):''}</div></div>`:'')+
+   ''+
    `</div>`+
    (st.user.isAdmin?`<button class="promo-btn gold" onclick="go('admin')">${I('shield')}Админ-панель</button>`:'')+
    `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="alert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
@@ -1110,6 +1110,54 @@ async function agReset(){
     x.className='ripple';x.style.cssText='width:'+s+'px;height:'+s+'px;left:'+(e.clientX-r.left-s/2)+'px;top:'+(e.clientY-r.top-s/2)+'px';
     b.appendChild(x);setTimeout(()=>x.remove(),650);
   });
+})();
+</script>
+<style id="pm-css">
+#pm{position:fixed;inset:0;z-index:9000;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(5,6,12,.62);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#pm.on{display:flex;animation:pmfade .2s ease}
+#pm .pm-wrap{width:min(440px,100%);display:flex;flex-direction:column;gap:10px;animation:pmin .28s cubic-bezier(.2,.9,.3,1.1)}
+#pm .pm-card,#pm .pm-new{background:var(--panel);border:1px solid var(--line);border-radius:20px;box-shadow:0 20px 60px #000a}
+#pm .pm-card{padding:22px;display:flex;flex-direction:column;gap:14px}
+#pm .pm-top{display:flex;align-items:center;justify-content:space-between}
+#pm h2{font-size:22px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}
+#pm .pm-x{width:34px;height:34px;border-radius:50%;background:var(--panel2);font-size:16px}
+#pm .pm-x:hover{background:var(--line)}
+#pm input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:15px 16px;font:inherit;font-size:16px;color:var(--tx);text-transform:uppercase;letter-spacing:.06em}
+#pm input::placeholder{color:var(--mut);letter-spacing:.06em}
+#pm input:focus{outline:2px solid var(--acc);outline-offset:0}
+#pm .pm-go{background:var(--acc);color:var(--on-acc);border-radius:14px;padding:15px;font-weight:700;display:flex;gap:8px;align-items:center;justify-content:center}
+#pm .pm-go:hover{filter:brightness(1.1)}
+#pm .promo-msg{text-align:center}
+#pm .pm-new{padding:15px;font-weight:700;display:flex;gap:8px;align-items:center;justify-content:center}
+#pm .pm-new:hover{background:var(--panel2)}
+@keyframes pmfade{from{opacity:0}to{opacity:1}}
+@keyframes pmin{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
+</style>
+<script>
+// ===== Промокод: окно по центру экрана =====
+(()=>{
+let pm=document.getElementById('pm');
+if(!pm){pm=document.createElement('div');pm.id='pm';document.body.appendChild(pm)}
+function closePm(){st.promoOpen=false;st.promoMsg=null;head()}
+window.closePromo=closePm;
+pm.addEventListener('mousedown',e=>{if(e.target===pm)closePm()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&st.promoOpen)closePm()});
+const _h=head;
+head=function(){
+  _h.apply(this,arguments);
+  const open=!!(st.user&&st.promoOpen),was=pm.classList.contains('on');
+  pm.classList.toggle('on',open);
+  if(!open){pm.innerHTML='';return}
+  const v=pm.querySelector('input'),keep=was&&v&&document.activeElement===v;
+  pm.innerHTML=`<div class="pm-wrap" role="dialog" aria-modal="true" aria-label="Промокод"><div class="pm-card">
+    <div class="pm-top"><h2>Промокод</h2><button class="pm-x" aria-label="Закрыть" onclick="closePromo()">✕</button></div>
+    <input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="XXXXXXXX" aria-label="Промокод" autocomplete="off" spellcheck="false" maxlength="24">
+    <button class="pm-go" onclick="activatePromo()">${I('promo')}Активировать промокод</button>
+    <div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?esc(st.promoMsg.text):''}</div></div>
+    ${st.user.isOwner?`<button class="pm-new" onclick="st.promoOpen=false;go('admin')">+ Создать свой промокод</button>`:''}</div>`;
+  if(!was||keep||st.promoMsg){const n=pm.querySelector('input');n.focus();n.setSelectionRange(n.value.length,n.value.length)}
+};
+head();
 })();
 </script>
 <style id="dz-css">
