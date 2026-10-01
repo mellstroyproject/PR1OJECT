@@ -1130,32 +1130,81 @@ async function agReset(){
 #pm .promo-msg{text-align:center}
 #pm .pm-new{padding:15px;font-weight:700;display:flex;gap:8px;align-items:center;justify-content:center}
 #pm .pm-new:hover{background:var(--panel2)}
+#pm .pm-note{font-size:13px;line-height:1.45;color:var(--mut)}
+#pm .pm-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#pm input.pm-n{text-transform:none;letter-spacing:0;font-size:15px;padding:13px 14px}
+#pm input.pm-t::placeholder,#pm input.pm-n::placeholder{text-transform:none;letter-spacing:0}
+#pm .pm-cost{text-align:center;font-size:14px;color:var(--mut)}#pm .pm-cost b{color:var(--tx)}#pm .pm-cost .bad{color:var(--red)}
+#pm .pm-mine{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:6px;max-height:160px;overflow:auto}
+#pm .pm-h{font-size:13px;color:var(--mut)}
+#pm .pm-r{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:10px;padding:7px 8px 7px 12px}
+#pm .pm-c{font-weight:700;letter-spacing:.04em;flex:1;overflow:hidden;text-overflow:ellipsis}#pm .pm-u{font-size:12.5px;color:var(--mut)}
+#pm .pm-r button{width:26px;height:26px;border-radius:50%;background:var(--panel2);font-size:12px}#pm .pm-r button:hover{background:var(--red)}
+#pm .pm-logo{display:flex;justify-content:center;margin-bottom:-48px;position:relative;z-index:1;pointer-events:none}
+#pm .pm-logo img{width:96px;height:96px;border-radius:26px;object-fit:cover;border:3px solid var(--panel);box-shadow:0 10px 30px #000a;background:var(--acc)}
+#pm .pm-brand{text-align:center;font-size:19px;font-weight:800;letter-spacing:.01em}
+#pm .pm-brand.lg{padding-top:34px}
 @keyframes pmfade{from{opacity:0}to{opacity:1}}
 @keyframes pmin{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
 </style>
 <script>
-// ===== Промокод: окно по центру экрана =====
+// ===== Промокод: окно по центру экрана (активация и платное создание своего кода) =====
 (()=>{
 let pm=document.getElementById('pm');
 if(!pm){pm=document.createElement('div');pm.id='pm';document.body.appendChild(pm)}
-function closePm(){st.promoOpen=false;st.promoMsg=null;head()}
+const PM={view:'use',fee:100,mine:[],f:{code:'',coins:'',max:''},msg:null};
+const n=v=>Math.floor(+v)||0,cost=()=>n(PM.f.coins)>0&&n(PM.f.max)>0?n(PM.f.coins)*n(PM.f.max)+PM.fee:null;
+function closePm(){st.promoOpen=false;st.promoMsg=null;PM.view='use';PM.msg=null;head()}
 window.closePromo=closePm;
+function costText(){const c=cost(),t=document.getElementById('pmCost');if(!t)return;
+  t.innerHTML=c==null?'Укажите награду и число активаций':`${n(PM.f.coins)} × ${n(PM.f.max)} + ${PM.fee} за создание = <b>${c} монет</b>`+(st.user&&c>st.user.coins?' <span class="bad">— не хватает '+(c-st.user.coins).toFixed(0)+'</span>':'')}
+window.pmIn=(k,v)=>{PM.f[k]=v;costText()};
+window.pmBack=()=>{PM.view='use';PM.msg=null;head()};
+async function load(){try{const j=await api('promo-mine');PM.fee=j.fee;PM.mine=j.promos}catch(e){}head()}
+window.pmNew=()=>{if(st.user.isOwner){st.promoOpen=false;go('admin');return}PM.view='new';PM.msg=null;head();load()};
+window.pmCreate=async()=>{PM.msg=null;
+  try{const j=await api('promo-create',{code:PM.f.code.trim().toUpperCase(),coins:+PM.f.coins,max:+PM.f.max});
+    PM.f={code:'',coins:'',max:''};PM.msg={ok:true,text:'Код создан, списано '+j.cost+' монет'};await loadMe();await load()}
+  catch(e){PM.msg={ok:false,text:e.message};head()}};
+window.pmDel=async code=>{if(!confirm('Удалить код '+code+'? Монеты за неиспользованные активации вернутся, плата за создание — нет.'))return;
+  try{const j=await api('promo-delete-own',{code});PM.msg={ok:true,text:'Код удалён, возвращено '+j.refund+' монет'};await loadMe();await load()}
+  catch(e){PM.msg={ok:false,text:e.message};head()}};
 pm.addEventListener('mousedown',e=>{if(e.target===pm)closePm()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&st.promoOpen)closePm()});
+const src=()=>{const i=document.querySelector('body>header .logo img');return i&&i.getAttribute('src')||''};
+const logo=()=>src()?`<div class="pm-logo"><img src="${src()}" alt=""></div>`:'';
+const brand=()=>`<div class="pm-brand${src()?' lg':''}">MellstroyProject</div>`;
+const x=`<button class="pm-x" aria-label="Закрыть" onclick="closePromo()">✕</button>`;
 const _h=head;
 head=function(){
   _h.apply(this,arguments);
-  const open=!!(st.user&&st.promoOpen),was=pm.classList.contains('on');
+  const open=!!(st.user&&st.promoOpen),was=pm.classList.contains('on'),had=pm.dataset.v;
   pm.classList.toggle('on',open);
-  if(!open){pm.innerHTML='';return}
-  const v=pm.querySelector('input'),keep=was&&v&&document.activeElement===v;
-  pm.innerHTML=`<div class="pm-wrap" role="dialog" aria-modal="true" aria-label="Промокод"><div class="pm-card">
-    <div class="pm-top"><h2>Промокод</h2><button class="pm-x" aria-label="Закрыть" onclick="closePromo()">✕</button></div>
-    <input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="XXXXXXXX" aria-label="Промокод" autocomplete="off" spellcheck="false" maxlength="24">
-    <button class="pm-go" onclick="activatePromo()">${I('promo')}Активировать промокод</button>
-    <div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?esc(st.promoMsg.text):''}</div></div>
-    ${st.user.isOwner?`<button class="pm-new" onclick="st.promoOpen=false;go('admin')">+ Создать свой промокод</button>`:''}</div>`;
-  if(!was||keep||st.promoMsg){const n=pm.querySelector('input');n.focus();n.setSelectionRange(n.value.length,n.value.length)}
+  if(!open){pm.innerHTML='';pm.dataset.v='';return}
+  const cur=document.activeElement,keep=was&&cur&&pm.contains(cur)&&cur.tagName==='INPUT';
+  let body;
+  if(PM.view==='new'){
+    const m=PM.msg;
+    body=`<div class="pm-wrap" role="dialog" aria-modal="true" aria-label="Свой промокод">${logo()}<div class="pm-card">${brand()}
+     <div class="pm-top"><h2>Свой промокод</h2>${x}</div>
+     <p class="pm-note">Вы платите монетами с баланса (сейчас ${(+st.user.coins).toFixed(0)}): награда каждому × число активаций + ${PM.fee} за создание. Игроки вводят код и получают монеты.</p>
+     <input class="pm-t" value="${esc(PM.f.code)}" oninput="pmIn('code',this.value)" placeholder="Код: латиница, цифры, _ -" maxlength="24" autocomplete="off" spellcheck="false" aria-label="Код">
+     <div class="pm-row"><input class="pm-n" type="number" min="1" max="1000" value="${esc(PM.f.coins)}" oninput="pmIn('coins',this.value)" placeholder="Монет за активацию" aria-label="Монет за активацию"><input class="pm-n" type="number" min="1" max="500" value="${esc(PM.f.max)}" oninput="pmIn('max',this.value)" placeholder="Активаций" aria-label="Число активаций"></div>
+     <div class="pm-cost" id="pmCost"></div>
+     <button class="pm-go" onclick="pmCreate()">Создать промокод</button>
+     <div class="promo-msg ${m?(m.ok?'ok':'err'):''}">${m?esc(m.text):''}</div>
+     ${PM.mine.length?`<div class="pm-mine"><div class="pm-h">Мои коды</div>${PM.mine.map(p=>`<div class="pm-r"><span class="pm-c">${esc(p.code)}</span><span class="pm-u">${p.used} / ${p.max} · +${p.coins}</span><button onclick="pmDel('${esc(p.code)}')" aria-label="Удалить код">✕</button></div>`).join('')}</div>`:''}</div>
+     <button class="pm-new" onclick="pmBack()">← К активации</button></div>`;
+  }else{
+    body=`<div class="pm-wrap" role="dialog" aria-modal="true" aria-label="Промокод">${logo()}<div class="pm-card">${brand()}
+     <div class="pm-top"><h2>Промокод</h2>${x}</div>
+     <input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="XXXXXXXX" aria-label="Промокод" autocomplete="off" spellcheck="false" maxlength="24">
+     <button class="pm-go" onclick="activatePromo()">${I('promo')}Активировать промокод</button>
+     <div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?esc(st.promoMsg.text):''}</div></div>
+     <button class="pm-new" onclick="pmNew()">+ Создать свой промокод</button></div>`;
+  }
+  pm.innerHTML=body;pm.dataset.v=PM.view;costText();
+  if(!was||had!==PM.view||keep||st.promoMsg){const i=pm.querySelector('input');if(i){i.focus();if(i.setSelectionRange&&i.type!=='number')i.setSelectionRange(i.value.length,i.value.length)}}
 };
 head();
 })();
