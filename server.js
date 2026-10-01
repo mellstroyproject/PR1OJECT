@@ -24,7 +24,7 @@ const sign = v => crypto.createHmac('sha256', SECRET).update(v).digest('base64ur
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 async function init() {
   await db.query(`
@@ -37,6 +37,7 @@ async function init() {
       code text primary key, coins numeric not null, max int not null default 0,
       used int not null default 0, by text, at bigint);
     create table if not exists promo_used(steam_id text, code text, primary key(steam_id, code));
+    create table if not exists site_design(id int primary key, data text not null, prev text, updated_at bigint not null default 0);
     create table if not exists servers(id serial primary key, name text not null, address text not null);
     insert into servers(name,address) select 'Мираж (карта меняется)','45.95.31.64:27215' where not exists (select 1 from servers);
     create table if not exists bans(
@@ -399,6 +400,34 @@ app.post('/api/skin', level('user'), async (req, res) => {
     }
     res.json({ ok: true });
   } catch (e) { console.error('skin:', e.message); res.status(500).json({ error: 'Не удалось сохранить скин: ' + e.message }); }
+});
+
+// --- конструктор дизайна сайта (редактор в админ-панели, только владелец) ---
+let DESIGN = null;
+app.get('/api/design', async (req, res) => {
+  try {
+    if (DESIGN === null) DESIGN = (await db.query('select data from site_design where id=1')).rows[0]?.data || '{}';
+    res.set('Cache-Control', 'no-cache').type('json').send(DESIGN);
+  } catch (e) { console.error('design:', e.message); res.type('json').send('{}'); }
+});
+app.post('/api/admin/design', level('owner'), async (req, res) => {
+  try {
+    const d = req.body && req.body.design;
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return bad(res, 'Неверный формат дизайна');
+    const s = JSON.stringify(d);
+    if (s.length > 400000) return bad(res, 'Дизайн слишком большой');
+    await db.query(`insert into site_design(id,data,updated_at) values(1,$1,$2)
+      on conflict(id) do update set prev=site_design.data, data=excluded.data, updated_at=excluded.updated_at`, [s, Date.now()]);
+    DESIGN = s; res.json({ ok: true });
+  } catch (e) { console.error('design save:', e.message); res.status(500).json({ error: 'Не удалось сохранить дизайн' }); }
+});
+app.post('/api/admin/design-restore', level('owner'), async (req, res) => { // откат на предыдущую опубликованную версию
+  try {
+    const r = (await db.query('select prev from site_design where id=1')).rows[0];
+    if (!r || !r.prev) return bad(res, 'Предыдущей версии нет');
+    await db.query('update site_design set data=prev, prev=data, updated_at=$1 where id=1', [Date.now()]);
+    DESIGN = r.prev; res.json({ ok: true });
+  } catch (e) { console.error('design restore:', e.message); res.status(500).json({ error: 'Не удалось откатить дизайн' }); }
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
