@@ -241,7 +241,7 @@ async function deleteGameAdmin(id) { // убираем строку админа
 }
 
 // --- выдача VIP в игре при покупке Премиума (таблица vip_users плагина VIP) ---
-const VIP_GROUP = process.env.VIP_GROUP || 'VIP'; // название группы из groups.ini плагина VIP
+const VIP_GROUP = process.env.VIP_GROUP || 'Premium'; // название группы из groups.ini плагина VIP
 const STEAM64_BASE = 76561197960265728n;
 const accountId = id => Number(BigInt(id) - STEAM64_BASE); // SteamID64 -> account_id (SteamID3)
 async function vipSid(q) { // id сервера из vip_servers (если в таблице нет такой колонки — берём VIP_SID или 0)
