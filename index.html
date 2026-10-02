@@ -591,12 +591,15 @@ function adminOwnerSections(){
    <div class="admin-tools"><input id="depId" placeholder="SteamID64 игрока (17 цифр)" inputmode="numeric" maxlength="17" aria-label="SteamID64 зама"><button class="ok" onclick="addDeputy()">Назначить замом</button>${msg('deputy','depMsg')}</div>
    <p class="stat" style="margin-bottom:10px">Зам может кикать, мутить, банить и выдавать/снимать «Админ+». Промокоды и назначение замов доступны только владельцу.</p>
    ${deps.length?`<table><tr><th>Заместитель (SteamID64)</th><th>Назначен</th><th></th></tr>${deps.map(([id,d])=>`<tr><td><a class="lnk" href="https://steamcommunity.com/profiles/${id}" target="_blank" rel="noopener">${id}</a></td><td>${fmtDate(+d.at)}</td><td><button class="join del" onclick="removeDeputy('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока нет заместителей.</div>'}`;
+  const gaList=(st.user.adm&&st.user.adm.admins)||[];
+  const gaBlock=`<h2 class="sec">Все админы сервера</h2>
+    ${gaList.length?`<table><tr><th>Ник</th><th>SteamID64</th><th>Флаги</th><th>Иммунитет</th><th>Действует до</th><th></th></tr>${gaList.map(a=>`<tr><td>${esc(a.name||'—')}</td><td><a class="lnk" href="https://steamcommunity.com/profiles/${a.id}" target="_blank" rel="noopener">${a.id}</a></td><td>${esc(a.flags||'')}</td><td>${a.imm}</td><td class="${a.off||(a.end&&a.end*1000<=now)?'ban':'ok'}">${a.off?'отключён':!a.end?'навсегда':(a.end*1000>now?fmtDate(a.end*1000):'истёк '+fmtDate(a.end*1000))}</td><td>${a.id===OWNER_STEAM_ID?'':`<button class="join del" onclick="revokeAdmin('${a.id}')">Удалить</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">В базе игрового сервера нет админов (или база не подключена).</div>'}`;
   return `<h2 class="sec">Выдать админку</h2>
    <div class="admin-tools"><input id="grantId" placeholder="SteamID64 игрока (17 цифр)" inputmode="numeric" maxlength="17" aria-label="SteamID64">
      ${st.user.isOwner?`<input id="grantName" placeholder="Ник в игре (пусто = ник из Steam)" maxlength="64" aria-label="Ник"><input id="grantFlags" placeholder="Флаги (пусто = по умолчанию)" maxlength="26" aria-label="Флаги"><input id="grantImm" type="number" min="0" max="100" placeholder="Иммунитет 0–100 (пусто = по умолчанию)" aria-label="Иммунитет">`:''}
      <select id="grantDays" aria-label="Срок"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option><option value="180">180 дней</option><option value="0">Навсегда</option></select>
      <button class="ok" onclick="grantAdmin()">Выдать</button>${msg('grant','grantMsg')}</div>
-   ${grants.length?`<table><tr><th>Игрок (SteamID64)</th><th>Роль</th><th>Действует до</th><th></th></tr>${grants.map(([id,g])=>`<tr><td><a class="lnk" href="https://steamcommunity.com/profiles/${id}" target="_blank" rel="noopener">${id}</a></td><td>Админ+</td><td class="${+g.until>now?'ok':'ban'}">${+g.until>now?fmtDate(+g.until):'истёк '+fmtDate(+g.until)}</td><td><button class="join del" onclick="revokeAdmin('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока никому не выдано.</div>'}`+(st.user.isOwner?`${deputyBlock}
+   ${grants.length?`<table><tr><th>Игрок (SteamID64)</th><th>Роль</th><th>Действует до</th><th></th></tr>${grants.map(([id,g])=>`<tr><td><a class="lnk" href="https://steamcommunity.com/profiles/${id}" target="_blank" rel="noopener">${id}</a></td><td>Админ+</td><td class="${+g.until>now?'ok':'ban'}">${+g.until>now?fmtDate(+g.until):'истёк '+fmtDate(+g.until)}</td><td><button class="join del" onclick="revokeAdmin('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока никому не выдано.</div>'}`+(st.user.isOwner?`${gaBlock}${deputyBlock}
    <h2 class="sec">Промокоды</h2>
    <div class="admin-tools"><input id="pCode" placeholder="Код (например SUMMER100)" maxlength="24" aria-label="Код">
      <button onclick="genPromo()">Случайный</button>
@@ -703,7 +706,7 @@ async function adm(kind,path,body,ok){
   catch(e){adminMsgNow(MID[kind],e.message)}
 }
 function grantAdmin(){adm('grant','grant',{id:($('#grantId').value||'').trim(),name:($('#grantName')?.value||'').trim(),flags:($('#grantFlags')?.value||'').trim(),immunity:$('#grantImm')?.value||'',days:+$('#grantDays').value},'Админка выдана')}
-function revokeAdmin(id){adm('grant','revoke',{id},'Админка снята: '+id)}
+function revokeAdmin(id){if(!confirm('Удалить админа '+id+'? Строка будет удалена из базы игры, а срок Админ+ на сайте обнулится.'))return;adm('grant','revoke',{id},'Админка снята: '+id)}
 function addDeputy(){adm('deputy','deputy',{id:($('#depId').value||'').trim(),on:true},'Зам назначен')}
 function removeDeputy(id){adm('deputy','deputy',{id,on:false},'Зам снят: '+id)}
 function createPromo(){adm('promo','promo',{code:($('#pCode').value||'').trim().toUpperCase(),coins:+$('#pCoins').value,max:Math.floor(+$('#pMax').value||0)},'Промокод создан')}
