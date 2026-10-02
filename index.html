@@ -837,6 +837,7 @@ tr:hover td{background:rgba(var(--acc-rgb),.09)}
 <script>
 // ===== Скин-ченджер: страница «Скины» =====
 const SKN={data:null,mine:{skins:{},knife:null},cat:'Винтовки',w:'weapon_ak47',wear:0.01,seed:0,msg:'',busy:false,q:''};
+const skThumb=u=>'https://wsrv.nl/?w=320&output=webp&url='+encodeURIComponent(u); // маленькие картинки вместо оригиналов по 200+ КБ
 const skEsc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 {const n=document.getElementById('nav');if(n){n.innerHTML='';head()}}
 const _view=view;
@@ -866,7 +867,7 @@ function skinsView(){
     ${my?'<button class="join del" onclick="skPick(0)">Сбросить скин</button>':''}
   </div>
   <p class="stat">${skEsc(SKN.msg)}</p>
-  <div class="sk-grid">${list.map(s=>{const n=s[1].toLowerCase();return `<div class="sk-card${my&&my.paint===s[2]?' cur':''}" data-n="${skEsc(n)}" style="--c:${skEsc(s[4])}${q&&!n.includes(q)?';display:none':''}" onclick="skPick(${s[2]})"><img loading="lazy" src="${skEsc(s[3])}" alt=""><b>${skEsc(s[1])}</b></div>`}).join('')||'<div class="empty">Для этого оружия скинов нет</div>'}</div>`;
+  <div class="sk-grid">${list.map(s=>{const n=s[1].toLowerCase();return `<div class="sk-card${my&&my.paint===s[2]?' cur':''}" data-n="${skEsc(n)}" style="--c:${skEsc(s[4])}${q&&!n.includes(q)?';display:none':''}" onclick="skPick(${s[2]})"><img loading="lazy" decoding="async" src="${skEsc(skThumb(s[3]))}" data-o="${skEsc(s[3])}" onerror="this.onerror=null;this.src=this.dataset.o" alt=""><b>${skEsc(s[1])}</b></div>`}).join('')||'<div class="empty">Для этого оружия скинов нет</div>'}</div>`;
 }
 function skCat(c){SKN.cat=c;SKN.w=SKN.data.weapons.find(w=>w.cat===c).id;SKN.q='';draw()}
 function skW(id){SKN.w=id;SKN.q='';draw()}
