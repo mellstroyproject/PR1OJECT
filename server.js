@@ -323,7 +323,7 @@ app.post('/api/admin/deputy', level('owner'), async (req, res) => {
 });
 app.post('/api/admin/promo', level('owner'), async (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase(), coins = +req.body.coins, max = Math.floor(+req.body.max || 0);
-  if (!/^[A-Z0-9_-]{3,24}$/.test(code)) return bad(res, 'Код: 3–24 символа — латиница, цифры, _ или -');
+  if (!/^[\p{L}\p{N}_-]{2,32}$/u.test(code)) return bad(res, 'Код: 2–32 символа — буквы (в т.ч. русские), цифры, _ или -, без пробелов');
   if (!(coins > 0 && coins <= 100000)) return bad(res, 'Награда: число от 1 до 100 000');
   const r = await db.query('insert into promos(code,coins,max,by,at) values($1,$2,$3,$4,$5) on conflict do nothing', [code, coins, max, req.u.steam_id, Date.now()]);
   r.rowCount ? res.json({ ok: true }) : bad(res, 'Такой код уже существует');
