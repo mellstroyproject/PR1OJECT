@@ -1,7 +1,7 @@
-const express = require('express'), { Pool } = require('pg'), crypto = require('crypto'), path = require('path');
+const express = require('express'), { Pool } = require('pg'), crypto = require('crypto'), path = require('path'), dgram = require('dgram');
 const OWNER = '76561198659672678';
-const PRICE = { prem: [65, 200, 470, 840], plus: [150, 450, 1000, 1800, 3500] }; // как на сайте; последний у Админ+ — «Навсегда»
-const DAYS = [7, 30, 90, 180, 0], FOREVER = 1e15; // 0 дней = навсегда (только Админ+, индекс 4)
+const PRICE = { prem: [65, 200, 470, 840], plus: [150, 450, 1000, 1800] }; // как на сайте
+const DAYS = [7, 30, 90, 180], FOREVER = 1e15;
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 const mysql = require('mysql2/promise');
@@ -18,38 +18,6 @@ async function gameAdmin(id) { // админ игрового сервера (ik
   try { v = (await gq('select id,name,end_at from iks_admins where steam_id=? and is_disabled=0 and deleted_at is null and (end_at is null or end_at=0 or end_at>?) limit 1', [id, nowS()]))[0] || null; }
   catch (e) { console.error('iks_admins:', e.message); }
   gaCache.set(id, { t: Date.now(), v }); return v;
-}
-// --- профили Steam: ник и аватарка ---
-const profTry = new Map(); // steam_id -> время последней попытки обновления
-const okAvatar = a => typeof a === 'string' && /^https:\/\/[\w.-]+\.(steamstatic\.com|akamaihd\.net)\//i.test(a);
-async function fetchProfiles(ids) { // -> { steam_id: { name, avatar } }
-  const out = {};
-  if (process.env.STEAM_KEY && ids.length) {
-    try {
-      const j = await (await fetch(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${process.env.STEAM_KEY}&steamids=${ids.join(',')}`, { signal: AbortSignal.timeout(6000) })).json();
-      for (const p of j.response?.players || []) out[p.steamid] = { name: p.personaname, avatar: p.avatarfull };
-    } catch (e) { console.error('steam api:', e.message); }
-  }
-  for (const id of ids.filter(i => !out[i])) { // запасной путь без ключа: публичная XML-страница профиля
-    try {
-      const x = await (await fetch(`https://steamcommunity.com/profiles/${id}?xml=1`, { signal: AbortSignal.timeout(6000) })).text();
-      const g = t => (x.match(new RegExp(`<${t}>\\s*(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?\\s*</${t}>`)) || [])[1];
-      if (g('steamID')) out[id] = { name: g('steamID').trim(), avatar: (g('avatarFull') || '').trim().replace(/^http:/, 'https:') };
-    } catch (e) { console.error('steam xml:', e.message); }
-  }
-  return out;
-}
-async function refreshProfiles(rows) { // дописывает недостающие ник/аватарку в строки users и в базу (не чаще раза в 10 минут на игрока)
-  const need = rows.filter(r => (!r.avatar || !r.name || r.name === 'Игрок') && /^\d{17}$/.test(r.steam_id) && Date.now() - (profTry.get(r.steam_id) || 0) > 6e5).slice(0, 20);
-  if (!need.length) return;
-  need.forEach(r => profTry.set(r.steam_id, Date.now()));
-  const got = await fetchProfiles(need.map(r => r.steam_id));
-  for (const r of need) {
-    const p = got[r.steam_id]; if (!p) continue;
-    if (p.name) r.name = String(p.name).slice(0, 64);
-    if (okAvatar(p.avatar)) r.avatar = p.avatar;
-    await db.query('update users set name=$2, avatar=$3 where steam_id=$1', [r.steam_id, r.name || null, r.avatar || null]).catch(() => {});
-  }
 }
 const SECRET = process.env.SESSION_SECRET || 'change-me';
 const sign = v => crypto.createHmac('sha256', SECRET).update(v).digest('base64url');
@@ -85,7 +53,8 @@ async function getUser(req) {
   const m = (req.headers.cookie || '').match(/(?:^|;\s*)s=(\d{17})\.([\w-]+)/);
   if (!m || m[2] !== sign(m[1])) return null;
   const u = (await db.query('select * from users where steam_id=$1', [m[1]])).rows[0] || null;
-  if (u && Math.max(+u.plus_until, +u.grant_until) <= Date.now() && await gameAdmin(u.steam_id)) { if (!u.deputy) u.staff = true; u.deputy = true; } // штатные админы; купившие и получившие Админ+ сюда не входят
+  if (u) u.deputyReal = !!u.deputy; // назначен владельцем (в отличие от штатных админов игры, которые получают только базовые права)
+  if (u && Math.max(+u.plus_until, +u.grant_until) <= Date.now() && await gameAdmin(u.steam_id)) u.deputy = true; // штатные админы; купившие и получившие Админ+ сюда не входят
   return u;
 }
 const level = need => async (req, res, next) => {
@@ -98,7 +67,7 @@ const level = need => async (req, res, next) => {
 // --- права доступа: владелец выдаёт любому игроку отдельные права ---
 const PERMS = { ban: 'Банить и мутить', unban: 'Разбанивать и снимать мут', grant: 'Выдавать и снимать Админ+', promo: 'Промокоды', server: 'Серверы', design: 'Дизайн сайта' };
 const DEPUTY_PERMS = ['ban', 'unban', 'grant']; // что зам умеет «из коробки»
-const isFull = u => u.steam_id === OWNER || (!!u.deputy && !u.staff); // владелец и назначенные замы — всё одинаково; штатные админы игры (u.staff) — только DEPUTY_PERMS
+const isFull = u => u.steam_id === OWNER || !!u.deputyReal; // владелец и назначенные замы — полный доступ
 const permsOf = u => isFull(u) ? Object.keys(PERMS)
   : [...new Set([...(u.deputy ? DEPUTY_PERMS : []), ...String(u.perms || '').split(',').filter(p => PERMS[p])])];
 const can = perm => async (req, res, next) => {
@@ -107,9 +76,37 @@ const can = perm => async (req, res, next) => {
   if (!permsOf(u).includes(perm)) return res.status(403).json({ error: 'Нет прав: ' + PERMS[perm] });
   req.u = u; next();
 };
+const fullAccess = async (req, res, next) => {
+  const u = await getUser(req);
+  if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
+  if (!isFull(u)) return res.status(403).json({ error: 'Нет прав' });
+  req.u = u; next();
+};
 const bad = (res, error) => res.status(400).json({ error });
 const pub = u => ({ id: u.steam_id, name: u.name || 'Игрок', avatar: u.avatar, coins: +u.coins,
   plus: +u.plus_until, grant: +u.grant_until, deputy: !!u.deputy, full: isFull(u), perms: permsOf(u) });
+
+// --- профиль Steam: ник и аватарка (с ключом STEAM_KEY — через API, без ключа — через публичную XML-страницу профиля) ---
+const profCache = new Map(); // steam_id -> { t, v }
+async function steamProfile(id, fresh) {
+  const c = profCache.get(id); if (c && !fresh && Date.now() - c.t < 600000) return c.v;
+  let v = null;
+  try {
+    if (process.env.STEAM_KEY) {
+      const j = await (await fetch(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${process.env.STEAM_KEY}&steamids=${id}`, { signal: AbortSignal.timeout(6000) })).json();
+      const pl = j.response?.players?.[0]; if (pl) v = { name: pl.personaname, avatar: pl.avatarfull };
+    }
+    if (!v) {
+      const x = await (await fetch(`https://steamcommunity.com/profiles/${id}?xml=1`, { signal: AbortSignal.timeout(6000) })).text();
+      const g = tag => (x.match(new RegExp('<' + tag + '>\\s*(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?\\s*</' + tag + '>')) || [])[1];
+      const name = g('steamID'), avatar = g('avatarFull');
+      if (name || avatar) v = { name, avatar };
+    }
+  } catch (e) { console.error('steam profile:', e.message); }
+  if (v) v = { name: v.name ? String(v.name).trim().slice(0, 64) : null, avatar: v.avatar ? String(v.avatar).trim().replace(/^http:/, 'https:') : null };
+  profCache.set(id, v ? { t: Date.now(), v } : { t: Date.now() - 540000, v: null }); // при неудаче повторим через минуту
+  return v;
+}
 
 // --- вход через Steam ---
 app.get('/auth/steam', (req, res) => {
@@ -128,11 +125,9 @@ app.get('/auth/steam/callback', async (req, res) => {
     const t = await (await fetch('https://steamcommunity.com/openid/login', { method: 'POST', body: p })).text();
     const id = (p.get('openid.claimed_id') || '').match(/\/openid\/id\/(\d{17})$/)?.[1];
     if (!t.includes('is_valid:true') || !id) throw 0;
-    let name = null, avatar = null;
-    const pr = (await fetchProfiles([id]))[id];
-    if (pr) { name = pr.name ? String(pr.name).slice(0, 64) : null; avatar = okAvatar(pr.avatar) ? pr.avatar : null; }
+    const pr = await steamProfile(id, true); // не затираем уже известные ник и аватарку, если Steam не ответил
     await db.query(`insert into users(steam_id,name,avatar) values($1,$2,$3)
-      on conflict(steam_id) do update set name=coalesce(excluded.name, users.name), avatar=coalesce(excluded.avatar, users.avatar)`, [id, name, avatar]);
+      on conflict(steam_id) do update set name=coalesce(excluded.name, users.name), avatar=coalesce(excluded.avatar, users.avatar)`, [id, pr?.name ?? null, pr?.avatar ?? null]);
     res.setHeader('Set-Cookie', `s=${id}.${sign(id)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`);
     res.redirect('/');
   } catch (e) { res.status(403).send('Не удалось войти через Steam'); }
@@ -140,32 +135,34 @@ app.get('/auth/steam/callback', async (req, res) => {
 app.post('/auth/logout', (req, res) => { res.setHeader('Set-Cookie', 's=; Path=/; Max-Age=0'); res.json({ ok: true }); });
 
 // --- данные игрока ---
+app.get('/api/steam-profile', level('user'), async (req, res) => { // запасной путь для клиента: профиль только самого игрока
+  const pr = await steamProfile(req.u.steam_id);
+  pr ? res.json(pr) : res.status(404).json({ error: 'Профиль Steam недоступен' });
+});
 app.get('/api/me', async (req, res) => {
   const u = await getUser(req);
   if (!u) return res.json(null);
-  await refreshProfiles([u]); // если ника/аватарки нет — подтягиваем из Steam
+  if (!u.name || u.name === 'Игрок' || !u.avatar) {
+    const pr = await steamProfile(u.steam_id);
+    if (pr && (pr.name || pr.avatar)) {
+      await db.query('update users set name=coalesce($2,name), avatar=coalesce($3,avatar) where steam_id=$1', [u.steam_id, pr.name, pr.avatar]);
+      u.name = pr.name || u.name; u.avatar = pr.avatar || u.avatar;
+    }
+  }
   const out = pub(u);
   const P = out.perms;
   if (P.length) { // данные админ-панели отдаём только тем, кому они нужны по правам
-    const g = {}, d = {}, owner = u.steam_id === OWNER;
-    if (P.includes('grant')) { const rows = (await db.query('select * from users where grant_until>0')).rows; await refreshProfiles(rows);
-      rows.forEach(r => g[r.steam_id] = { until: +r.grant_until, by: r.grant_by, at: +r.grant_at, name: r.name, avatar: r.avatar }); }
-    if (owner) { const rows = (await db.query('select * from users where deputy')).rows; await refreshProfiles(rows);
-      rows.forEach(r => d[r.steam_id] = { by: r.dep_by, at: +r.dep_at, name: r.name, avatar: r.avatar }); }
+    const g = {}, d = {}, full = isFull(u);
+    if (P.includes('grant')) (await db.query('select * from users where grant_until>0')).rows.forEach(r => g[r.steam_id] = { until: +r.grant_until, by: r.grant_by, at: +r.grant_at });
+    if (full) (await db.query('select * from users where deputy')).rows.forEach(r => d[r.steam_id] = { by: r.dep_by, at: +r.dep_at });
     out.adm = { grants: g, deputies: d, promos: P.includes('promo') ? (await db.query('select * from promos order by at desc nulls last')).rows.map(p => ({ ...p, coins: +p.coins, at: +p.at })) : [] };
-    if (owner) {
+    if (full) { // владельцу и замам — все админы из базы игры (iks_admins), а не только выданные через сайт
       out.adm.perms = {};
-      const rows = (await db.query("select steam_id,name,avatar,perms from users where perms<>''")).rows; await refreshProfiles(rows);
-      rows.forEach(r => out.adm.perms[r.steam_id] = { name: r.name, avatar: r.avatar, perms: r.perms.split(',').filter(p => PERMS[p]) });
-    }
-    if (out.full) { // владельцу и замам — все админы из базы игры (iks_admins), а не только выданные через сайт
+      (await db.query("select steam_id,name,perms from users where perms<>''")).rows.forEach(r => out.adm.perms[r.steam_id] = { name: r.name, perms: r.perms.split(',').filter(p => PERMS[p]) });
       try {
         out.adm.admins = (await gq('select steam_id,name,flags,immunity,end_at,is_disabled from iks_admins where deleted_at is null order by id'))
           .filter(a => /^\d{17}$/.test(String(a.steam_id)))
           .map(a => ({ id: String(a.steam_id), name: a.name, flags: a.flags, imm: +a.immunity || 0, end: +a.end_at || 0, off: !!+a.is_disabled }));
-        const known = (await db.query('select steam_id,name,avatar from users where steam_id=any($1)', [out.adm.admins.map(a => a.id)])).rows; await refreshProfiles(known);
-        const byId = Object.fromEntries(known.map(r => [r.steam_id, r]));
-        out.adm.admins.forEach(a => { const k = byId[a.id]; if (k) { a.ava = k.avatar; a.site = k.name; } });
       } catch (e) { console.error('admins list:', e.message); out.adm.admins = []; }
     }
   }
@@ -246,16 +243,12 @@ app.post('/api/buy', level('user'), async (req, res) => {
   const col = key === 'plus' ? 'plus_until' : 'prem_until', days = DAYS[idx], prev = req.u[col];
   let nick = '';
   if (key === 'plus') {
-    await refreshProfiles([req.u]); // ник берём автоматически из Steam (если в базе его ещё нет — подтягиваем)
-    nick = String(req.u.name || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 32);
-    if (nick.length < 2 || nick === 'Игрок') nick = req.u.steam_id; // запасной вариант, если Steam не отдал ник
+    nick = String(req.body.nick || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 32); // ник, который попадёт в таблицу админов в игре
+    if (nick.length < 2) return bad(res, 'Введите ник для админки (от 2 до 32 символов)');
     const err = await adminPurchaseCheck(req.u.steam_id); if (err) return bad(res, err);
   }
-  const forever = days === 0; // «Навсегда»: срок = FOREVER, в игре end_at=0
-  const r = forever
-    ? await db.query(`update users set coins=coins-$1, ${col}=$2 where steam_id=$3 and coins>=$1 returning plus_until, grant_until`, [cost, FOREVER, req.u.steam_id])
-    : await db.query(`update users set coins=coins-$1, ${col}=greatest(${col},$2)+$3 where steam_id=$4 and coins>=$1 returning plus_until, grant_until`,
-        [cost, Date.now(), days * 864e5, req.u.steam_id]);
+  const r = await db.query(`update users set coins=coins-$1, ${col}=greatest(${col},$2)+$3 where steam_id=$4 and coins>=$1 returning plus_until, grant_until`,
+    [cost, Date.now(), days * 864e5, req.u.steam_id]);
   if (!r.rowCount) return bad(res, 'Недостаточно монет');
   if (key === 'plus') {
     try { await grantGameAdmin(req.u, Math.max(+r.rows[0].plus_until, +r.rows[0].grant_until), { name: nick }); }
@@ -286,8 +279,47 @@ app.post('/api/promo', level('user'), async (req, res) => {
 });
 
 // --- список серверов на странице Public ---
+// --- реальный онлайн: запрос A2S_INFO к игровому серверу по UDP (как делают мониторинги) ---
+function a2sInfo(host, port, timeout = 2500) {
+  return new Promise(resolve => {
+    const sock = dgram.createSocket('udp4');
+    let done = false, challenge = null;
+    const finish = v => { if (done) return; done = true; clearTimeout(timer); try { sock.close(); } catch (e) {} resolve(v); };
+    const timer = setTimeout(() => finish(null), timeout);
+    const req = ch => Buffer.concat([Buffer.from([0xFF, 0xFF, 0xFF, 0xFF, 0x54]), Buffer.from('Source Engine Query\0', 'latin1'), ...(ch ? [ch] : [])]);
+    sock.on('error', () => finish(null));
+    sock.on('message', buf => {
+      try {
+        if (buf.length < 6 || buf.readInt32LE(0) !== -1) return;
+        if (buf[4] === 0x41) { // сервер просит подтвердить запрос (challenge)
+          if (challenge) return finish(null);
+          challenge = buf.subarray(5, 9); return sock.send(req(challenge), port, host);
+        }
+        if (buf[4] !== 0x49) return;
+        let o = 6; // 4 байта заголовка + тип + версия протокола
+        const str = () => { const e = buf.indexOf(0, o); if (e < 0) throw new Error('bad packet'); const v = buf.toString('utf8', o, e); o = e + 1; return v; };
+        const name = str(), map = str(); str(); str(); // название, карта, папка, игра
+        o += 2; // app id
+        const players = buf[o], max = buf[o + 1], bots = buf[o + 2];
+        finish({ name, map, players, max, bots });
+      } catch (e) { finish(null); }
+    });
+    sock.send(req(null), port, host, err => err && finish(null));
+  });
+}
+const onlineCache = new Map(); // address -> { t, p } — не чаще раза в 15 секунд на сервер
+function serverOnline(address) {
+  const c = onlineCache.get(address); if (c && Date.now() - c.t < 15000) return c.p;
+  const m = String(address).trim().match(/^([^:\s]+):(\d{1,5})$/);
+  const p = m ? a2sInfo(m[1], +m[2]).then(i => i && { players: Math.max(0, i.players - i.bots), max: i.max, map: i.map }) : Promise.resolve(null);
+  onlineCache.set(address, { t: Date.now(), p });
+  return p;
+}
 app.get('/api/servers', async (req, res) => {
-  try { res.json((await db.query('select id,name,address from servers order by id')).rows); }
+  try {
+    const rows = (await db.query('select id,name,address from servers order by id')).rows;
+    res.json(await Promise.all(rows.map(async r => ({ ...r, online: await serverOnline(r.address) })))); // online: null — сервер не ответил
+  }
   catch (e) { console.error('servers:', e.message); res.json([]); }
 });
 app.post('/api/admin/server', can('server'), async (req, res) => {
@@ -339,7 +371,7 @@ app.post('/api/agent-reset', level('user'), async (req, res) => {
 app.post('/api/admin/grant', can('grant'), async (req, res) => {
   const { id, days } = req.body;
   if (!/^\d{17}$/.test(id) || id === OWNER) return bad(res, 'Неверный SteamID64 (17 цифр)');
-  const opts = {}; // ник, флаги и иммунитет могут задавать владелец и замы; штатный админ игры выдаёт со значениями по умолчанию
+  const opts = {}; // ник, флаги и иммунитет задают владелец и замы; остальные выдают со значениями по умолчанию
   if (isFull(req.u)) {
     const nick = String(req.body.name || '').trim().slice(0, 64), flags = String(req.body.flags || '').trim(), imm = req.body.immunity;
     if (flags && !/^[a-z]{1,26}$/i.test(flags)) return bad(res, 'Флаги — только латинские буквы, например z или abcdefj');
@@ -368,64 +400,20 @@ app.post('/api/admin/revoke', can('grant'), async (req, res) => {
   try {
     const row = (await db.query('select plus_until, grant_until, deputy from users where steam_id=$1', [id])).rows[0];
     if (!isFull(req.u) && (!row || row.deputy || !(+row.grant_until > 0 || +row.plus_until > 0)))
-      return bad(res, 'Вы можете снимать только админку, выданную через сайт или купленную. Остальных удаляет владелец или зам');
+      return bad(res, 'Зам может снимать только админку, выданную через сайт или купленную. Остальных удаляет владелец');
     await deleteGameAdmin(id); // сначала игра: если не вышло — на сайте ничего не меняем
     if (row) await db.query('update users set grant_until=0, plus_until=0 where steam_id=$1', [id]);
     res.json({ ok: true });
   } catch (e) { console.error('revoke:', e.message); res.status(500).json({ error: 'Не удалось удалить админа в игре: ' + e.message }); }
 });
-// --- редактирование админа в базе игры (iks_admins): ник, флаги, иммунитет, срок, вкл/выкл — владелец и замы ---
-const fullOnly = async (req, res, next) => {
-  const u = await getUser(req);
-  if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
-  if (!isFull(u)) return res.status(403).json({ error: 'Нет прав' });
-  req.u = u; next();
-};
-app.post('/api/admin/admin-edit', fullOnly, async (req, res) => {
-  try {
-    if (!game) return bad(res, 'База игрового сервера не подключена');
-    const b = req.body, id = String(b.id || '');
-    if (!/^\d{17}$/.test(id)) return bad(res, 'Неверный SteamID64');
-    if (id === OWNER && req.u.steam_id !== OWNER) return bad(res, 'Владельца может менять только он сам');
-    const ex = (await gq('select id from iks_admins where steam_id=? and deleted_at is null limit 1', [id]))[0];
-    if (!ex) return bad(res, 'Такого админа нет в базе игры');
-    const set = ['updated_at=?'], p = [nowS()];
-    const nick = String(b.name || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 64);
-    if (nick) { if (nick.length < 2) return bad(res, 'Ник — минимум 2 символа'); set.push('name=?'); p.push(nick); }
-    const flags = String(b.flags || '').trim();
-    if (flags) { if (!/^[a-z]{1,26}$/i.test(flags)) return bad(res, 'Флаги — только латинские буквы, например z или abcdefj'); set.push('flags=?'); p.push(flags); }
-    if (b.immunity !== undefined && b.immunity !== null && b.immunity !== '') {
-      const v = +b.immunity; if (!Number.isInteger(v) || v < 0 || v > 100) return bad(res, 'Иммунитет — целое число от 0 до 100');
-      set.push('immunity=?'); p.push(v);
-    }
-    if (typeof b.off === 'boolean') { set.push('is_disabled=?'); p.push(b.off ? 1 : 0); }
-    let end;
-    if (b.days !== undefined && b.days !== null && b.days !== '' && b.days !== 'keep') {
-      const d = +b.days; if (!Number.isFinite(d) || d < 0) return bad(res, 'Неверный срок');
-      end = d === 0 ? 0 : nowS() + Math.min(Math.floor(d), 3650) * 86400; // 0 = навсегда
-      set.push('end_at=?'); p.push(end);
-    }
-    await gq(`update iks_admins set ${set.join(',')} where id=?`, [...p, ex.id]);
-    gaCache.delete(id);
-    if (end !== undefined) await db.query('update users set grant_until=$2 where steam_id=$1 and grant_until>0', [id, end === 0 ? FOREVER : end * 1000]);
-    res.json({ ok: true });
-  } catch (e) { console.error('admin-edit:', e.message); res.status(500).json({ error: 'Не удалось изменить админа в игре: ' + e.message }); }
-});
-app.post('/api/admin/promo-edit', can('promo'), async (req, res) => {
-  const code = String(req.body.code || '').trim().toUpperCase(), coins = +req.body.coins, max = Math.floor(+req.body.max || 0);
-  if (!(coins > 0 && coins <= 100000)) return bad(res, 'Награда: число от 1 до 100 000');
-  if (max < 0) return bad(res, 'Лимит не может быть отрицательным');
-  const r = await db.query('update promos set coins=$2, max=$3 where code=$1', [code, coins, max]);
-  r.rowCount ? res.json({ ok: true }) : res.status(404).json({ error: 'Код не найден' });
-});
-app.post('/api/admin/deputy', level('owner'), async (req, res) => {
+app.post('/api/admin/deputy', fullAccess, async (req, res) => {
   const { id, on } = req.body;
   if (!/^\d{17}$/.test(id) || id === OWNER) return bad(res, 'Неверный SteamID64 (17 цифр)');
   await db.query('insert into users(steam_id) values($1) on conflict do nothing', [id]);
   await db.query('update users set deputy=$2, dep_by=$3, dep_at=$4 where steam_id=$1', [id, !!on, req.u.steam_id, Date.now()]);
   res.json({ ok: true });
 });
-app.post('/api/admin/perms', level('owner'), async (req, res) => {
+app.post('/api/admin/perms', fullAccess, async (req, res) => {
   const id = req.body.id, list = [...new Set((Array.isArray(req.body.perms) ? req.body.perms : []).map(String))];
   if (!/^\d{17}$/.test(id) || id === OWNER) return bad(res, 'Неверный SteamID64 (17 цифр)');
   if (list.some(p => !PERMS[p])) return bad(res, 'Неизвестное право');
