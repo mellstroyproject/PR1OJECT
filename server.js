@@ -280,19 +280,20 @@ app.post('/api/promo', level('user'), async (req, res) => {
 
 // --- список серверов на странице Public ---
 // --- реальный онлайн: запрос A2S_INFO к игровому серверу по UDP (как делают мониторинги) ---
+// возвращает { info } или { err } — причину, почему не получилось
 function a2sInfo(host, port, timeout = 2500) {
   return new Promise(resolve => {
     const sock = dgram.createSocket('udp4');
     let done = false, challenge = null;
-    const finish = v => { if (done) return; done = true; clearTimeout(timer); try { sock.close(); } catch (e) {} resolve(v); };
-    const timer = setTimeout(() => finish(null), timeout);
+    const finish = (info, err) => { if (done) return; done = true; clearTimeout(timer); try { sock.close(); } catch (e) {} resolve(info ? { info } : { err }); };
+    const timer = setTimeout(() => finish(null, 'таймаут: сервер не ответил на UDP-запрос'), timeout);
     const req = ch => Buffer.concat([Buffer.from([0xFF, 0xFF, 0xFF, 0xFF, 0x54]), Buffer.from('Source Engine Query\0', 'latin1'), ...(ch ? [ch] : [])]);
-    sock.on('error', () => finish(null));
+    sock.on('error', e => finish(null, 'ошибка сокета: ' + (e.code || e.message)));
     sock.on('message', buf => {
       try {
         if (buf.length < 6 || buf.readInt32LE(0) !== -1) return;
         if (buf[4] === 0x41) { // сервер просит подтвердить запрос (challenge)
-          if (challenge) return finish(null);
+          if (challenge) return finish(null, 'сервер снова запросил challenge');
           challenge = buf.subarray(5, 9); return sock.send(req(challenge), port, host);
         }
         if (buf[4] !== 0x49) return;
@@ -300,25 +301,41 @@ function a2sInfo(host, port, timeout = 2500) {
         const str = () => { const e = buf.indexOf(0, o); if (e < 0) throw new Error('bad packet'); const v = buf.toString('utf8', o, e); o = e + 1; return v; };
         const name = str(), map = str(); str(); str(); // название, карта, папка, игра
         o += 2; // app id
-        const players = buf[o], max = buf[o + 1], bots = buf[o + 2];
-        finish({ name, map, players, max, bots });
-      } catch (e) { finish(null); }
+        finish({ name, map, players: buf[o], max: buf[o + 1], bots: buf[o + 2] });
+      } catch (e) { finish(null, 'непонятный ответ сервера'); }
     });
-    sock.send(req(null), port, host, err => err && finish(null));
+    sock.send(req(null), port, host, e => e && finish(null, e.code === 'ENOTFOUND' ? 'адрес не найден (DNS)' : 'не удалось отправить запрос: ' + (e.code || e.message)));
   });
+}
+// запасной путь без UDP: список серверов Steam (нужен STEAM_KEY, сервер должен быть виден в общем списке)
+async function steamListInfo(host, port) {
+  if (!process.env.STEAM_KEY || !/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return null;
+  const url = 'https://api.steampowered.com/IGameServersService/GetServerList/v1/?limit=20&key=' + process.env.STEAM_KEY + '&filter=' + encodeURIComponent('\\addr\\' + host);
+  const j = await (await fetch(url, { signal: AbortSignal.timeout(5000) })).json();
+  const sv = (j.response?.servers || []).find(x => String(x.addr) === host + ':' + port || +x.gameport === port);
+  return sv ? { players: Math.max(0, (+sv.players || 0) - (+sv.bots || 0)), max: +sv.max_players || 0, map: sv.map || '' } : null;
 }
 const onlineCache = new Map(); // address -> { t, p } — не чаще раза в 15 секунд на сервер
 function serverOnline(address) {
   const c = onlineCache.get(address); if (c && Date.now() - c.t < 15000) return c.p;
-  const m = String(address).trim().match(/^([^:\s]+):(\d{1,5})$/);
-  const p = m ? a2sInfo(m[1], +m[2]).then(i => i && { players: Math.max(0, i.players - i.bots), max: i.max, map: i.map }) : Promise.resolve(null);
+  const p = (async () => {
+    const m = String(address).trim().match(/^([^:\s]+):(\d{1,5})$/);
+    if (!m) return { online: null, err: 'адрес должен быть вида ip:порт' };
+    const host = m[1], port = +m[2];
+    let r = await a2sInfo(host, port);
+    if (!r.info && /таймаут/.test(r.err)) r = await a2sInfo(host, port); // UDP-пакет мог потеряться — одна повторная попытка
+    if (r.info) return { online: { players: Math.max(0, r.info.players - r.info.bots), max: r.info.max, map: r.info.map }, err: null };
+    try { const v = await steamListInfo(host, port); if (v) return { online: v, err: null }; } catch (e) { console.error('steam server list:', e.message); }
+    console.error('online', address + ':', r.err);
+    return { online: null, err: r.err };
+  })();
   onlineCache.set(address, { t: Date.now(), p });
   return p;
 }
 app.get('/api/servers', async (req, res) => {
   try {
     const rows = (await db.query('select id,name,address from servers order by id')).rows;
-    res.json(await Promise.all(rows.map(async r => ({ ...r, online: await serverOnline(r.address) })))); // online: null — сервер не ответил
+    res.json(await Promise.all(rows.map(async r => { const o = await serverOnline(r.address); return { ...r, online: o.online, onlineErr: o.err }; }))); // online: null — сервер не ответил
   }
   catch (e) { console.error('servers:', e.message); res.json([]); }
 });
