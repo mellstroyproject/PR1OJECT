@@ -1,4 +1,4 @@
-const express = require('express'), { Pool } = require('pg'), crypto = require('crypto'), path = require('path'), dgram = require('dgram');
+const express = require('express'), { Pool } = require('pg'), crypto = require('crypto'), path = require('path'), dgram = require('dgram'), zlib = require('zlib');
 const OWNER = '76561198659672678';
 const PRICE = { prem: [65, 200, 470, 840], plus: [150, 450, 1000, 1800] }; // как на сайте
 const DAYS = [7, 30, 90, 180], FOREVER = 1e15;
@@ -104,7 +104,7 @@ async function steamProfile(id, fresh) {
     }
   } catch (e) { console.error('steam profile:', e.message); }
   if (v) v = { name: v.name ? String(v.name).trim().slice(0, 64) : null, avatar: v.avatar ? String(v.avatar).trim().replace(/^http:/, 'https:') : null };
-  profCache.set(id, v ? { t: Date.now(), v } : { t: Date.now() - 540000, v: null }); // при неудаче повторим через минуту
+  profCache.set(id, v ? { t: Date.now(), v } : { t: Date.now() - 300000, v: null }); // при неудаче повторим через 5 минут
   return v;
 }
 
@@ -135,6 +135,15 @@ app.get('/auth/steam/callback', async (req, res) => {
 app.post('/auth/logout', (req, res) => { res.setHeader('Set-Cookie', 's=; Path=/; Max-Age=0'); res.json({ ok: true }); });
 
 // --- данные игрока ---
+let gaList = { t: 0, v: [] };
+async function gameAdminsList() { // кэш на 20 секунд, чтобы медленная база игры не тормозила каждую загрузку страницы
+  if (Date.now() - gaList.t < 20000) return gaList.v;
+  const rows = await Promise.race([gq('select steam_id,name,flags,immunity,end_at,is_disabled from iks_admins where deleted_at is null order by id'),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('база игры отвечает слишком долго')), 4000))]);
+  gaList = { t: Date.now(), v: rows.filter(a => /^\d{17}$/.test(String(a.steam_id)))
+    .map(a => ({ id: String(a.steam_id), name: a.name, flags: a.flags, imm: +a.immunity || 0, end: +a.end_at || 0, off: !!+a.is_disabled })) };
+  return gaList.v;
+}
 app.get('/api/steam-profile', level('user'), async (req, res) => { // запасной путь для клиента: профиль только самого игрока
   const pr = await steamProfile(req.u.steam_id);
   pr ? res.json(pr) : res.status(404).json({ error: 'Профиль Steam недоступен' });
@@ -142,12 +151,15 @@ app.get('/api/steam-profile', level('user'), async (req, res) => { // запас
 app.get('/api/me', async (req, res) => {
   const u = await getUser(req);
   if (!u) return res.json(null);
-  if (!u.name || u.name === 'Игрок' || !u.avatar) {
-    const pr = await steamProfile(u.steam_id);
-    if (pr && (pr.name || pr.avatar)) {
-      await db.query('update users set name=coalesce($2,name), avatar=coalesce($3,avatar) where steam_id=$1', [u.steam_id, pr.name, pr.avatar]);
-      u.name = pr.name || u.name; u.avatar = pr.avatar || u.avatar;
-    }
+  if (!u.name || u.name === 'Игрок' || !u.avatar) { // профиль подтягиваем, но страницу из-за Steam не задерживаем (максимум 1.2 с, дальше догрузится само)
+    const upd = (async () => {
+      const pr = await steamProfile(u.steam_id);
+      if (pr && (pr.name || pr.avatar)) {
+        await db.query('update users set name=coalesce($2,name), avatar=coalesce($3,avatar) where steam_id=$1', [u.steam_id, pr.name, pr.avatar]);
+        u.name = pr.name || u.name; u.avatar = pr.avatar || u.avatar;
+      }
+    })().catch(e => console.error('profile:', e.message));
+    await Promise.race([upd, new Promise(r => setTimeout(r, 1200))]);
   }
   const out = pub(u);
   const P = out.perms;
@@ -159,11 +171,7 @@ app.get('/api/me', async (req, res) => {
     if (full) { // владельцу и замам — все админы из базы игры (iks_admins), а не только выданные через сайт
       out.adm.perms = {};
       (await db.query("select steam_id,name,perms from users where perms<>''")).rows.forEach(r => out.adm.perms[r.steam_id] = { name: r.name, perms: r.perms.split(',').filter(p => PERMS[p]) });
-      try {
-        out.adm.admins = (await gq('select steam_id,name,flags,immunity,end_at,is_disabled from iks_admins where deleted_at is null order by id'))
-          .filter(a => /^\d{17}$/.test(String(a.steam_id)))
-          .map(a => ({ id: String(a.steam_id), name: a.name, flags: a.flags, imm: +a.immunity || 0, end: +a.end_at || 0, off: !!+a.is_disabled }));
-      } catch (e) { console.error('admins list:', e.message); out.adm.admins = []; }
+      try { out.adm.admins = await gameAdminsList(); } catch (e) { console.error('admins list:', e.message); out.adm.admins = []; }
     }
   }
   res.json(out);
@@ -208,7 +216,7 @@ async function grantGameAdmin(u, untilMs, o = {}) { // o: { name, flags, immunit
         : /created_at|updated_at/.test(c.Field) ? n : (c.Null === 'NO' && c.Default === null ? (/int|decimal/i.test(c.Type) ? 0 : '') : c.Default);
       await q(`insert into iks_admin_to_server(${cols.map(c => '`' + c.Field + '`').join(',')}) values(${cols.map(() => '?').join(',')})`, cols.map(val));
     }
-    await conn.commit(); gaCache.delete(u.steam_id);
+    await conn.commit(); gaCache.delete(u.steam_id); gaList.t = 0;
   } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
 }
 async function deleteGameAdmin(id) { // убираем строку админа из iks_admins (и его привязку к серверу)
@@ -233,7 +241,7 @@ async function deleteGameAdmin(id) { // убираем строку админа
       await q('delete from iks_admin_to_server where admin_id=?', [r.id]);
       await q('delete from iks_admins where id=?', [r.id]);
     }
-    await conn.commit(); gaCache.delete(id);
+    await conn.commit(); gaCache.delete(id); gaList.t = 0;
   } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
 }
 
@@ -281,7 +289,7 @@ app.post('/api/promo', level('user'), async (req, res) => {
 // --- список серверов на странице Public ---
 // --- реальный онлайн: запрос A2S_INFO к игровому серверу по UDP (как делают мониторинги) ---
 // возвращает { info } или { err } — причину, почему не получилось
-function a2sInfo(host, port, timeout = 2500) {
+function a2sInfo(host, port, timeout = 1500) {
   return new Promise(resolve => {
     const sock = dgram.createSocket('udp4');
     let done = false, challenge = null;
@@ -311,13 +319,13 @@ function a2sInfo(host, port, timeout = 2500) {
 async function steamListInfo(host, port) {
   if (!process.env.STEAM_KEY || !/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return null;
   const url = 'https://api.steampowered.com/IGameServersService/GetServerList/v1/?limit=20&key=' + process.env.STEAM_KEY + '&filter=' + encodeURIComponent('\\addr\\' + host);
-  const j = await (await fetch(url, { signal: AbortSignal.timeout(5000) })).json();
+  const j = await (await fetch(url, { signal: AbortSignal.timeout(2500) })).json();
   const sv = (j.response?.servers || []).find(x => String(x.addr) === host + ':' + port || +x.gameport === port);
   return sv ? { players: Math.max(0, (+sv.players || 0) - (+sv.bots || 0)), max: +sv.max_players || 0, map: sv.map || '' } : null;
 }
-const onlineCache = new Map(); // address -> { t, p } — не чаще раза в 15 секунд на сервер
-function serverOnline(address) {
-  const c = onlineCache.get(address); if (c && Date.now() - c.t < 15000) return c.p;
+const onlineCache = new Map(); // address -> { t, v, p }
+function probeOnline(address) {
+  const e = onlineCache.get(address) || {};
   const p = (async () => {
     const m = String(address).trim().match(/^([^:\s]+):(\d{1,5})$/);
     if (!m) return { online: null, err: 'адрес должен быть вида ip:порт' };
@@ -325,12 +333,20 @@ function serverOnline(address) {
     let r = await a2sInfo(host, port);
     if (!r.info && /таймаут/.test(r.err)) r = await a2sInfo(host, port); // UDP-пакет мог потеряться — одна повторная попытка
     if (r.info) return { online: { players: Math.max(0, r.info.players - r.info.bots), max: r.info.max, map: r.info.map }, err: null };
-    try { const v = await steamListInfo(host, port); if (v) return { online: v, err: null }; } catch (e) { console.error('steam server list:', e.message); }
+    try { const v = await steamListInfo(host, port); if (v) return { online: v, err: null }; } catch (e2) { console.error('steam server list:', e2.message); }
     console.error('online', address + ':', r.err);
     return { online: null, err: r.err };
   })();
-  onlineCache.set(address, { t: Date.now(), p });
+  e.p = p; e.t = Date.now(); onlineCache.set(address, e);
+  p.then(v => { e.v = v; e.p = null; });
   return p;
+}
+function serverOnline(address) { // первый раз ждём ответ, дальше отдаём прежнее значение сразу, а свежее собираем в фоне (раз в 15 секунд)
+  const c = onlineCache.get(address);
+  if (!c) return probeOnline(address);
+  if (c.p) return c.v ? Promise.resolve(c.v) : c.p;
+  if (Date.now() - c.t > 15000) { const p = probeOnline(address); return c.v ? Promise.resolve(c.v) : p; }
+  return Promise.resolve(c.v);
 }
 app.get('/api/servers', async (req, res) => {
   try {
@@ -524,29 +540,51 @@ const WEAPONS = { // defindex, название, категория
   weapon_knife_canis: [518, 'Survival Knife', 'Ножи'], weapon_knife_ursus: [519, 'Ursus Knife', 'Ножи'], weapon_knife_gypsy_jackknife: [520, 'Navaja Knife', 'Ножи'],
   weapon_knife_outdoor: [521, 'Nomad Knife', 'Ножи'], weapon_knife_stiletto: [522, 'Stiletto Knife', 'Ножи'], weapon_knife_widowmaker: [523, 'Talon Knife', 'Ножи'],
   weapon_knife_skeleton: [525, 'Skeleton Knife', 'Ножи'], weapon_knife_kukri: [526, 'Kukri Knife', 'Ножи'] };
-let SKINS = { t: 0, list: [] };
-async function loadSkins() { // список скинов с картинками из открытой базы CS2, кэш на сутки
-  if (SKINS.list.length && Date.now() - SKINS.t < 864e5) return SKINS.list;
-  const r = await fetch('https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json');
-  if (!r.ok) throw new Error('Не удалось загрузить список скинов');
-  const byDef = {}, byName = {};
-  for (const [id, [def, name]] of Object.entries(WEAPONS)) { byDef[def] = id; byName[name.toLowerCase()] = id; }
-  const list = []; let skipped = 0;
-  for (const s of await r.json()) {
-    const p = +s.paint_index; if (!p) continue;
-    let w = s.weapon && s.weapon.id;
-    if (!WEAPONS[w]) w = byDef[+(s.weapon && s.weapon.weapon_id)] || byDef[+s.def_index]; // по номеру оружия
-    if (!WEAPONS[w]) w = byName[String(s.name).split(' | ')[0].replace(/^★\s*/, '').replace(/^StatTrak™\s*/, '').toLowerCase()]; // по названию
-    if (!WEAPONS[w] || !s.image) { skipped++; continue; }
-    const pat = String((s.pattern && s.pattern.name) || String(s.name).split(' | ')[1] || s.name);
-    list.push([w, pat + (s.phase ? ' (' + s.phase + ')' : ''), p, s.image, (s.rarity && s.rarity.color) || '#888']);
+let SKINS = { t: 0, list: [] }, skinsLoading = null, skinsGz = { t: -1, buf: null };
+function refreshSkins() { // каталог скинов из открытой базы CS2: качаем не больше одного раза одновременно и сохраняем в БД
+  if (!skinsLoading) skinsLoading = (async () => {
+    try {
+      const r = await fetch('https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json', { signal: AbortSignal.timeout(60000) });
+      if (!r.ok) throw new Error('Не удалось загрузить список скинов');
+      const byDef = {}, byName = {};
+      for (const [id, [def, name]] of Object.entries(WEAPONS)) { byDef[def] = id; byName[name.toLowerCase()] = id; }
+      const list = []; let skipped = 0;
+      for (const s of await r.json()) {
+        const p = +s.paint_index; if (!p) continue;
+        let w = s.weapon && s.weapon.id;
+        if (!WEAPONS[w]) w = byDef[+(s.weapon && s.weapon.weapon_id)] || byDef[+s.def_index]; // по номеру оружия
+        if (!WEAPONS[w]) w = byName[String(s.name).split(' | ')[0].replace(/^★\s*/, '').replace(/^StatTrak™\s*/, '').toLowerCase()]; // по названию
+        if (!WEAPONS[w] || !s.image) { skipped++; continue; }
+        const pat = String((s.pattern && s.pattern.name) || String(s.name).split(' | ')[1] || s.name);
+        list.push([w, pat + (s.phase ? ' (' + s.phase + ')' : ''), p, s.image, (s.rarity && s.rarity.color) || '#888']);
+      }
+      console.log('skins loaded:', list.length, 'knife skins:', list.filter(x => WEAPONS[x[0]][2] === 'Ножи').length, 'skipped:', skipped);
+      SKINS = { t: Date.now(), list };
+      db.query("insert into site(key,value) values('skins',$1) on conflict (key) do update set value=excluded.value", [JSON.stringify(SKINS)]).catch(e => console.error('skins save:', e.message));
+      return list;
+    } finally { skinsLoading = null; }
+  })();
+  return skinsLoading;
+}
+async function loadSkins() {
+  if (!SKINS.list.length) { // после перезапуска берём сохранённый каталог из БД — это быстро, GitHub не нужен
+    try {
+      const r = (await db.query("select value from site where key='skins'")).rows[0], v = r && JSON.parse(r.value);
+      if (v && Array.isArray(v.list) && v.list.length) SKINS = { t: +v.t || 0, list: v.list };
+    } catch (e) { console.error('skins db:', e.message); }
   }
-  console.log('skins loaded:', list.length, 'knife skins:', list.filter(x => WEAPONS[x[0]][2] === 'Ножи').length, 'skipped:', skipped);
-  SKINS = { t: Date.now(), list }; return list;
+  if (SKINS.list.length) { // устарел — отдаём прежний и обновляем в фоне
+    if (Date.now() - SKINS.t > 864e5) refreshSkins().catch(e => console.error('skins refresh:', e.message));
+    return SKINS.list;
+  }
+  return refreshSkins();
 }
 app.get('/api/skins', async (req, res) => {
-  try { res.json({ weapons: Object.entries(WEAPONS).map(([id, [def, name, cat]]) => ({ id, def, name, cat })), skins: await loadSkins() }); }
-  catch (e) { console.error('skins:', e.message); res.status(502).json({ error: e.message }); }
+  try {
+    const list = await loadSkins();
+    if (skinsGz.t !== SKINS.t) skinsGz = { t: SKINS.t, buf: zlib.gzipSync(JSON.stringify({ weapons: Object.entries(WEAPONS).map(([id, [def, name, cat]]) => ({ id, def, name, cat })), skins: list })) };
+    res.set({ 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'public, max-age=300' }).send(skinsGz.buf);
+  } catch (e) { console.error('skins:', e.message); res.status(502).json({ error: e.message }); }
 });
 app.get('/api/myskins', level('user'), async (req, res) => {
   try {
@@ -577,5 +615,5 @@ app.post('/api/skin', level('user'), async (req, res) => {
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-init().then(() => app.listen(process.env.PORT || 3000, () => console.log('ok')))
+init().then(() => app.listen(process.env.PORT || 3000, () => { console.log('ok'); setTimeout(() => { loadSkins().catch(e => console.error('skins warmup:', e.message)); agentCatalog().catch(() => {}); }, 2000); }))
   .catch(e => { console.error('DB error:', e.message); process.exit(1); });
