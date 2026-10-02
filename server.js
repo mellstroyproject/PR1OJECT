@@ -105,6 +105,13 @@ app.get('/api/me', async (req, res) => {
     (await db.query('select * from users where grant_until>0')).rows.forEach(r => g[r.steam_id] = { until: +r.grant_until, by: r.grant_by, at: +r.grant_at });
     (await db.query('select * from users where deputy')).rows.forEach(r => d[r.steam_id] = { by: r.dep_by, at: +r.dep_at });
     out.adm = { grants: g, deputies: d, promos: (await db.query('select * from promos order by at desc nulls last')).rows.map(p => ({ ...p, coins: +p.coins, at: +p.at })) };
+    if (u.steam_id === OWNER) { // владельцу — все админы из базы игры (iks_admins), а не только выданные через сайт
+      try {
+        out.adm.admins = (await gq('select steam_id,name,flags,immunity,end_at,is_disabled from iks_admins where deleted_at is null order by id'))
+          .filter(a => /^\d{17}$/.test(String(a.steam_id)))
+          .map(a => ({ id: String(a.steam_id), name: a.name, flags: a.flags, imm: +a.immunity || 0, end: +a.end_at || 0, off: !!+a.is_disabled }));
+      } catch (e) { console.error('admins list:', e.message); out.adm.admins = []; }
+    }
   }
   res.json(out);
 });
@@ -151,10 +158,30 @@ async function grantGameAdmin(u, untilMs, o = {}) { // o: { name, flags, immunit
     await conn.commit(); gaCache.delete(u.steam_id);
   } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
 }
-async function revokeGameAdmin(id, keepUntilMs) { // снять админку в игре (или оставить до конца купленного срока)
-  const n = nowS(), end = keepUntilMs > Date.now() && keepUntilMs < FOREVER ? Math.floor(keepUntilMs / 1000) : n;
-  await gq('update iks_admins set end_at=?, updated_at=? where steam_id=? and deleted_at is null', [end, n, id]);
-  gaCache.delete(id);
+async function deleteGameAdmin(id) { // убираем строку админа из iks_admins (и его привязку к серверу)
+  const conn = await game.getConnection();
+  try {
+    await conn.beginTransaction();
+    const q = async (sql, p) => (await conn.query(sql, p))[0];
+    const rows = await q('select id from iks_admins where steam_id=?', [id]);
+    // внешние ключи на iks_admins (баны/муты ссылаются на админа): CASCADE снёс бы чужие записи, RESTRICT не дал бы удалить
+    let fks = [];
+    try {
+      fks = await q(`select k.TABLE_NAME as t, k.COLUMN_NAME as c, r.DELETE_RULE as d from information_schema.KEY_COLUMN_USAGE k
+        join information_schema.REFERENTIAL_CONSTRAINTS r on r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA and r.CONSTRAINT_NAME=k.CONSTRAINT_NAME and r.TABLE_NAME=k.TABLE_NAME
+        where k.TABLE_SCHEMA=database() and k.REFERENCED_TABLE_NAME='iks_admins'`);
+    } catch (e) { console.error('fk check:', e.message); }
+    for (const f of fks) {
+      if (f.t === 'iks_admin_to_server') continue;
+      if (f.d === 'CASCADE') throw new Error(`в базе у таблицы ${f.t} стоит ON DELETE CASCADE на iks_admins — вместе с админом удалились бы и её записи. Смените правило на SET NULL`);
+    }
+    for (const r of rows) {
+      for (const f of fks) if (f.t !== 'iks_admin_to_server' && /RESTRICT|NO ACTION/.test(f.d)) await q(`update \`${f.t}\` set \`${f.c}\`=NULL where \`${f.c}\`=?`, [r.id]);
+      await q('delete from iks_admin_to_server where admin_id=?', [r.id]);
+      await q('delete from iks_admins where id=?', [r.id]);
+    }
+    await conn.commit(); gaCache.delete(id);
+  } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
 }
 
 app.post('/api/buy', level('user'), async (req, res) => {
@@ -277,11 +304,15 @@ app.post('/api/admin/grant', level('manage'), async (req, res) => {
 app.post('/api/admin/revoke', level('manage'), async (req, res) => {
   const id = req.body.id;
   if (!/^\d{17}$/.test(id)) return bad(res, 'Неверный SteamID64');
+  if (id === OWNER) return bad(res, 'Нельзя снять админку с владельца');
   try {
-    const row = (await db.query('select plus_until, grant_until from users where steam_id=$1', [id])).rows[0];
-    if (row && +row.grant_until > 0) await revokeGameAdmin(id, +row.plus_until); // купленный Админ+ остаётся до конца срока
-    await db.query('update users set grant_until=0 where steam_id=$1', [id]); res.json({ ok: true });
-  } catch (e) { console.error('revoke:', e.message); res.status(500).json({ error: 'Не удалось снять админку в игре: ' + e.message }); }
+    const row = (await db.query('select plus_until, grant_until, deputy from users where steam_id=$1', [id])).rows[0];
+    if (req.u.steam_id !== OWNER && (!row || row.deputy || !(+row.grant_until > 0 || +row.plus_until > 0)))
+      return bad(res, 'Зам может снимать только админку, выданную через сайт или купленную. Остальных удаляет владелец');
+    await deleteGameAdmin(id); // сначала игра: если не вышло — на сайте ничего не меняем
+    if (row) await db.query('update users set grant_until=0, plus_until=0 where steam_id=$1', [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error('revoke:', e.message); res.status(500).json({ error: 'Не удалось удалить админа в игре: ' + e.message }); }
 });
 app.post('/api/admin/deputy', level('owner'), async (req, res) => {
   const { id, on } = req.body;
@@ -341,11 +372,7 @@ app.post('/api/admin/unban', level('manage'), async (req, res) => {
   try {
     const t = String(req.body.target || '').trim(), T = req.body.kind === 'mutes' ? 'iks_comms' : 'iks_bans';
     if (!/^\d{17}$/.test(t)) return bad(res, 'Укажите SteamID64 игрока (17 цифр)');
-    const adm = await gameAdmin(req.u.steam_id);
-    if (!adm) return bad(res, 'Вашего SteamID нет в списке админов игрового сервера (iks_admins)');
-    const n = nowS();
-    const r = await gq(`update ${T} set unbanned_by=?, unban_reason=?, updated_at=?, deleted_at=? where steam_id=? and unbanned_by is null and deleted_at is null and (end_at=0 or end_at>?)`,
-      [adm.id, String(req.body.reason || 'Разбан с сайта').slice(0, 120), n, n, t, n]);
+    const r = await gq(`delete from ${T} where steam_id=? and unbanned_by is null and deleted_at is null and (end_at=0 or end_at>?)`, [t, nowS()]);
     res.json({ ok: true, count: r.affectedRows });
   } catch (e) { console.error('unban:', e.message); res.status(500).json({ error: 'Не удалось изменить базу игрового сервера: ' + e.message }); }
 });
