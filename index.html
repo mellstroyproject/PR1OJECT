@@ -480,7 +480,7 @@ function head(){
   const coinsChanged=logged&&prev.logged&&from!==null&&coins!==from,loginChanged=logged!==prev.logged;
   prev.menu=st.menu;prev.promo=st.promoOpen;prev.logged=logged;prev.coins=logged?coins:null;
   $('#right').classList.toggle('swap',loginChanged);
-  const menuItems=(st.user&&st.user.isAdmin?[['Админ-панель','shield',"go('admin')"]]:[]).concat([['Профиль','user'],['Скинченджер','skin'],['Хранилище','box'],['Настройки','gear',"go('settings')"]]);
+  const menuItems=(st.user&&st.user.isAdmin?[['Админ-панель','shield',"go('admin')"]]:[]).concat([['Профиль','user',"go('settings')"],['Скинченджер','skin',"go('skins')"]]);
   $('#right').innerHTML=st.user?
    `<div class="promo-wrap"><button class="promo-btn" onclick="togglePromo()">${I('promo')}Промокод</button>`+
    (st.promoOpen?`<div class="promo-pop${promoFresh?' pop':''}"><input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="Введите код" aria-label="Промокод" autofocus><button onclick="activatePromo()">Активировать</button><div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?esc(st.promoMsg.text):''}</div></div>`:'')+
@@ -489,7 +489,7 @@ function head(){
    `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="alert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
    `<button class="ava" aria-label="Профиль" style="${st.user.avatar?`background-image:url('${st.user.avatar}')`:''}" onclick="st.menu=!st.menu;st.promoOpen=false;head()">${st.user.avatar?'':esc((st.user.name||'?').trim().charAt(0).toUpperCase())}</button>`+
    `<button class="gear${st.page==='settings'?' on':''}" aria-label="Настройки" title="Настройки" onclick="go('settings')">${I('gear')}</button>`+
-   (st.menu?`<div class="menu${menuFresh?' pop':''}"><div class="menu-user">${esc(st.user.name||'Игрок')}</div>${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти</button></div>`:'')
+   (st.menu?`<div class="menu${menuFresh?' pop':''}"><div class="menu-user">${esc(st.user.name||'Игрок')}</div>${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти из аккаунта</button></div>`:'')
    :`<button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button><a class="demo" href="#" onclick="demoLogin();return false">демо</a>`;
   if(coinsChanged&&!reduce)countTo(from,coins);
 }
@@ -505,8 +505,8 @@ function view(){
   if(st.page==='rules') return `<h1>Правила</h1><div class="rules"><div class="side">${rcats.map((c,i)=>`<button class="${st.rule===i?'on':''}" onclick="st.rule=${i};draw()">${c}</button>`).join('')}</div><div class="empty">Раздел «${rcats[st.rule]}»: текст правил добавим позже.</div></div>`;
   if(st.page==='settings'){
     const u=st.user;
-    if(!u) return `<h1>Настройки</h1><div class="empty">Вы не вошли в аккаунт. Войдите через Steam, чтобы увидеть настройки.<br><br><button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button></div>${themeCard()}`;
-    return `<h1>Настройки</h1>
+    if(!u) return `<h1>Профиль</h1><div class="empty">Вы не вошли в аккаунт. Войдите через Steam, чтобы увидеть профиль.<br><br><button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button></div>${themeCard()}`;
+    return `<h1>Профиль</h1>
      <div class="set-card"><div class="set-ava" style="${u.avatar?`background-image:url('${u.avatar}')`:''}">${u.avatar?'':esc((u.name||'?').trim().charAt(0).toUpperCase())}</div>
        <div><div class="set-name">${esc(u.name||'Игрок')}${u.role?`<span class="admin-badge">${u.role}</span>`:''}</div><div class="stat">SteamID: ${esc(u.id)}</div><div class="stat">Баланс: ${(u.coins||0).toFixed(2)}</div></div></div>
      ${themeCard()}
