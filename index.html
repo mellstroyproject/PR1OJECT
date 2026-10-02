@@ -688,15 +688,8 @@ async function logout(){
 }
 async function buyPlan(key,name){
   if(!st.user){alert('Сначала войдите через Steam, чтобы купить');return}
-  let nick;
-  if(key==='plus'){
-    const p=prompt('Введите ник, под которым вы будете админом в игре (2–32 символа):',(st.user.name||'').slice(0,32));
-    if(p===null)return;
-    nick=p.trim();
-    if(nick.length<2||nick.length>32){alert('Ник должен быть от 2 до 32 символов');return}
-  }
   try{
-    await api('buy',{key,idx:st.plan[key],nick});await loadMe();
+    await api('buy',{key,idx:st.plan[key]});await loadMe();
     alert(`Покупка успешна: ${name} на ${periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
   }catch(e){alert(e.message)}
 }
