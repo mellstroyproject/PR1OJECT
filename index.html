@@ -601,7 +601,7 @@ function adminOwnerSections(){
      <button class="ok" onclick="grantAdmin()">Выдать</button>${msg('grant','grantMsg')}</div>
    ${grants.length?`<table><tr><th>Игрок (SteamID64)</th><th>Роль</th><th>Действует до</th><th></th></tr>${grants.map(([id,g])=>`<tr><td><a class="lnk" href="https://steamcommunity.com/profiles/${id}" target="_blank" rel="noopener">${id}</a></td><td>Админ+</td><td class="${+g.until>now?'ok':'ban'}">${+g.until>now?fmtDate(+g.until):'истёк '+fmtDate(+g.until)}</td><td><button class="join del" onclick="revokeAdmin('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока никому не выдано.</div>'}`+(st.user.isOwner?`${gaBlock}${deputyBlock}
    <h2 class="sec">Промокоды</h2>
-   <div class="admin-tools"><input id="pCode" placeholder="Код (например SUMMER100)" maxlength="24" aria-label="Код">
+   <div class="admin-tools"><input id="pCode" placeholder="Код (например SUMMER100 или ЛЕТО2026)" maxlength="32" aria-label="Код">
      <button onclick="genPromo()">Случайный</button>
      <input id="pCoins" type="number" min="1" max="100000" placeholder="Награда, монет" aria-label="Награда">
      <input id="pMax" type="number" min="0" placeholder="Лимит активаций (0 = без лимита)" aria-label="Лимит">
