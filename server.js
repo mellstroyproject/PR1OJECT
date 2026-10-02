@@ -24,7 +24,7 @@ const sign = v => crypto.createHmac('sha256', SECRET).update(v).digest('base64ur
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json());
 
 async function init() {
   await db.query(`
@@ -37,7 +37,6 @@ async function init() {
       code text primary key, coins numeric not null, max int not null default 0,
       used int not null default 0, by text, at bigint);
     create table if not exists promo_used(steam_id text, code text, primary key(steam_id, code));
-    create table if not exists site_design(id int primary key, data text not null, prev text, updated_at bigint not null default 0);
     create table if not exists servers(id serial primary key, name text not null, address text not null);
     insert into servers(name,address) select 'Мираж (карта меняется)','45.95.31.64:27215' where not exists (select 1 from servers);
     create table if not exists bans(
@@ -122,7 +121,7 @@ async function adminPurchaseCheck(id, self = true) {
   return null;
 }
 // untilMs — до какого момента админка по данным сайта (>= FOREVER — навсегда, в игре end_at=0)
-async function grantGameAdmin(u, untilMs, opt = {}) { // opt: { name, flags, immunity } — задаёт только владелец
+async function grantGameAdmin(u, untilMs, o = {}) { // o: { name, flags, immunity } — необязательно, иначе значения по умолчанию
   const conn = await game.getConnection();
   try {
     await conn.beginTransaction();
@@ -132,14 +131,14 @@ async function grantGameAdmin(u, untilMs, opt = {}) { // opt: { name, flags, imm
     let adminId;
     if (ex) { // включаем обратно; срок не уменьшаем, если в игре он уже длиннее
       adminId = ex.id;
-      const sets = ['end_at=?', 'is_disabled=0', 'deleted_at=NULL', 'updated_at=?'], vals = [end === 0 ? 0 : Math.max(+ex.end_at || 0, end), n];
-      if (opt.name) { sets.push('name=?'); vals.push(opt.name); }
-      if (opt.flags) { sets.push('flags=?'); vals.push(opt.flags); }
-      if (opt.immunity !== undefined) { sets.push('immunity=?'); vals.push(opt.immunity); }
-      await q('update iks_admins set ' + sets.join(', ') + ' where id=?', [...vals, ex.id]);
+      const set = ['end_at=?', 'is_disabled=0', 'deleted_at=NULL', 'updated_at=?'], p = [end === 0 ? 0 : Math.max(+ex.end_at || 0, end), n];
+      if (o.name) { set.push('name=?'); p.push(o.name); }
+      if (o.flags) { set.push('flags=?'); p.push(o.flags); }
+      if (o.immunity !== undefined) { set.push('immunity=?'); p.push(o.immunity); }
+      await q(`update iks_admins set ${set.join(',')} where id=?`, [...p, ex.id]);
     } else {
       adminId = (await q('insert into iks_admins(steam_id,name,flags,immunity,is_disabled,end_at,created_at,updated_at) values(?,?,?,?,0,?,?,?)',
-        [u.steam_id, String(opt.name || u.name || u.steam_id).slice(0, 64), opt.flags || ADMIN_FLAGS, opt.immunity !== undefined ? opt.immunity : ADMIN_IMMUNITY, end, n, n])).insertId;
+        [u.steam_id, String(o.name || u.name || u.steam_id).slice(0, 64), o.flags || ADMIN_FLAGS, o.immunity ?? ADMIN_IMMUNITY, end, n, n])).insertId;
     }
     // привязка админа к серверу (iks_admin_to_server) — проверяем и у существующих, иначе в игре прав не будет
     if (!(await q('select 1 from iks_admin_to_server where admin_id=? limit 1', [adminId])).length) {
@@ -162,12 +161,17 @@ app.post('/api/buy', level('user'), async (req, res) => {
   const { key, idx } = req.body, cost = PRICE[key]?.[idx];
   if (cost === undefined) return bad(res, 'Неверный тариф');
   const col = key === 'plus' ? 'plus_until' : 'prem_until', days = DAYS[idx], prev = req.u[col];
-  if (key === 'plus') { const err = await adminPurchaseCheck(req.u.steam_id); if (err) return bad(res, err); }
+  let nick = '';
+  if (key === 'plus') {
+    nick = String(req.body.nick || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 32); // ник, который попадёт в таблицу админов в игре
+    if (nick.length < 2) return bad(res, 'Введите ник для админки (от 2 до 32 символов)');
+    const err = await adminPurchaseCheck(req.u.steam_id); if (err) return bad(res, err);
+  }
   const r = await db.query(`update users set coins=coins-$1, ${col}=greatest(${col},$2)+$3 where steam_id=$4 and coins>=$1 returning plus_until, grant_until`,
     [cost, Date.now(), days * 864e5, req.u.steam_id]);
   if (!r.rowCount) return bad(res, 'Недостаточно монет');
   if (key === 'plus') {
-    try { await grantGameAdmin(req.u, Math.max(+r.rows[0].plus_until, +r.rows[0].grant_until)); }
+    try { await grantGameAdmin(req.u, Math.max(+r.rows[0].plus_until, +r.rows[0].grant_until), { name: nick }); }
     catch (e) { // не получилось выдать в игре — возвращаем монеты
       console.error('grantAdmin:', e.message);
       await db.query(`update users set coins=coins+$1, ${col}=$2 where steam_id=$3`, [cost, prev, req.u.steam_id]);
@@ -183,7 +187,6 @@ app.post('/api/promo', level('user'), async (req, res) => {
     await c.query('begin');
     const p = (await c.query('select * from promos where code=$1 for update', [code])).rows[0]; // блокируем строку: лимит не обойти двумя запросами сразу
     if (!p) { await c.query('rollback'); return res.status(404).json({ error: 'Код не найден' }); }
-    if (p.by === req.u.steam_id && req.u.steam_id !== OWNER) { await c.query('rollback'); return bad(res, 'Свой код активировать нельзя'); }
     if (p.max > 0 && p.used >= p.max) { await c.query('rollback'); return bad(res, 'Лимит активаций этого кода исчерпан'); }
     const ins = await c.query('insert into promo_used values($1,$2) on conflict do nothing', [req.u.steam_id, code]);
     if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Этот код уже был использован'); }
@@ -192,46 +195,6 @@ app.post('/api/promo', level('user'), async (req, res) => {
     await c.query('commit');
     res.json({ ok: true, coins: +p.coins });
   } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo:', e.message); res.status(500).json({ error: 'Не удалось активировать код, попробуйте позже' }); }
-  finally { c.release(); }
-});
-
-// --- свои промокоды игроков: оплачиваются монетами с баланса (награда × активации + плата за создание) ---
-const PROMO_FEE = +process.env.PROMO_FEE || 100, PROMO_ACTIVE_MAX = 10;
-app.get('/api/promo-mine', level('user'), async (req, res) => {
-  const r = (await db.query('select code,coins,max,used,at from promos where by=$1 order by at desc nulls last limit 50', [req.u.steam_id])).rows;
-  res.json({ fee: PROMO_FEE, promos: r.map(p => ({ code: p.code, coins: +p.coins, max: +p.max, used: +p.used, at: +p.at })) });
-});
-app.post('/api/promo-create', level('user'), async (req, res) => {
-  const id = req.u.steam_id, code = String(req.body.code || '').trim().toUpperCase(), coins = Math.floor(+req.body.coins), max = Math.floor(+req.body.max);
-  if (!/^[A-Z0-9_-]{3,24}$/.test(code)) return bad(res, 'Код: 3–24 символа — латиница, цифры, _ или -');
-  if (!(coins >= 1 && coins <= 1000)) return bad(res, 'Награда за активацию: от 1 до 1000 монет');
-  if (!(max >= 1 && max <= 500)) return bad(res, 'Число активаций: от 1 до 500');
-  const cost = coins * max + PROMO_FEE, c = await db.connect();
-  try {
-    await c.query('begin');
-    const act = +(await c.query('select count(*) c from promos where by=$1 and max>0 and used<max', [id])).rows[0].c;
-    if (act >= PROMO_ACTIVE_MAX) { await c.query('rollback'); return bad(res, 'Не больше ' + PROMO_ACTIVE_MAX + ' действующих своих кодов одновременно'); }
-    const ins = await c.query('insert into promos(code,coins,max,by,at) values($1,$2,$3,$4,$5) on conflict do nothing', [code, coins, max, id, Date.now()]);
-    if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Такой код уже существует'); }
-    const u = await c.query('update users set coins=coins-$1 where steam_id=$2 and coins>=$1 returning coins', [cost, id]);
-    if (!u.rowCount) { await c.query('rollback'); return bad(res, 'Недостаточно монет: нужно ' + cost); }
-    await c.query('commit');
-    res.json({ ok: true, cost, coins: +u.rows[0].coins });
-  } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo-create:', e.message); res.status(500).json({ error: 'Не удалось создать код, попробуйте позже' }); }
-  finally { c.release(); }
-});
-app.post('/api/promo-delete-own', level('user'), async (req, res) => { // удалить свой код: неиспользованные активации возвращаются монетами, плата за создание — нет
-  const c = await db.connect();
-  try {
-    await c.query('begin');
-    const p = (await c.query('select * from promos where code=$1 and by=$2 for update', [String(req.body.code || ''), req.u.steam_id])).rows[0];
-    if (!p) { await c.query('rollback'); return res.status(404).json({ error: 'Код не найден' }); }
-    const refund = p.max > 0 ? Math.max(0, p.max - p.used) * +p.coins : 0;
-    await c.query('delete from promos where code=$1', [p.code]);
-    if (refund) await c.query('update users set coins=coins+$1 where steam_id=$2', [refund, req.u.steam_id]);
-    await c.query('commit');
-    res.json({ ok: true, refund });
-  } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo-delete-own:', e.message); res.status(500).json({ error: 'Не удалось удалить код' }); }
   finally { c.release(); }
 });
 
@@ -289,21 +252,23 @@ app.post('/api/agent-reset', level('user'), async (req, res) => {
 app.post('/api/admin/grant', level('manage'), async (req, res) => {
   const { id, days } = req.body;
   if (!/^\d{17}$/.test(id) || id === OWNER) return bad(res, 'Неверный SteamID64 (17 цифр)');
-  const opt = {};
-  if (req.u.steam_id === OWNER) { // ник, флаги и иммунитет задаёт только владелец; у замов — значения по умолчанию
-    const nm = String(req.body.name || '').trim().slice(0, 64); if (nm) opt.name = nm;
-    const fl = String(req.body.flags || '').trim();
-    if (fl) { if (!/^[a-zA-Z0-9@#]{1,40}$/.test(fl)) return bad(res, 'Флаги: только латинские буквы и цифры, до 40 символов'); opt.flags = fl; }
-    if (req.body.immunity !== undefined && req.body.immunity !== '' && req.body.immunity !== null) {
-      const im = Math.floor(+req.body.immunity); if (!(im >= 0 && im <= 1000)) return bad(res, 'Иммунитет: число от 0 до 1000'); opt.immunity = im;
+  const opts = {}; // ник, флаги и иммунитет может задавать только владелец — зам выдаёт со значениями по умолчанию
+  if (req.u.steam_id === OWNER) {
+    const nick = String(req.body.name || '').trim().slice(0, 64), flags = String(req.body.flags || '').trim(), imm = req.body.immunity;
+    if (flags && !/^[a-z]{1,26}$/i.test(flags)) return bad(res, 'Флаги — только латинские буквы, например z или abcdefj');
+    if (imm !== undefined && imm !== null && imm !== '') {
+      const v = +imm; if (!Number.isInteger(v) || v < 0 || v > 100) return bad(res, 'Иммунитет — целое число от 0 до 100');
+      opts.immunity = v;
     }
+    if (nick) opts.name = nick;
+    if (flags) opts.flags = flags;
   }
   try {
     const err = await adminPurchaseCheck(id, false); if (err) return bad(res, err);
     const row = (await db.query('select name, grant_until from users where steam_id=$1', [id])).rows[0] || {};
     const cur = +row.grant_until || 0, d = +days === 0 ? 0 : Math.min(+days || 30, 3650);
     const until = d === 0 ? FOREVER : Math.max(Date.now(), cur < FOREVER ? cur : 0) + d * 864e5;
-    await grantGameAdmin({ steam_id: id, name: row.name }, until, opt); // сначала игра: если не вышло — на сайте ничего не меняем
+    await grantGameAdmin({ steam_id: id, name: row.name }, until, opts); // сначала игра: если не вышло — на сайте ничего не меняем
     await db.query('insert into users(steam_id) values($1) on conflict do nothing', [id]);
     await db.query('update users set grant_until=$2, grant_by=$3, grant_at=$4 where steam_id=$1', [id, until, req.u.steam_id, Date.now()]);
     res.json({ ok: true });
@@ -454,34 +419,6 @@ app.post('/api/skin', level('user'), async (req, res) => {
     }
     res.json({ ok: true });
   } catch (e) { console.error('skin:', e.message); res.status(500).json({ error: 'Не удалось сохранить скин: ' + e.message }); }
-});
-
-// --- конструктор дизайна сайта (редактор в админ-панели, только владелец) ---
-let DESIGN = null;
-app.get('/api/design', async (req, res) => {
-  try {
-    if (DESIGN === null) DESIGN = (await db.query('select data from site_design where id=1')).rows[0]?.data || '{}';
-    res.set('Cache-Control', 'no-cache').type('json').send(DESIGN);
-  } catch (e) { console.error('design:', e.message); res.type('json').send('{}'); }
-});
-app.post('/api/admin/design', level('owner'), async (req, res) => {
-  try {
-    const d = req.body && req.body.design;
-    if (!d || typeof d !== 'object' || Array.isArray(d)) return bad(res, 'Неверный формат дизайна');
-    const s = JSON.stringify(d);
-    if (s.length > 400000) return bad(res, 'Дизайн слишком большой');
-    await db.query(`insert into site_design(id,data,updated_at) values(1,$1,$2)
-      on conflict(id) do update set prev=site_design.data, data=excluded.data, updated_at=excluded.updated_at`, [s, Date.now()]);
-    DESIGN = s; res.json({ ok: true });
-  } catch (e) { console.error('design save:', e.message); res.status(500).json({ error: 'Не удалось сохранить дизайн' }); }
-});
-app.post('/api/admin/design-restore', level('owner'), async (req, res) => { // откат на предыдущую опубликованную версию
-  try {
-    const r = (await db.query('select prev from site_design where id=1')).rows[0];
-    if (!r || !r.prev) return bad(res, 'Предыдущей версии нет');
-    await db.query('update site_design set data=prev, prev=data, updated_at=$1 where id=1', [Date.now()]);
-    DESIGN = r.prev; res.json({ ok: true });
-  } catch (e) { console.error('design restore:', e.message); res.status(500).json({ error: 'Не удалось откатить дизайн' }); }
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
