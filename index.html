@@ -243,15 +243,7 @@ function setPeriod(k,i,btn){
 }
 const st={page:'home',lb:'exp',bt:'bans',plan:{prem:0,plus:0},rule:0,user:null,menu:false,promoOpen:false,promo:'',promoMsg:null};
 
-// Промокоды: временный список для примера, лучше хранить и проверять на сервере,
-// иначе любой посмотрит код прямо в исходнике страницы.
-const PROMO_CODES={
-  'START100':{coins:100,text:'+100 монет'},
-  'WELCOME50':{coins:50,text:'+50 монет'},
-  'MELLSTROYPROJECT':{coins:200,text:'+200 монет'}
-};
-const usedPromoKey='usedPromoCodes';
-function getUsedPromo(){try{return JSON.parse(localStorage.getItem(usedPromoKey)||'[]')}catch(e){return []}}
+
 function togglePromo(){st.promoOpen=!st.promoOpen;st.menu=false;st.promoMsg=null;draw()}
 function buyPlan(key,name){
   if(!st.user){alert('Сначала войдите через Steam, чтобы купить');return}
@@ -299,7 +291,6 @@ function getDeputies(){return LS.get('deputies',{})}
 function getCustomPromos(){return LS.get('customPromos',[])}
 function allPromos(){ // встроенные + созданные в админ-панели
   const m={};
-  for(const c in PROMO_CODES)m[c]={code:c,coins:PROMO_CODES[c].coins,max:0,used:0,builtin:true};
   for(const p of getCustomPromos())m[p.code]=p;
   return m;
 }
@@ -308,6 +299,14 @@ function getPlusUntil(id){try{return +localStorage.getItem('plusUntil:'+id)||0}c
 const DEFAULT_AVATAR_HASH='b5bd56c1aa4644a474a2e4972be27ef9e82e517e'; // стандартная «?» аватарка Steam
 function safeAvatar(a){
   return typeof a==='string'&&!a.includes(DEFAULT_AVATAR_HASH)&&/^https:\/\/[\w.-]+\.(steamstatic\.com|akamaihd\.net)\/[\w\-./]+$/i.test(a)?a:null;
+}
+const EMPTY_ROW=n=>`<tr><td colspan="${n}" style="text-align:center;color:var(--mut)">Данных пока нет</td></tr>`;
+function tblFilter(v){ // поиск по таблице на странице (ник, причина, админ; в банах — ещё и SteamID)
+  const q=String(v||'').trim().toLowerCase();
+  document.querySelectorAll('#app table tr').forEach(tr=>{
+    if(tr.querySelector('th'))return;
+    tr.style.display=!q||tr.textContent.toLowerCase().includes(q)||(tr.dataset.s||'').includes(q)?'':'none';
+  });
 }
 const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function applyRole(u){
@@ -341,39 +340,8 @@ const ICONS={
 const I=n=>`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
 const PAGES=[['home','Играть','play'],['shop','Магазин','shop'],['leaders','Лидеры','leaders'],['bans','Баны','bans'],['rules','Правила','rules']];
 
-// Steam: если Steam вернул пользователя с openid-параметрами, читаем SteamID.
-// ВАЖНО: проверить подпись (openid.sig) нужно на сервере, иначе вход можно подделать.
-try{const q=new URLSearchParams(location.search),c=q.get('openid.claimed_id');
- if(c&&/\/openid\/id\/(\d+)$/.test(c)){
-   st.user=applyRole({id:RegExp.$1,name:'Игрок',coins:15,avatar:null});
-   try{history.replaceState(null,'',location.pathname)}catch(e){} // убираем openid-параметры из адреса
-   // OpenID отдаёт только SteamID64, но не имя и не аватарку.
-   // Чтобы получить реальную аватарку, нужен запрос на backend, который
-   // сам сходит в Steam Web API (ISteamUser/GetPlayerSummaries) со своим
-   // ключом — из браузера так сделать нельзя (ключ светился бы всем, и Steam
-   // не пускает такие запросы через CORS). Пример:
- }}catch(e){}
-
-// Сохранённый аккаунт: после перезагрузки страницы пользователь остаётся в системе.
-const ACC_KEY='account';
-try{
-  const saved=JSON.parse(localStorage.getItem(ACC_KEY)||'null');
-  if(saved&&saved.id){
-    if(!st.user) st.user=applyRole(saved);
-    else if(st.user.id===saved.id){ // вернулись из Steam тем же аккаунтом — оставляем баланс и аватарку
-      st.user.coins=saved.coins;
-      if(saved.name&&saved.name!=='Игрок')st.user.name=saved.name;
-      st.user.avatar=st.user.avatar||saved.avatar;
-      applyRole(st.user);
-    }
-  }
-}catch(e){}
-function saveUser(){
-  try{
-    if(st.user)localStorage.setItem(ACC_KEY,JSON.stringify({id:st.user.id,name:st.user.name,coins:st.user.coins,avatar:st.user.avatar||null}));
-    else localStorage.removeItem(ACC_KEY);
-  }catch(e){}
-}
+// Сессия живёт на сервере (cookie): кто вошёл, приходит только из /api/me — в браузере ничего не хранится.
+function saveUser(){}
 
 // Аватарка и ник из Steam. OpenID отдаёт только SteamID, поэтому профиль берём отдельно:
 // 1) со своего backend (/api/steam-profile) — лучший вариант, когда сайт лежит на хостинге;
@@ -461,10 +429,8 @@ function logout(){st.user=null;st.menu=false;st.promoOpen=false;st.adminMsg={};i
 function go(p){st.page=p;st.menu=false;st.adminMsg={};try{window.scrollTo(0,0)}catch(e){}draw()}
 
 const servers=[['Мираж (карта меняется)','45.95.31.64:27215']];
-const leaders={exp:[['Игрок 1','483 039','51 462','1.65','493 ч.'],['Игрок 2','381 447','45 760','2.73','485 ч.'],['Игрок 3','366 928','49 153','1.30','1007 ч.'],['Игрок 4','348 826','33 100','2.53','436 ч.'],['Игрок 5','332 129','36 242','1.43','467 ч.']],
- drop:[['Игрок 6','128','—','—','310 ч.'],['Игрок 7','97','—','—','254 ч.'],['Игрок 8','85','—','—','402 ч.']]};
-const bans=[['Игрок A','Админ 1','Использование читов',1,'2 месяца','19.09.2026, 00:05'],['Игрок B','Админ 2','Отказ от проверки',1,'1 месяц','19.09.2026, 00:05'],['Игрок C','Админ 1','Использование читов',0,'2 месяца','19.09.2026, 00:03']];
-const mutes=[['Игрок D','Админ 3','Оскорбления в чате',1,'1 день','19.09.2026, 00:10'],['Игрок E','Админ 2','Спам в голосовом чате',1,'3 дня','18.09.2026, 23:40']];
+const leaders={exp:[],drop:[]}; // заполняется из /api/leaders
+const bans=[],mutes=[]; // заполняются из /api/bans
 const prem=['Больше денег в начале раунда','Выделение в чате и серверов','Прокачка опыта x2','Резервный слот для подключения','Улучшенный дроп скинов'];
 const plus=['Все возможности премиума','Заглушить игрока','Заморозить игрока','Ослепить игрока','Убить игрока','Изменить урон игроку','Изменить здоровье игроку','Отключить прыжок игроку'];
 const periods=['7 дней','30 дней','90 дней','180 дней'];
@@ -490,18 +456,18 @@ function head(){
    `<button class="ava" aria-label="Профиль" style="${st.user.avatar?`background-image:url('${st.user.avatar}')`:''}" onclick="st.menu=!st.menu;st.promoOpen=false;head()">${st.user.avatar?'':esc((st.user.name||'?').trim().charAt(0).toUpperCase())}</button>`+
    `<button class="gear${st.page==='settings'?' on':''}" aria-label="Настройки" title="Настройки" onclick="go('settings')">${I('gear')}</button>`+
    (st.menu?`<div class="menu${menuFresh?' pop':''}"><div class="menu-user">${esc(st.user.name||'Игрок')}</div>${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти из аккаунта</button></div>`:'')
-   :`<button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button><a class="demo" href="#" onclick="demoLogin();return false">демо</a>`;
+   :`<button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button>`;
   if(coinsChanged&&!reduce)countTo(from,coins);
 }
 function view(){
   if(st.page==='admin'&&!(st.user&&st.user.isAdmin)){st.page='home'}
-  if(st.page==='home') return `<div class="cards"><div class="mode" onclick="go('public')" role="button" tabindex="0"><svg class="mode-art" viewBox="0 0 320 460" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="mg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="s1"/><stop offset="1" class="s2"/></linearGradient><radialGradient id="mg2"><stop offset="0" class="g1"/><stop offset="1" class="g2"/></radialGradient></defs><rect width="320" height="460" fill="url(#mg1)"/><circle cx="160" cy="190" r="175" fill="url(#mg2)"/><g class="st"><circle cx="30" cy="40" r="1.4"/><circle cx="92" cy="22" r="1"/><circle cx="270" cy="34" r="1.4"/><circle cx="292" cy="120" r="1"/><circle cx="24" cy="150" r="1"/><circle cx="60" cy="260" r="1.2"/><circle cx="300" cy="250" r="1.2"/><circle cx="200" cy="18" r="1"/></g><path class="sp" d="M52 84l2-6 6-2-6-2-2-6-2 6-6 2 6 2z"/><path class="sp" d="M262 300l2-6 6-2-6-2-2-6-2 6-6 2 6 2z"/><path class="ln" d="M-10 350L330 40"/><path class="ln l2" d="M-10 420L330 110"/><g fill="none"><circle class="ring" cx="160" cy="190" r="112"/><circle class="ring2" cx="160" cy="190" r="94"/><path class="cross" d="M160 62V162M160 218V318M32 190H132M188 190H288"/><path class="tick" d="M160 88v12M160 280v12M58 190h12M250 190h12"/></g><circle class="dot" cx="160" cy="190" r="3.5"/><g transform="translate(232 92) rotate(35)"><rect class="bl" width="40" height="9" rx="4.5"/><rect class="bl2" width="12" height="9" rx="3"/></g><path class="sk1" transform="translate(0 -30)" d="M0 460V392h20v-16q10-16 20 0v16h16v-34h5v-12h5v12h5v34h22v-24q16-30 32 0v24h24v-40l9-14 9 14v40h24v-20h22v-12h14v12h20v-30q14-24 28 0v30h24v-18h21V460Z"/><path class="sk2" d="M0 460V392h20v-16q10-16 20 0v16h16v-34h5v-12h5v12h5v34h22v-24q16-30 32 0v24h24v-40l9-14 9 14v40h24v-20h22v-12h14v12h20v-30q14-24 28 0v30h24v-18h21V460Z"/><g class="win"><rect x="60" y="384" width="3" height="4"/><rect x="146" y="374" width="3" height="4"/><rect x="238" y="380" width="3" height="4"/><rect x="284" y="382" width="3" height="4"/></g></svg><b>PUBLIC</b><span class="mode-go">Играть →</span></div></div>
+  if(st.page==='home') return `<div class="cards"><div class="mode" onclick="go('public')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();go('public')}" role="button" tabindex="0"><svg class="mode-art" viewBox="0 0 320 460" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="mg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="s1"/><stop offset="1" class="s2"/></linearGradient><radialGradient id="mg2"><stop offset="0" class="g1"/><stop offset="1" class="g2"/></radialGradient></defs><rect width="320" height="460" fill="url(#mg1)"/><circle cx="160" cy="190" r="175" fill="url(#mg2)"/><g class="st"><circle cx="30" cy="40" r="1.4"/><circle cx="92" cy="22" r="1"/><circle cx="270" cy="34" r="1.4"/><circle cx="292" cy="120" r="1"/><circle cx="24" cy="150" r="1"/><circle cx="60" cy="260" r="1.2"/><circle cx="300" cy="250" r="1.2"/><circle cx="200" cy="18" r="1"/></g><path class="sp" d="M52 84l2-6 6-2-6-2-2-6-2 6-6 2 6 2z"/><path class="sp" d="M262 300l2-6 6-2-6-2-2-6-2 6-6 2 6 2z"/><path class="ln" d="M-10 350L330 40"/><path class="ln l2" d="M-10 420L330 110"/><g fill="none"><circle class="ring" cx="160" cy="190" r="112"/><circle class="ring2" cx="160" cy="190" r="94"/><path class="cross" d="M160 62V162M160 218V318M32 190H132M188 190H288"/><path class="tick" d="M160 88v12M160 280v12M58 190h12M250 190h12"/></g><circle class="dot" cx="160" cy="190" r="3.5"/><g transform="translate(232 92) rotate(35)"><rect class="bl" width="40" height="9" rx="4.5"/><rect class="bl2" width="12" height="9" rx="3"/></g><path class="sk1" transform="translate(0 -30)" d="M0 460V392h20v-16q10-16 20 0v16h16v-34h5v-12h5v12h5v34h22v-24q16-30 32 0v24h24v-40l9-14 9 14v40h24v-20h22v-12h14v12h20v-30q14-24 28 0v30h24v-18h21V460Z"/><path class="sk2" d="M0 460V392h20v-16q10-16 20 0v16h16v-34h5v-12h5v12h5v34h22v-24q16-30 32 0v24h24v-40l9-14 9 14v40h24v-20h22v-12h14v12h20v-30q14-24 28 0v30h24v-18h21V460Z"/><g class="win"><rect x="60" y="384" width="3" height="4"/><rect x="146" y="374" width="3" height="4"/><rect x="238" y="380" width="3" height="4"/><rect x="284" y="382" width="3" height="4"/></g></svg><b>PUBLIC</b><span class="mode-go">Играть →</span></div></div>
    <div class="scroll-hint">Листай вниз<span>↓</span></div>
    <section class="reveal-zone" aria-hidden="true"><div class="reveal-stage"><div class="burst"></div><div class="reveal-bob"><img class="reveal-img" src="${IMG67}" alt="6 7"></div></div></section>`;
   if(st.page==='public') return `<h1>Public: серверы</h1><table><tr><th>Сервер</th><th>Онлайн</th><th>Подключение</th><th></th></tr>${servers.map(s=>`<tr><td>${esc(s[0])}</td><td>${s[2]?`<span class="online on">${s[2].players}/${s[2].max}${s[2].map?' · '+esc(s[2].map):''}</span>`:`<span class="online off" title="${esc(s[3]||'')}">нет ответа</span>${can('server')?`<div class="stat" style="margin-top:4px">${s[2]===undefined&&!s[3]?'server.js на хостинге ещё не обновлён':esc(s[3]||'')}</div>`:''}`}</td><td>connect ${esc(s[1])}</td><td><button class="join" onclick="location.href='steam://connect/${esc(s[1])}'">Играть</button> <button class="join" onclick="navigator.clipboard&&navigator.clipboard.writeText('connect ${esc(s[1])}');alert('Скопировано: connect ${esc(s[1])}')">Копировать</button></td></tr>`).join('')}</table>`;
   if(st.page==='shop') return `<h1 style="text-align:center">Магазин</h1><div class="plans">${[['prem','Премиум',prem,'p'],['plus','Админ+',plus,'g']].map(([k,n,l,c])=>`<div class="plan ${c}"><h2>${n}</h2><ul>${l.map(x=>`<li>${x}</li>`).join('')}</ul><div class="periods">${periods.map((p,i)=>`<button class="${st.plan[k]===i?'on':''}" onclick="setPeriod('${k}',${i},this)">${p}</button>`).join('')}</div><div class="price">${price[k][st.plan[k]]} ₽</div><button class="buy" onclick="buyPlan('${k}','${n}')">Купить</button></div>`).join('')}</div>`;
-  if(st.page==='leaders'){const rows=leaders[st.lb];return `<h1>Лидеры</h1><div class="bar"><div class="tabs"><button class="${st.lb==='exp'?'on':''}" onclick="st.lb='exp';draw()">По опыту</button><button class="${st.lb==='drop'?'on':''}" onclick="st.lb='drop';draw()">По дропу</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Место</th><th>Игрок</th><th>Очков</th><th>Убийств</th><th>У/С</th><th>Время игры</th></tr>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${i<2&&st.lb==='exp'?'<span class="prem">ПРЕМИУМ</span>':''}${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`).join('')}</table>`}
-  if(st.page==='bans'){const rows=st.bt==='bans'?bans:mutes;return `<h1>Баны</h1><div class="bar"><div class="tabs"><button class="${st.bt==='bans'?'on':''}" onclick="st.bt='bans';draw()">Баны</button><button class="${st.bt==='mutes'?'on':''}" onclick="st.bt='mutes';draw()">Муты</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Игрок</th><th>Админ</th><th>Причина</th><th>Статус</th><th>Срок</th><th>Дата</th></tr>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="${r[3]?'ban':'ok'}">${r[3]?(st.bt==='bans'?'Забанен':'Замучен'):'Разбанен'}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`).join('')}</table>`}
+  if(st.page==='leaders'){const rows=leaders[st.lb];return `<h1>Лидеры</h1><div class="bar"><div class="tabs"><button class="${st.lb==='exp'?'on':''}" onclick="st.lb='exp';draw()">По опыту</button><button class="${st.lb==='drop'?'on':''}" onclick="st.lb='drop';draw()">По дропу</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск" oninput="tblFilter(this.value)"></div><table><tr><th>Место</th><th>Игрок</th><th>Очков</th><th>Убийств</th><th>У/С</th><th>Время игры</th></tr>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td>${esc(r[3])}</td><td>${esc(r[4])}</td></tr>`).join('')||EMPTY_ROW(6)}</table>`}
+  if(st.page==='bans'){const rows=st.bt==='bans'?bans:mutes;return `<h1>Баны</h1><div class="bar"><div class="tabs"><button class="${st.bt==='bans'?'on':''}" onclick="st.bt='bans';draw()">Баны</button><button class="${st.bt==='mutes'?'on':''}" onclick="st.bt='mutes';draw()">Муты</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск" oninput="tblFilter(this.value)"></div><table><tr><th>Игрок</th><th>Админ</th><th>Причина</th><th>Статус</th><th>Срок</th><th>Дата</th></tr>${rows.map(r=>`<tr data-s="${esc(r[6]||'')}"><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td class="${r[3]?'ban':'ok'}">${r[3]?(st.bt==='bans'?'Забанен':'Замучен'):(st.bt==='bans'?'Разбанен':'Размьючен')}</td><td>${esc(r[4])}</td><td>${esc(r[5])}</td></tr>`).join('')||EMPTY_ROW(6)}</table>`}
   if(st.page==='rules') return `<h1>Правила</h1><div class="rules"><div class="side">${rcats.map((c,i)=>`<button class="${st.rule===i?'on':''}" onclick="st.rule=${i};draw()">${c}</button>`).join('')}</div><div class="empty">Раздел «${rcats[st.rule]}»: текст правил добавим позже.</div></div>`;
   if(st.page==='settings'){
     const u=st.user;
@@ -680,11 +646,13 @@ function steamLogin(){location.href='/auth/steam'}
 function demoLogin(){alert('Демо отключено — войдите через Steam')}
 async function logout(){
   try{await fetch('/auth/logout',{method:'POST'})}catch(e){}
-  st.user=null;st.menu=false;st.promoOpen=false;st.adminMsg={};
+  st.user=null;st.menu=false;st.promoOpen=false;st.adminMsg={};SV={grants:{},deputies:{},promos:[]};
   if(st.page==='settings'||st.page==='admin')st.page='home';
   draw();
 }
+let buying=false; // защита от двойного клика по «Купить»
 async function buyPlan(key,name){
+  if(buying)return;
   if(!st.user){alert('Сначала войдите через Steam, чтобы купить');return}
   let nick;
   if(key==='plus'){
@@ -693,10 +661,11 @@ async function buyPlan(key,name){
     nick=p.trim();
     if(nick.length<2||nick.length>32){alert('Ник должен быть от 2 до 32 символов');return}
   }
+  buying=true;
   try{
     await api('buy',{key,idx:st.plan[key],nick});await loadMe();
     alert(`Покупка успешна: ${name} на ${periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
-  }catch(e){alert(e.message)}
+  }catch(e){alert(e.message)}finally{buying=false}
 }
 async function activatePromo(){
   if(!st.user){st.promoMsg={ok:false,text:'Сначала войдите через Steam'};draw();return}
@@ -726,7 +695,7 @@ async function loadBans(){
     for(const k of ['bans','mutes']){
       const rows=await api('bans?type='+k),arr=k==='bans'?bans:mutes;
       arr.length=0;
-      rows.forEach(r=>arr.push([r.player,r.admin,r.reason,r.active?1:0,r.term,new Date(r.at).toLocaleString('ru-RU',{dateStyle:'short',timeStyle:'short'})]));
+      rows.forEach(r=>arr.push([r.player,r.admin,r.reason,r.active?1:0,r.term,new Date(r.at).toLocaleString('ru-RU',{dateStyle:'short',timeStyle:'short'}),r.steamId||'']));
     }
   }catch(e){}
   draw();
@@ -1022,7 +991,7 @@ async function delServer(id){
   try{await api('admin/server-delete',{id});await loadServers();toast('Сервер удалён','ok')}catch(e){toast(e.message,'err')}
 }
 loadServers();
-setInterval(async()=>{if(document.hidden||st.page!=='public')return;try{SRVDB=await api('servers');servers.length=0;SRVDB.forEach(r=>servers.push([r.name,r.address,r.online,r.onlineErr]));draw()}catch(e){}},20000); // онлайн обновляется, пока открыта страница серверов
+setInterval(async()=>{if(document.hidden||st.page!=='public'||st.promoOpen||/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement||{}).tagName))return;try{SRVDB=await api('servers');servers.length=0;SRVDB.forEach(r=>servers.push([r.name,r.address,r.online,r.onlineErr]));draw()}catch(e){}},20000); // онлайн обновляется, пока открыта страница серверов
 </script>
 <style>
 /* ===== Анимации: переходы между страницами, плашка меню, сообщения ===== */
