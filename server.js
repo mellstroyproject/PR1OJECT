@@ -240,29 +240,72 @@ async function deleteGameAdmin(id) { // убираем строку админа
   } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
 }
 
+// --- выдача VIP в игре при покупке Премиума (таблица vip_users плагина VIP) ---
+const VIP_GROUP = process.env.VIP_GROUP || 'VIP'; // название группы из groups.ini плагина VIP
+const STEAM64_BASE = 76561197960265728n;
+const accountId = id => Number(BigInt(id) - STEAM64_BASE); // SteamID64 -> account_id (SteamID3)
+async function vipSid(q) { // id сервера из vip_servers (если в таблице нет такой колонки — берём VIP_SID или 0)
+  if (process.env.VIP_SID !== undefined) return +process.env.VIP_SID || 0;
+  try {
+    const cols = (await q('show columns from vip_servers')).map(c => c.Field);
+    const col = ['serverId', 'sid', 'id', 'server_id'].map(n => cols.find(c => c.toLowerCase() === n.toLowerCase())).find(Boolean);
+    if (col) { const r = (await q(`select \`${col}\` as v from vip_servers order by \`${col}\` limit 1`))[0]; if (r) return +r.v; }
+  } catch (e) { console.error('vip_servers:', e.message); }
+  return 0;
+}
+async function vipPurchaseCheck(id) {
+  if (!game) return 'Выдача VIP сейчас недоступна, попробуйте позже';
+  try {
+    const sid = await vipSid(gq);
+    const ex = (await gq('select `expires` from vip_users where account_id=? and sid=? limit 1', [accountId(id), sid]))[0];
+    if (ex && +ex.expires === 0) return 'У вас уже постоянный VIP на сервере — покупка не нужна';
+  } catch (e) { console.error('vipCheck:', e.message); return 'Не удалось связаться с базой игрового сервера'; }
+  return null;
+}
+async function grantGameVip(u, untilMs) { // untilMs — до какого момента VIP (в игре expires в секундах, 0 = навсегда)
+  const conn = await game.getConnection();
+  try {
+    await conn.beginTransaction();
+    const q = async (sql, p) => (await conn.query(sql, p))[0];
+    const n = nowS(), acc = accountId(u.steam_id), sid = await vipSid(q), end = untilMs >= FOREVER ? 0 : Math.floor(untilMs / 1000);
+    const name = String(u.name || u.steam_id).slice(0, 64);
+    const ex = (await q('select `expires` from vip_users where account_id=? and sid=? limit 1', [acc, sid]))[0];
+    if (ex) { // продлеваем; срок не уменьшаем, если в игре он уже длиннее
+      const exp = end === 0 || +ex.expires === 0 ? 0 : Math.max(+ex.expires, end);
+      await q('update vip_users set `group`=?, `expires`=?, `name`=?, `lastvisit`=? where account_id=? and sid=?', [VIP_GROUP, exp, name, n, acc, sid]);
+    } else {
+      const cols = (await q('show columns from vip_users')).filter(c => !/auto_increment/i.test(c.Extra));
+      const val = c => ({ account_id: acc, sid, name, group: VIP_GROUP, expires: end, lastvisit: n })[c.Field]
+        ?? (c.Null === 'NO' && c.Default === null ? (/int|decimal/i.test(c.Type) ? 0 : '') : c.Default);
+      await q(`insert into vip_users(${cols.map(c => '`' + c.Field + '`').join(',')}) values(${cols.map(() => '?').join(',')})`, cols.map(val));
+    }
+    await conn.commit();
+  } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
+}
+
 app.post('/api/buy', level('user'), async (req, res) => {
   const { key, idx } = req.body, cost = PRICE[key]?.[idx];
   if (cost === undefined) return bad(res, 'Неверный тариф');
   const col = key === 'plus' ? 'plus_until' : 'prem_until', days = DAYS[key][idx], prev = req.u[col];
-  let nick = '';
-  if (key === 'plus') {
-    await refreshProfiles([req.u]); // ник берём автоматически из Steam (если в базе его ещё нет — подтягиваем)
-    nick = String(req.u.name || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 32);
-    if (nick.length < 2 || nick === 'Игрок') nick = req.u.steam_id; // запасной вариант, если Steam не отдал ник
-    const err = await adminPurchaseCheck(req.u.steam_id); if (err) return bad(res, err);
-  }
+  await refreshProfiles([req.u]); // ник берём автоматически из Steam (если в базе его ещё нет — подтягиваем)
+  let nick = String(req.u.name || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 32);
+  if (nick.length < 2 || nick === 'Игрок') nick = req.u.steam_id; // запасной вариант, если Steam не отдал ник
+  const err = await (key === 'plus' ? adminPurchaseCheck(req.u.steam_id) : vipPurchaseCheck(req.u.steam_id)); if (err) return bad(res, err);
   const forever = days === 0; // «Навсегда»: срок = FOREVER, в игре end_at=0
   const r = forever
-    ? await db.query(`update users set coins=coins-$1, ${col}=$2 where steam_id=$3 and coins>=$1 returning plus_until, grant_until`, [cost, FOREVER, req.u.steam_id])
-    : await db.query(`update users set coins=coins-$1, ${col}=greatest(${col},$2)+$3 where steam_id=$4 and coins>=$1 returning plus_until, grant_until`,
+    ? await db.query(`update users set coins=coins-$1, ${col}=$2 where steam_id=$3 and coins>=$1 returning plus_until, grant_until, prem_until`, [cost, FOREVER, req.u.steam_id])
+    : await db.query(`update users set coins=coins-$1, ${col}=greatest(${col},$2)+$3 where steam_id=$4 and coins>=$1 returning plus_until, grant_until, prem_until`,
         [cost, Date.now(), days * 864e5, req.u.steam_id]);
   if (!r.rowCount) return bad(res, 'Недостаточно монет');
-  if (key === 'plus') {
-    try { await grantGameAdmin(req.u, Math.max(+r.rows[0].plus_until, +r.rows[0].grant_until), { name: nick }); }
+  {
+    try {
+      if (key === 'plus') await grantGameAdmin(req.u, Math.max(+r.rows[0].plus_until, +r.rows[0].grant_until), { name: nick });
+      else await grantGameVip({ steam_id: req.u.steam_id, name: nick }, +r.rows[0].prem_until);
+    }
     catch (e) { // не получилось выдать в игре — возвращаем монеты
-      console.error('grantAdmin:', e.message);
+      console.error('grantGame:', e.message);
       await db.query(`update users set coins=coins+$1, ${col}=$2 where steam_id=$3`, [cost, prev, req.u.steam_id]);
-      return res.status(500).json({ error: 'Не удалось выдать админку в игре, монеты возвращены. Попробуйте позже.' });
+      return res.status(500).json({ error: `Не удалось выдать ${key === 'plus' ? 'админку' : 'VIP'} в игре, монеты возвращены. Попробуйте позже.` });
     }
   }
   res.json({ ok: true });
