@@ -246,8 +246,9 @@ app.post('/api/buy', level('user'), async (req, res) => {
   const col = key === 'plus' ? 'plus_until' : 'prem_until', days = DAYS[idx], prev = req.u[col];
   let nick = '';
   if (key === 'plus') {
-    nick = String(req.body.nick || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 32); // ник, который попадёт в таблицу админов в игре
-    if (nick.length < 2) return bad(res, 'Введите ник для админки (от 2 до 32 символов)');
+    await refreshProfiles([req.u]); // ник берём автоматически из Steam (если в базе его ещё нет — подтягиваем)
+    nick = String(req.u.name || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 32);
+    if (nick.length < 2 || nick === 'Игрок') nick = req.u.steam_id; // запасной вариант, если Steam не отдал ник
     const err = await adminPurchaseCheck(req.u.steam_id); if (err) return bad(res, err);
   }
   const r = await db.query(`update users set coins=coins-$1, ${col}=greatest(${col},$2)+$3 where steam_id=$4 and coins>=$1 returning plus_until, grant_until`,
