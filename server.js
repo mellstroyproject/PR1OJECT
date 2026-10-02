@@ -19,12 +19,18 @@ async function gameAdmin(id) { // админ игрового сервера (ik
   catch (e) { console.error('iks_admins:', e.message); }
   gaCache.set(id, { t: Date.now(), v }); return v;
 }
-const SECRET = process.env.SESSION_SECRET || 'change-me';
+const SECRET = process.env.SESSION_SECRET || (console.warn('ВНИМАНИЕ: SESSION_SECRET не задан — используется случайный ключ, сессии сбросятся при перезапуске. Задайте SESSION_SECRET в Environment.'), crypto.randomBytes(32).toString('hex'));
 const sign = v => crypto.createHmac('sha256', SECRET).update(v).digest('base64url');
+const safeEq = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); };
 
 const app = express();
 app.set('trust proxy', 1);
 app.use(express.json());
+process.on('unhandledRejection', e => console.error('unhandledRejection:', e && e.message || e));
+for (const m of ['get', 'post']) { // ошибки async-обработчиков (БД упала и т.п.) уходят в общий обработчик ошибок, а не роняют процесс
+  const orig = app[m].bind(app);
+  app[m] = (p, ...h) => h.length ? orig(p, ...h.map(f => (req, res, next) => Promise.resolve(f(req, res, next)).catch(next))) : orig(p);
+}
 
 async function init() {
   await db.query(`
@@ -51,7 +57,7 @@ async function init() {
 // --- сессия ---
 async function getUser(req) {
   const m = (req.headers.cookie || '').match(/(?:^|;\s*)s=(\d{17})\.([\w-]+)/);
-  if (!m || m[2] !== sign(m[1])) return null;
+  if (!m || !safeEq(m[2], sign(m[1]))) return null;
   const u = (await db.query('select * from users where steam_id=$1', [m[1]])).rows[0] || null;
   if (u) u.deputyReal = !!u.deputy; // назначен владельцем (в отличие от штатных админов игры, которые получают только базовые права)
   if (u && Math.max(+u.plus_until, +u.grant_until) <= Date.now() && await gameAdmin(u.steam_id)) u.deputy = true; // штатные админы; купившие и получившие Админ+ сюда не входят
@@ -91,18 +97,20 @@ const profCache = new Map(); // steam_id -> { t, v }
 async function steamProfile(id, fresh) {
   const c = profCache.get(id); if (c && !fresh && Date.now() - c.t < 600000) return c.v;
   let v = null;
-  try {
-    if (process.env.STEAM_KEY) {
+  if (process.env.STEAM_KEY) {
+    try {
       const j = await (await fetch(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${process.env.STEAM_KEY}&steamids=${id}`, { signal: AbortSignal.timeout(6000) })).json();
       const pl = j.response?.players?.[0]; if (pl) v = { name: pl.personaname, avatar: pl.avatarfull };
-    }
-    if (!v) {
+    } catch (e) { console.error('steam api:', e.message); }
+  }
+  if (!v) {
+    try {
       const x = await (await fetch(`https://steamcommunity.com/profiles/${id}?xml=1`, { signal: AbortSignal.timeout(6000) })).text();
       const g = tag => (x.match(new RegExp('<' + tag + '>\\s*(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?\\s*</' + tag + '>')) || [])[1];
       const name = g('steamID'), avatar = g('avatarFull');
       if (name || avatar) v = { name, avatar };
-    }
-  } catch (e) { console.error('steam profile:', e.message); }
+    } catch (e) { console.error('steam profile:', e.message); }
+  }
   if (v) v = { name: v.name ? String(v.name).trim().slice(0, 64) : null, avatar: v.avatar ? String(v.avatar).trim().replace(/^http:/, 'https:') : null };
   profCache.set(id, v ? { t: Date.now(), v } : { t: Date.now() - 300000, v: null }); // при неудаче повторим через 5 минут
   return v;
@@ -122,7 +130,7 @@ app.get('/auth/steam/callback', async (req, res) => {
     const p = new URLSearchParams(req.originalUrl.split('?')[1] || '');
     if (p.get('openid.return_to') !== `${req.protocol}://${req.get('host')}/auth/steam/callback`) throw 0;
     p.set('openid.mode', 'check_authentication');
-    const t = await (await fetch('https://steamcommunity.com/openid/login', { method: 'POST', body: p })).text();
+    const t = await (await fetch('https://steamcommunity.com/openid/login', { method: 'POST', body: p, signal: AbortSignal.timeout(8000) })).text();
     const id = (p.get('openid.claimed_id') || '').match(/\/openid\/id\/(\d{17})$/)?.[1];
     if (!t.includes('is_valid:true') || !id) throw 0;
     const pr = await steamProfile(id, true); // не затираем уже известные ник и аватарку, если Steam не ответил
@@ -246,7 +254,7 @@ async function deleteGameAdmin(id) { // убираем строку админа
 }
 
 app.post('/api/buy', level('user'), async (req, res) => {
-  const { key, idx } = req.body, cost = PRICE[key]?.[idx];
+  const { key, idx } = req.body, cost = (key === 'prem' || key === 'plus') && Number.isInteger(idx) ? PRICE[key][idx] : undefined;
   if (cost === undefined) return bad(res, 'Неверный тариф');
   const col = key === 'plus' ? 'plus_until' : 'prem_until', days = DAYS[idx], prev = req.u[col];
   let nick = '';
@@ -312,7 +320,8 @@ function a2sInfo(host, port, timeout = 1500) {
         finish({ name, map, players: buf[o], max: buf[o + 1], bots: buf[o + 2] });
       } catch (e) { finish(null, 'непонятный ответ сервера'); }
     });
-    sock.send(req(null), port, host, e => e && finish(null, e.code === 'ENOTFOUND' ? 'адрес не найден (DNS)' : 'не удалось отправить запрос: ' + (e.code || e.message)));
+    try { sock.send(req(null), port, host, e => e && finish(null, e.code === 'ENOTFOUND' ? 'адрес не найден (DNS)' : 'не удалось отправить запрос: ' + (e.code || e.message))); }
+    catch (e) { finish(null, 'не удалось отправить запрос: ' + (e.code || e.message)); }
   });
 }
 // запасной путь без UDP: список серверов Steam (нужен STEAM_KEY, сервер должен быть виден в общем списке)
@@ -330,6 +339,7 @@ function probeOnline(address) {
     const m = String(address).trim().match(/^([^:\s]+):(\d{1,5})$/);
     if (!m) return { online: null, err: 'адрес должен быть вида ip:порт' };
     const host = m[1], port = +m[2];
+    if (port < 1 || port > 65535) return { online: null, err: 'порт должен быть от 1 до 65535' };
     let r = await a2sInfo(host, port);
     if (!r.info && /таймаут/.test(r.err)) r = await a2sInfo(host, port); // UDP-пакет мог потеряться — одна повторная попытка
     if (r.info) return { online: { players: Math.max(0, r.info.players - r.info.bots), max: r.info.max, map: r.info.map }, err: null };
@@ -338,7 +348,7 @@ function probeOnline(address) {
     return { online: null, err: r.err };
   })();
   e.p = p; e.t = Date.now(); onlineCache.set(address, e);
-  p.then(v => { e.v = v; e.p = null; });
+  p.then(v => { e.v = v; e.p = null; }, err => { e.v = { online: null, err: 'ошибка проверки: ' + err.message }; e.p = null; });
   return p;
 }
 function serverOnline(address) { // первый раз ждём ответ, дальше отдаём прежнее значение сразу, а свежее собираем в фоне (раз в 15 секунд)
@@ -358,7 +368,8 @@ app.get('/api/servers', async (req, res) => {
 app.post('/api/admin/server', can('server'), async (req, res) => {
   const name = String(req.body.name || '').trim().slice(0, 60), addr = String(req.body.address || '').trim();
   if (!name) return bad(res, 'Укажите название сервера');
-  if (!/^[\w.-]{3,64}:\d{2,5}$/.test(addr)) return bad(res, 'Адрес должен быть вида 45.95.31.64:27215');
+  const pm = addr.match(/^[\w.-]{3,64}:(\d{2,5})$/);
+  if (!pm || +pm[1] > 65535) return bad(res, 'Адрес должен быть вида 45.95.31.64:27215 (порт 1–65535)');
   if (+(await db.query('select count(*) c from servers')).rows[0].c >= 20) return bad(res, 'Достигнут лимит: 20 серверов');
   await db.query('insert into servers(name,address) values($1,$2)', [name, addr]);
   res.json({ ok: true });
@@ -371,7 +382,7 @@ app.post('/api/admin/server-delete', can('server'), async (req, res) => {
 let AGC = null, AGT = 0;
 async function agentCatalog() {
   if (AGC && Date.now() - AGT < 864e5) return AGC;
-  const r = await fetch('https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/agents.json');
+  const r = await fetch('https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/agents.json', { signal: AbortSignal.timeout(20000) });
   if (!r.ok) throw new Error('agents.json ' + r.status);
   AGC = (await r.json()).map(a => ({ id: a.id, name: a.name, image: a.image, model: a.model_player || a.model || '',
     team: /counter/i.test((a.team && (a.team.id || a.team.name)) || '') ? 'ct' : 't', col: (a.rarity && a.rarity.color) || '#888' })).filter(a => a.model && a.image);
@@ -418,7 +429,7 @@ app.post('/api/admin/grant', can('grant'), async (req, res) => {
   try {
     const err = await adminPurchaseCheck(id, false); if (err) return bad(res, err);
     const row = (await db.query('select name, grant_until from users where steam_id=$1', [id])).rows[0] || {};
-    const cur = +row.grant_until || 0, d = +days === 0 ? 0 : Math.min(+days || 30, 3650);
+    const cur = +row.grant_until || 0, d = +days === 0 ? 0 : Math.max(1, Math.min(+days || 30, 3650));
     const until = d === 0 ? FOREVER : Math.max(Date.now(), cur < FOREVER ? cur : 0) + d * 864e5;
     await grantGameAdmin({ steam_id: id, name: row.name }, until, opts); // сначала игра: если не вышло — на сайте ничего не меняем
     await db.query('insert into users(steam_id) values($1) on conflict do nothing', [id]);
@@ -484,7 +495,7 @@ app.get('/api/bans', async (req, res) => {
     const T = req.query.type === 'mutes' ? 'iks_comms' : 'iks_bans', n = nowS();
     const rows = await gq(`select b.name, b.steam_id, b.reason, b.duration, b.created_at, b.end_at, b.unbanned_by, a.name as admin_name
       from ${T} b left join iks_admins a on a.id=b.admin_id where b.deleted_at is null and b.unbanned_by is null order by b.id desc limit 200`);
-    res.json(rows.map(r => ({ player: r.name || r.steam_id, admin: r.admin_name || 'Консоль', reason: r.reason,
+    res.json(rows.map(r => ({ steamId: String(r.steam_id), player: r.name || r.steam_id, admin: r.admin_name || 'Консоль', reason: r.reason,
       term: +r.duration ? fmtDur(+r.duration) : 'Навсегда', at: r.created_at * 1000,
       active: !r.unbanned_by && (+r.end_at === 0 || +r.end_at > n) })));
   } catch (e) { console.error('bans:', e.message); res.json([]); }
@@ -596,7 +607,7 @@ app.get('/api/myskins', level('user'), async (req, res) => {
 });
 app.post('/api/skin', level('user'), async (req, res) => {
   try {
-    const weapon = req.body.weapon, W = WEAPONS[weapon]; if (!W) return bad(res, 'Неизвестное оружие');
+    const weapon = String(req.body.weapon), W = Object.hasOwn(WEAPONS, weapon) ? WEAPONS[weapon] : null; if (!W) return bad(res, 'Неизвестное оружие');
     const id = req.u.steam_id, isKnife = W[2] === 'Ножи', paint = Math.floor(+req.body.paint || 0);
     if (paint === 0) { // сброс
       await gq('delete from wp_player_skins where steamid=? and weapon_defindex=?', [id, W[0]]);
@@ -615,5 +626,11 @@ app.post('/api/skin', level('user'), async (req, res) => {
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Некорректный запрос' });
+  console.error('route error:', req.method, req.path, err && err.message);
+  res.status(500).json({ error: 'Внутренняя ошибка сервера, попробуйте позже' });
+});
 init().then(() => app.listen(process.env.PORT || 3000, () => { console.log('ok'); setTimeout(() => { loadSkins().catch(e => console.error('skins warmup:', e.message)); agentCatalog().catch(() => {}); }, 2000); }))
   .catch(e => { console.error('DB error:', e.message); process.exit(1); });
