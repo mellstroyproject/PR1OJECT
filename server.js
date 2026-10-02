@@ -1,7 +1,7 @@
 const express = require('express'), { Pool } = require('pg'), crypto = require('crypto'), path = require('path');
 const OWNER = '76561198659672678';
-const PRICE = { prem: [65, 200, 470, 840], plus: [150, 450, 1000, 1800] }; // как на сайте
-const DAYS = [7, 30, 90, 180], FOREVER = 1e15;
+const PRICE = { prem: [65, 200, 470, 840], plus: [150, 450, 1000, 1800, 3500] }; // как на сайте; последний у Админ+ — «Навсегда»
+const DAYS = [7, 30, 90, 180, 0], FOREVER = 1e15; // 0 дней = навсегда (только Админ+, индекс 4)
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 const mysql = require('mysql2/promise');
@@ -251,8 +251,11 @@ app.post('/api/buy', level('user'), async (req, res) => {
     if (nick.length < 2 || nick === 'Игрок') nick = req.u.steam_id; // запасной вариант, если Steam не отдал ник
     const err = await adminPurchaseCheck(req.u.steam_id); if (err) return bad(res, err);
   }
-  const r = await db.query(`update users set coins=coins-$1, ${col}=greatest(${col},$2)+$3 where steam_id=$4 and coins>=$1 returning plus_until, grant_until`,
-    [cost, Date.now(), days * 864e5, req.u.steam_id]);
+  const forever = days === 0; // «Навсегда»: срок = FOREVER, в игре end_at=0
+  const r = forever
+    ? await db.query(`update users set coins=coins-$1, ${col}=$2 where steam_id=$3 and coins>=$1 returning plus_until, grant_until`, [cost, FOREVER, req.u.steam_id])
+    : await db.query(`update users set coins=coins-$1, ${col}=greatest(${col},$2)+$3 where steam_id=$4 and coins>=$1 returning plus_until, grant_until`,
+        [cost, Date.now(), days * 864e5, req.u.steam_id]);
   if (!r.rowCount) return bad(res, 'Недостаточно монет');
   if (key === 'plus') {
     try { await grantGameAdmin(req.u, Math.max(+r.rows[0].plus_until, +r.rows[0].grant_until), { name: nick }); }
