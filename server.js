@@ -371,6 +371,50 @@ app.post('/api/admin/revoke', can('grant'), async (req, res) => {
     res.json({ ok: true });
   } catch (e) { console.error('revoke:', e.message); res.status(500).json({ error: 'Не удалось удалить админа в игре: ' + e.message }); }
 });
+// --- редактирование админа в базе игры (iks_admins): ник, флаги, иммунитет, срок, вкл/выкл — владелец и замы ---
+const fullOnly = async (req, res, next) => {
+  const u = await getUser(req);
+  if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
+  if (!isFull(u)) return res.status(403).json({ error: 'Нет прав' });
+  req.u = u; next();
+};
+app.post('/api/admin/admin-edit', fullOnly, async (req, res) => {
+  try {
+    if (!game) return bad(res, 'База игрового сервера не подключена');
+    const b = req.body, id = String(b.id || '');
+    if (!/^\d{17}$/.test(id)) return bad(res, 'Неверный SteamID64');
+    if (id === OWNER && req.u.steam_id !== OWNER) return bad(res, 'Владельца может менять только он сам');
+    const ex = (await gq('select id from iks_admins where steam_id=? and deleted_at is null limit 1', [id]))[0];
+    if (!ex) return bad(res, 'Такого админа нет в базе игры');
+    const set = ['updated_at=?'], p = [nowS()];
+    const nick = String(b.name || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 64);
+    if (nick) { if (nick.length < 2) return bad(res, 'Ник — минимум 2 символа'); set.push('name=?'); p.push(nick); }
+    const flags = String(b.flags || '').trim();
+    if (flags) { if (!/^[a-z]{1,26}$/i.test(flags)) return bad(res, 'Флаги — только латинские буквы, например z или abcdefj'); set.push('flags=?'); p.push(flags); }
+    if (b.immunity !== undefined && b.immunity !== null && b.immunity !== '') {
+      const v = +b.immunity; if (!Number.isInteger(v) || v < 0 || v > 100) return bad(res, 'Иммунитет — целое число от 0 до 100');
+      set.push('immunity=?'); p.push(v);
+    }
+    if (typeof b.off === 'boolean') { set.push('is_disabled=?'); p.push(b.off ? 1 : 0); }
+    let end;
+    if (b.days !== undefined && b.days !== null && b.days !== '' && b.days !== 'keep') {
+      const d = +b.days; if (!Number.isFinite(d) || d < 0) return bad(res, 'Неверный срок');
+      end = d === 0 ? 0 : nowS() + Math.min(Math.floor(d), 3650) * 86400; // 0 = навсегда
+      set.push('end_at=?'); p.push(end);
+    }
+    await gq(`update iks_admins set ${set.join(',')} where id=?`, [...p, ex.id]);
+    gaCache.delete(id);
+    if (end !== undefined) await db.query('update users set grant_until=$2 where steam_id=$1 and grant_until>0', [id, end === 0 ? FOREVER : end * 1000]);
+    res.json({ ok: true });
+  } catch (e) { console.error('admin-edit:', e.message); res.status(500).json({ error: 'Не удалось изменить админа в игре: ' + e.message }); }
+});
+app.post('/api/admin/promo-edit', can('promo'), async (req, res) => {
+  const code = String(req.body.code || '').trim().toUpperCase(), coins = +req.body.coins, max = Math.floor(+req.body.max || 0);
+  if (!(coins > 0 && coins <= 100000)) return bad(res, 'Награда: число от 1 до 100 000');
+  if (max < 0) return bad(res, 'Лимит не может быть отрицательным');
+  const r = await db.query('update promos set coins=$2, max=$3 where code=$1', [code, coins, max]);
+  r.rowCount ? res.json({ ok: true }) : res.status(404).json({ error: 'Код не найден' });
+});
 app.post('/api/admin/deputy', level('owner'), async (req, res) => {
   const { id, on } = req.body;
   if (!/^\d{17}$/.test(id) || id === OWNER) return bad(res, 'Неверный SteamID64 (17 цифр)');
