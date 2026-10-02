@@ -597,7 +597,10 @@ function adminOwnerSections(){
    ${deps.length?`<table><tr><th>Заместитель</th><th>Назначен</th><th></th></tr>${deps.map(([id,d])=>`<tr><td>${ppl(id,d.name,d.avatar)}</td><td>${fmtDate(+d.at)}</td><td><button class="join del" onclick="removeDeputy('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока нет заместителей.</div>'}`;
   const gaList=SV.admins||[]; // loadMe кладёт m.adm в SV и удаляет его из st.user
   const gaBlock=`<h2 class="sec">Все админы сервера</h2>
-    ${gaList.length?`<table><tr><th>Игрок (ник в игре)</th><th>Флаги</th><th>Иммунитет</th><th>Действует до</th><th></th></tr>${gaList.map(a=>`<tr><td>${ppl(a.id,a.name||a.site,a.ava)}</td><td>${esc(a.flags||'')}</td><td>${a.imm}</td><td class="${a.off||(a.end&&a.end*1000<=now)?'ban':'ok'}">${a.off?'отключён':!a.end?'навсегда':(a.end*1000>now?fmtDate(a.end*1000):'истёк '+fmtDate(a.end*1000))}</td><td>${a.id===OWNER_STEAM_ID?'':`<button class="join del" onclick="revokeAdmin('${a.id}')">Удалить</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">В базе игрового сервера нет админов (или база не подключена).</div>'}`;
+    <div class="admin-tools"><input id="gaeId" placeholder="Нажмите «Изменить» у админа в таблице" readonly aria-label="SteamID64"><input id="gaeName" placeholder="Ник в игре" maxlength="64" aria-label="Ник"><input id="gaeFlags" placeholder="Флаги" maxlength="26" aria-label="Флаги"><input id="gaeImm" type="number" min="0" max="100" placeholder="Иммунитет 0–100" aria-label="Иммунитет">
+      <select id="gaeDays" aria-label="Срок"><option value="keep" selected>Срок: не менять</option><option value="7">7 дней от сегодня</option><option value="30">30 дней от сегодня</option><option value="90">90 дней от сегодня</option><option value="180">180 дней от сегодня</option><option value="0">Навсегда</option></select>
+      <label class="perm"><input type="checkbox" id="gaeOff">Отключён</label><button class="ok" onclick="saveAdminEdit()">Сохранить</button>${msg('gaedit','gaeMsg')}</div>
+    ${gaList.length?`<table><tr><th>Игрок (ник в игре)</th><th>Флаги</th><th>Иммунитет</th><th>Действует до</th><th></th></tr>${gaList.map(a=>`<tr><td>${ppl(a.id,a.name||a.site,a.ava)}</td><td>${esc(a.flags||'')}</td><td>${a.imm}</td><td class="${a.off||(a.end&&a.end*1000<=now)?'ban':'ok'}">${a.off?'отключён':!a.end?'навсегда':(a.end*1000>now?fmtDate(a.end*1000):'истёк '+fmtDate(a.end*1000))}</td><td>${a.id===OWNER_STEAM_ID&&!st.user.isOwner?'':`<button class="join" onclick="editAdmin('${a.id}')">Изменить</button>`} ${a.id===OWNER_STEAM_ID?'':`<button class="join del" onclick="revokeAdmin('${a.id}')">Удалить</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">В базе игрового сервера нет админов (или база не подключена).</div>'}`;
   const grantBlock=`<h2 class="sec">Выдать админку</h2>
    <div class="admin-tools"><input id="grantId" placeholder="SteamID64 игрока (17 цифр)" inputmode="numeric" maxlength="17" aria-label="SteamID64">
      ${st.user.full?`<input id="grantName" placeholder="Ник в игре (пусто = ник из Steam)" maxlength="64" aria-label="Ник"><input id="grantFlags" placeholder="Флаги (пусто = по умолчанию)" maxlength="26" aria-label="Флаги"><input id="grantImm" type="number" min="0" max="100" placeholder="Иммунитет 0–100 (пусто = по умолчанию)" aria-label="Иммунитет">`:''}
@@ -610,7 +613,7 @@ function adminOwnerSections(){
      <input id="pCoins" type="number" min="1" max="100000" placeholder="Награда, монет" aria-label="Награда">
      <input id="pMax" type="number" min="0" placeholder="Лимит активаций (0 = без лимита)" aria-label="Лимит">
      <button class="ok" onclick="createPromo()">Создать</button>${msg('promo','promoMsgA')}</div>
-   <table><tr><th>Код</th><th>Награда</th><th>Активаций</th><th></th></tr>${promos.map(p=>`<tr><td>${p.code}</td><td>+${p.coins}</td><td>${p.used||0}${p.max?' / '+p.max:' / ∞'}</td><td>${p.builtin?'<span class="stat">встроенный</span>':`<button class="join del" onclick="deletePromo('${p.code}')">Удалить</button>`}</td></tr>`).join('')}</table>`;
+   <table><tr><th>Код</th><th>Награда</th><th>Активаций</th><th></th></tr>${promos.map(p=>`<tr><td>${p.code}</td><td>+${p.coins}</td><td>${p.used||0}${p.max?' / '+p.max:' / ∞'}</td><td>${p.builtin?'<span class="stat">встроенный</span>':`<button class="join" onclick="editPromo('${p.code}')">Изменить</button> <button class="join del" onclick="deletePromo('${p.code}')">Удалить</button>`}</td></tr>`).join('')}</table>`;
   return (can('grant')?grantBlock:'')+(st.user.full?gaBlock:'')+(st.user.isOwner?deputyBlock+permsAdmin():'')+(can('promo')?promoBlock:'')+(can('design')?designAdmin():'');
 }
 function adminAction(verb){
@@ -1135,7 +1138,24 @@ async function agReset(){
 // ===== Права доступа и дизайн сайта =====
 function can(p){return !!(st.user&&(st.user.isOwner||(st.user.perms||[]).includes(p)))}
 const PERM_LABELS={ban:'Банить и мутить',unban:'Разбанивать и снимать мут',grant:'Выдавать и снимать Админ+',promo:'Промокоды',server:'Серверы',design:'Дизайн сайта'};
-MID.perms='#permMsg';MID.design='#designMsg';
+MID.perms='#permMsg';MID.design='#designMsg';MID.gaedit='#gaeMsg';
+function editAdmin(id){
+  const a=(SV.admins||[]).find(x=>x.id===id);if(!a)return;
+  $('#gaeId').value=a.id;$('#gaeName').value=a.name||'';$('#gaeFlags').value=a.flags||'';$('#gaeImm').value=a.imm;
+  $('#gaeDays').value='keep';$('#gaeOff').checked=!!a.off;
+  $('#gaeId').scrollIntoView({block:'center',behavior:'smooth'});$('#gaeName').focus();
+}
+function saveAdminEdit(){
+  const id=($('#gaeId').value||'').trim();
+  if(!/^\d{17}$/.test(id))return adminMsgNow('#gaeMsg','Сначала нажмите «Изменить» у админа в таблице');
+  adm('gaedit','admin-edit',{id,name:($('#gaeName').value||'').trim(),flags:($('#gaeFlags').value||'').trim(),immunity:$('#gaeImm').value,days:$('#gaeDays').value,off:$('#gaeOff').checked},'Админ изменён в базе: '+id);
+}
+function editPromo(code){
+  const p=allPromos()[code];if(!p)return;
+  const c=prompt('Награда в монетах для '+code+':',p.coins);if(c===null)return;
+  const m=prompt('Лимит активаций (0 = без лимита):',p.max||0);if(m===null)return;
+  adm('promo','promo-edit',{code,coins:+c,max:Math.floor(+m||0)},'Промокод изменён: '+code);
+}
 function permsAdmin(){
   const m=(st.adminMsg||{}).perms,list=Object.entries(SV.perms||{});
   return `<h2 class="sec">Права доступа</h2>
