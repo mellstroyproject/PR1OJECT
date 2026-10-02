@@ -264,7 +264,7 @@ function buyPlan(key,name){
     try{localStorage.setItem('plusUntil:'+st.user.id,String(until))}catch(e){}
     applyRole(st.user);
   }
-  alert(`Покупка успешна: ${name} на ${periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
+  alert(`Покупка успешна: ${name} ${key==='plus'?'навсегда':'на '+periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
   draw();
 }
 function activatePromo(){
@@ -468,7 +468,8 @@ const mutes=[['Игрок D','Админ 3','Оскорбления в чате'
 const prem=['Больше денег в начале раунда','Выделение в чате и серверов','Прокачка опыта x2','Резервный слот для подключения','Улучшенный дроп скинов'];
 const plus=['Все возможности премиума','Заглушить игрока','Заморозить игрока','Ослепить игрока','Убить игрока','Изменить урон игроку','Изменить здоровье игроку','Отключить прыжок игроку'];
 const periods=['7 дней','30 дней','90 дней','180 дней'];
-const price={prem:[65,200,470,840],plus:[150,450,1000,1800]}; // временные цены, замени на свои
+const periodsOf=k=>k==='plus'?['Навсегда']:periods; // Админ+ продаётся только навсегда
+const price={prem:[65,200,470,840],plus:[550]}; // временные цены, замени на свои
 const rcats=['Основные','Общение','Игровой процесс','Никнеймы и аватарки','Прочее','Для администрации','Условия проверки'];
 
 function head(){
@@ -480,7 +481,7 @@ function head(){
   const coinsChanged=logged&&prev.logged&&from!==null&&coins!==from,loginChanged=logged!==prev.logged;
   prev.menu=st.menu;prev.promo=st.promoOpen;prev.logged=logged;prev.coins=logged?coins:null;
   $('#right').classList.toggle('swap',loginChanged);
-  const menuItems=(st.user&&st.user.isAdmin?[['Админ-панель','shield',"go('admin')"]]:[]).concat([['Профиль','user',"go('settings')"],['Скинченджер','skin',"go('skins')"]]);
+  const menuItems=(st.user&&st.user.isAdmin?[['Админ-панель','shield',"go('admin')"]]:[]).concat([['Профиль','user'],['Скинченджер','skin'],['Хранилище','box'],['Настройки','gear',"go('settings')"]]);
   $('#right').innerHTML=st.user?
    `<div class="promo-wrap"><button class="promo-btn" onclick="togglePromo()">${I('promo')}Промокод</button>`+
    (st.promoOpen?`<div class="promo-pop${promoFresh?' pop':''}"><input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="Введите код" aria-label="Промокод" autofocus><button onclick="activatePromo()">Активировать</button><div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?esc(st.promoMsg.text):''}</div></div>`:'')+
@@ -489,7 +490,7 @@ function head(){
    `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="alert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
    `<button class="ava" aria-label="Профиль" style="${st.user.avatar?`background-image:url('${st.user.avatar}')`:''}" onclick="st.menu=!st.menu;st.promoOpen=false;head()">${st.user.avatar?'':esc((st.user.name||'?').trim().charAt(0).toUpperCase())}</button>`+
    `<button class="gear${st.page==='settings'?' on':''}" aria-label="Настройки" title="Настройки" onclick="go('settings')">${I('gear')}</button>`+
-   (st.menu?`<div class="menu${menuFresh?' pop':''}"><div class="menu-user">${esc(st.user.name||'Игрок')}</div>${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти из аккаунта</button></div>`:'')
+   (st.menu?`<div class="menu${menuFresh?' pop':''}">${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти</button></div>`:'')
    :`<button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button><a class="demo" href="#" onclick="demoLogin();return false">демо</a>`;
   if(coinsChanged&&!reduce)countTo(from,coins);
 }
@@ -498,15 +499,15 @@ function view(){
   if(st.page==='home') return `<div class="cards"><div class="mode" onclick="go('public')" role="button" tabindex="0"><svg class="mode-art" viewBox="0 0 320 460" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="mg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="s1"/><stop offset="1" class="s2"/></linearGradient><radialGradient id="mg2"><stop offset="0" class="g1"/><stop offset="1" class="g2"/></radialGradient></defs><rect width="320" height="460" fill="url(#mg1)"/><circle cx="160" cy="190" r="175" fill="url(#mg2)"/><g class="st"><circle cx="30" cy="40" r="1.4"/><circle cx="92" cy="22" r="1"/><circle cx="270" cy="34" r="1.4"/><circle cx="292" cy="120" r="1"/><circle cx="24" cy="150" r="1"/><circle cx="60" cy="260" r="1.2"/><circle cx="300" cy="250" r="1.2"/><circle cx="200" cy="18" r="1"/></g><path class="sp" d="M52 84l2-6 6-2-6-2-2-6-2 6-6 2 6 2z"/><path class="sp" d="M262 300l2-6 6-2-6-2-2-6-2 6-6 2 6 2z"/><path class="ln" d="M-10 350L330 40"/><path class="ln l2" d="M-10 420L330 110"/><g fill="none"><circle class="ring" cx="160" cy="190" r="112"/><circle class="ring2" cx="160" cy="190" r="94"/><path class="cross" d="M160 62V162M160 218V318M32 190H132M188 190H288"/><path class="tick" d="M160 88v12M160 280v12M58 190h12M250 190h12"/></g><circle class="dot" cx="160" cy="190" r="3.5"/><g transform="translate(232 92) rotate(35)"><rect class="bl" width="40" height="9" rx="4.5"/><rect class="bl2" width="12" height="9" rx="3"/></g><path class="sk1" transform="translate(0 -30)" d="M0 460V392h20v-16q10-16 20 0v16h16v-34h5v-12h5v12h5v34h22v-24q16-30 32 0v24h24v-40l9-14 9 14v40h24v-20h22v-12h14v12h20v-30q14-24 28 0v30h24v-18h21V460Z"/><path class="sk2" d="M0 460V392h20v-16q10-16 20 0v16h16v-34h5v-12h5v12h5v34h22v-24q16-30 32 0v24h24v-40l9-14 9 14v40h24v-20h22v-12h14v12h20v-30q14-24 28 0v30h24v-18h21V460Z"/><g class="win"><rect x="60" y="384" width="3" height="4"/><rect x="146" y="374" width="3" height="4"/><rect x="238" y="380" width="3" height="4"/><rect x="284" y="382" width="3" height="4"/></g></svg><b>PUBLIC</b><span class="mode-go">Играть →</span></div></div>
    <div class="scroll-hint">Листай вниз<span>↓</span></div>
    <section class="reveal-zone" aria-hidden="true"><div class="reveal-stage"><div class="burst"></div><div class="reveal-bob"><img class="reveal-img" src="${IMG67}" alt="6 7"></div></div></section>`;
-  if(st.page==='public') return `<h1>Public: серверы</h1><table><tr><th>Сервер</th><th>Онлайн</th><th>Подключение</th><th></th></tr>${servers.map(s=>`<tr><td>${esc(s[0])}</td><td>${s[2]?`<span class="online on">${s[2].players}/${s[2].max}${s[2].map?' · '+esc(s[2].map):''}</span>`:`<span class="online off" title="${esc(s[3]||'')}">нет ответа</span>${can('server')?`<div class="stat" style="margin-top:4px">${s[2]===undefined&&!s[3]?'server.js на хостинге ещё не обновлён':esc(s[3]||'')}</div>`:''}`}</td><td>connect ${esc(s[1])}</td><td><button class="join" onclick="location.href='steam://connect/${esc(s[1])}'">Играть</button> <button class="join" onclick="navigator.clipboard&&navigator.clipboard.writeText('connect ${esc(s[1])}');alert('Скопировано: connect ${esc(s[1])}')">Копировать</button></td></tr>`).join('')}</table>`;
-  if(st.page==='shop') return `<h1 style="text-align:center">Магазин</h1><div class="plans">${[['prem','Премиум',prem,'p'],['plus','Админ+',plus,'g']].map(([k,n,l,c])=>`<div class="plan ${c}"><h2>${n}</h2><ul>${l.map(x=>`<li>${x}</li>`).join('')}</ul><div class="periods">${periods.map((p,i)=>`<button class="${st.plan[k]===i?'on':''}" onclick="setPeriod('${k}',${i},this)">${p}</button>`).join('')}</div><div class="price">${price[k][st.plan[k]]} ₽</div><button class="buy" onclick="buyPlan('${k}','${n}')">Купить</button></div>`).join('')}</div>`;
+  if(st.page==='public') return `<h1>Public: серверы</h1><table><tr><th>Сервер</th><th>Подключение</th><th></th></tr>${servers.map(s=>`<tr><td>${esc(s[0])}</td><td>connect ${esc(s[1])}</td><td><button class="join" onclick="location.href='steam://connect/${esc(s[1])}'">Играть</button> <button class="join" onclick="navigator.clipboard&&navigator.clipboard.writeText('connect ${esc(s[1])}');alert('Скопировано: connect ${esc(s[1])}')">Копировать</button></td></tr>`).join('')}</table>`;
+  if(st.page==='shop') return `<h1 style="text-align:center">Магазин</h1><div class="plans">${[['prem','Премиум',prem,'p'],['plus','Админ+',plus,'g']].map(([k,n,l,c])=>`<div class="plan ${c}"><h2>${n}</h2><ul>${l.map(x=>`<li>${x}</li>`).join('')}</ul><div class="periods">${periodsOf(k).map((p,i)=>`<button class="${st.plan[k]===i?'on':''}" onclick="setPeriod('${k}',${i},this)">${p}</button>`).join('')}</div><div class="price">${price[k][st.plan[k]]} ₽</div><button class="buy" onclick="buyPlan('${k}','${n}')">Купить</button></div>`).join('')}</div>`;
   if(st.page==='leaders'){const rows=leaders[st.lb];return `<h1>Лидеры</h1><div class="bar"><div class="tabs"><button class="${st.lb==='exp'?'on':''}" onclick="st.lb='exp';draw()">По опыту</button><button class="${st.lb==='drop'?'on':''}" onclick="st.lb='drop';draw()">По дропу</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Место</th><th>Игрок</th><th>Очков</th><th>Убийств</th><th>У/С</th><th>Время игры</th></tr>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${i<2&&st.lb==='exp'?'<span class="prem">ПРЕМИУМ</span>':''}${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`).join('')}</table>`}
   if(st.page==='bans'){const rows=st.bt==='bans'?bans:mutes;return `<h1>Баны</h1><div class="bar"><div class="tabs"><button class="${st.bt==='bans'?'on':''}" onclick="st.bt='bans';draw()">Баны</button><button class="${st.bt==='mutes'?'on':''}" onclick="st.bt='mutes';draw()">Муты</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Игрок</th><th>Админ</th><th>Причина</th><th>Статус</th><th>Срок</th><th>Дата</th></tr>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="${r[3]?'ban':'ok'}">${r[3]?(st.bt==='bans'?'Забанен':'Замучен'):'Разбанен'}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`).join('')}</table>`}
   if(st.page==='rules') return `<h1>Правила</h1><div class="rules"><div class="side">${rcats.map((c,i)=>`<button class="${st.rule===i?'on':''}" onclick="st.rule=${i};draw()">${c}</button>`).join('')}</div><div class="empty">Раздел «${rcats[st.rule]}»: текст правил добавим позже.</div></div>`;
   if(st.page==='settings'){
     const u=st.user;
-    if(!u) return `<h1>Профиль</h1><div class="empty">Вы не вошли в аккаунт. Войдите через Steam, чтобы увидеть профиль.<br><br><button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button></div>${themeCard()}`;
-    return `<h1>Профиль</h1>
+    if(!u) return `<h1>Настройки</h1><div class="empty">Вы не вошли в аккаунт. Войдите через Steam, чтобы увидеть настройки.<br><br><button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button></div>${themeCard()}`;
+    return `<h1>Настройки</h1>
      <div class="set-card"><div class="set-ava" style="${u.avatar?`background-image:url('${u.avatar}')`:''}">${u.avatar?'':esc((u.name||'?').trim().charAt(0).toUpperCase())}</div>
        <div><div class="set-name">${esc(u.name||'Игрок')}${u.role?`<span class="admin-badge">${u.role}</span>`:''}</div><div class="stat">SteamID: ${esc(u.id)}</div><div class="stat">Баланс: ${(u.coins||0).toFixed(2)}</div></div></div>
      ${themeCard()}
@@ -518,7 +519,6 @@ function view(){
    <div class="admin-grid">
      <div class="admin-card"><div class="n">${bans.filter(b=>b[3]).length}</div><div class="l">Активных банов</div></div>
      <div class="admin-card"><div class="n">${mutes.filter(m=>m[3]).length}</div><div class="l">Активных мутов</div></div>
-    <div class="admin-card"><div class="n">${servers.reduce((a,s)=>a+(s[2]?s[2].players:0),0)}</div><div class="l">Игроков онлайн</div></div>
    </div>
    <div class="admin-tools"><input id="adminTarget" placeholder="Ник или SteamID игрока" aria-label="Игрок">
      ${(can('ban')?[['Кикнут','Кикнуть'],['Замьючен','Замьютить'],['Заглушен','Заглушить'],['Заморожен','Заморозить'],['Ослеплён','Ослепить'],['Убит','Убить']]:[['Заглушен','Заглушить'],['Заморожен','Заморозить'],['Ослеплён','Ослепить'],['Убит','Убить']]).map(([v,t])=>`<button onclick="adminAction('${v}')">${t}</button>`).join('')}
@@ -582,6 +582,10 @@ function deletePromo(code){
   LS.set('customPromos',getCustomPromos().filter(p=>p.code!==code));
   adminOk('promo','Промокод удалён: '+code);
 }
+function ppl(id,name,avatar){ // аватарка + ник + ссылка на профиль Steam
+  const a=safeAvatar(avatar),n=name||'';
+  return `<span class="ppl"><i class="pa" style="${a?`background-image:url('${a}')`:''}">${a?'':esc((n||'?').trim().charAt(0).toUpperCase())}</i><span>${n?esc(n)+'<br>':''}<a class="lnk" href="https://steamcommunity.com/profiles/${id}" target="_blank" rel="noopener">${id}</a></span></span>`;
+}
 function adminOwnerSections(){
   const m=st.adminMsg||{},now=Date.now();
   const msg=(k,id)=>`<div id="${id}" class="promo-msg ${m[k]?(m[k].ok?'ok':'err'):''}">${m[k]?esc(m[k].text):''}</div>`;
@@ -590,25 +594,28 @@ function adminOwnerSections(){
   const deps=Object.entries(getDeputies()).sort((a,b)=>b[1].at-a[1].at);
   const deputyBlock=`<h2 class="sec">Заместители</h2>
    <div class="admin-tools"><input id="depId" placeholder="SteamID64 игрока (17 цифр)" inputmode="numeric" maxlength="17" aria-label="SteamID64 зама"><button class="ok" onclick="addDeputy()">Назначить замом</button>${msg('deputy','depMsg')}</div>
-   <p class="stat" style="margin-bottom:10px">Зам получает те же права, что и владелец: баны, «Админ+», промокоды, серверы, дизайн, права доступа и назначение других замов. Владельца он затронуть не может. Штатные админы игры (не назначенные здесь) умеют только банить, разбанивать и выдавать «Админ+».</p>
-   ${deps.length?`<table><tr><th>Заместитель (SteamID64)</th><th>Назначен</th><th></th></tr>${deps.map(([id,d])=>`<tr><td><a class="lnk" href="https://steamcommunity.com/profiles/${id}" target="_blank" rel="noopener">${id}</a></td><td>${fmtDate(+d.at)}</td><td><button class="join del" onclick="removeDeputy('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока нет заместителей.</div>'}`;
+   <p class="stat" style="margin-bottom:10px">У зама те же права, что у владельца (баны, муты, «Админ+», промокоды, серверы, дизайн, список админов). Назначать замов и выдавать отдельные права может только владелец.</p>
+   ${deps.length?`<table><tr><th>Заместитель</th><th>Назначен</th><th></th></tr>${deps.map(([id,d])=>`<tr><td>${ppl(id,d.name,d.avatar)}</td><td>${fmtDate(+d.at)}</td><td><button class="join del" onclick="removeDeputy('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока нет заместителей.</div>'}`;
   const gaList=SV.admins||[]; // loadMe кладёт m.adm в SV и удаляет его из st.user
   const gaBlock=`<h2 class="sec">Все админы сервера</h2>
-    ${gaList.length?`<table><tr><th>Ник</th><th>SteamID64</th><th>Флаги</th><th>Иммунитет</th><th>Действует до</th><th></th></tr>${gaList.map(a=>`<tr><td>${esc(a.name||'—')}</td><td><a class="lnk" href="https://steamcommunity.com/profiles/${a.id}" target="_blank" rel="noopener">${a.id}</a></td><td>${esc(a.flags||'')}</td><td>${a.imm}</td><td class="${a.off||(a.end&&a.end*1000<=now)?'ban':'ok'}">${a.off?'отключён':!a.end?'навсегда':(a.end*1000>now?fmtDate(a.end*1000):'истёк '+fmtDate(a.end*1000))}</td><td>${a.id===OWNER_STEAM_ID?'':`<button class="join del" onclick="revokeAdmin('${a.id}')">Удалить</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">В базе игрового сервера нет админов (или база не подключена).</div>'}`;
+    <div class="admin-tools"><input id="gaeId" placeholder="Нажмите «Изменить» у админа в таблице" readonly aria-label="SteamID64"><input id="gaeName" placeholder="Ник в игре" maxlength="64" aria-label="Ник"><input id="gaeFlags" placeholder="Флаги" maxlength="26" aria-label="Флаги"><input id="gaeImm" type="number" min="0" max="100" placeholder="Иммунитет 0–100" aria-label="Иммунитет">
+      <select id="gaeDays" aria-label="Срок"><option value="keep" selected>Срок: не менять</option><option value="7">7 дней от сегодня</option><option value="30">30 дней от сегодня</option><option value="90">90 дней от сегодня</option><option value="180">180 дней от сегодня</option><option value="0">Навсегда</option></select>
+      <label class="perm"><input type="checkbox" id="gaeOff">Отключён</label><button class="ok" onclick="saveAdminEdit()">Сохранить</button>${msg('gaedit','gaeMsg')}</div>
+    ${gaList.length?`<table><tr><th>Игрок (ник в игре)</th><th>Флаги</th><th>Иммунитет</th><th>Действует до</th><th></th></tr>${gaList.map(a=>`<tr><td>${ppl(a.id,a.name||a.site,a.ava)}</td><td>${esc(a.flags||'')}</td><td>${a.imm}</td><td class="${a.off||(a.end&&a.end*1000<=now)?'ban':'ok'}">${a.off?'отключён':!a.end?'навсегда':(a.end*1000>now?fmtDate(a.end*1000):'истёк '+fmtDate(a.end*1000))}</td><td>${a.id===OWNER_STEAM_ID&&!st.user.isOwner?'':`<button class="join" onclick="editAdmin('${a.id}')">Изменить</button>`} ${a.id===OWNER_STEAM_ID?'':`<button class="join del" onclick="revokeAdmin('${a.id}')">Удалить</button>`}</td></tr>`).join('')}</table>`:'<div class="empty">В базе игрового сервера нет админов (или база не подключена).</div>'}`;
   const grantBlock=`<h2 class="sec">Выдать админку</h2>
    <div class="admin-tools"><input id="grantId" placeholder="SteamID64 игрока (17 цифр)" inputmode="numeric" maxlength="17" aria-label="SteamID64">
      ${st.user.full?`<input id="grantName" placeholder="Ник в игре (пусто = ник из Steam)" maxlength="64" aria-label="Ник"><input id="grantFlags" placeholder="Флаги (пусто = по умолчанию)" maxlength="26" aria-label="Флаги"><input id="grantImm" type="number" min="0" max="100" placeholder="Иммунитет 0–100 (пусто = по умолчанию)" aria-label="Иммунитет">`:''}
      <select id="grantDays" aria-label="Срок"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option><option value="180">180 дней</option><option value="0">Навсегда</option></select>
      <button class="ok" onclick="grantAdmin()">Выдать</button>${msg('grant','grantMsg')}</div>
-   ${grants.length?`<table><tr><th>Игрок (SteamID64)</th><th>Роль</th><th>Действует до</th><th></th></tr>${grants.map(([id,g])=>`<tr><td><a class="lnk" href="https://steamcommunity.com/profiles/${id}" target="_blank" rel="noopener">${id}</a></td><td>Админ+</td><td class="${+g.until>now?'ok':'ban'}">${+g.until>now?fmtDate(+g.until):'истёк '+fmtDate(+g.until)}</td><td><button class="join del" onclick="revokeAdmin('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока никому не выдано.</div>'}`;
+   ${grants.length?`<table><tr><th>Игрок</th><th>Роль</th><th>Действует до</th><th></th></tr>${grants.map(([id,g])=>`<tr><td>${ppl(id,g.name,g.avatar)}</td><td>Админ+</td><td class="${+g.until>now?'ok':'ban'}">${+g.until>now?fmtDate(+g.until):'истёк '+fmtDate(+g.until)}</td><td><button class="join del" onclick="revokeAdmin('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока никому не выдано.</div>'}`;
   const promoBlock=`<h2 class="sec">Промокоды</h2>
    <div class="admin-tools"><input id="pCode" placeholder="Код (например SUMMER100 или ЛЕТО2026)" maxlength="32" aria-label="Код">
      <button onclick="genPromo()">Случайный</button>
      <input id="pCoins" type="number" min="1" max="100000" placeholder="Награда, монет" aria-label="Награда">
      <input id="pMax" type="number" min="0" placeholder="Лимит активаций (0 = без лимита)" aria-label="Лимит">
      <button class="ok" onclick="createPromo()">Создать</button>${msg('promo','promoMsgA')}</div>
-   <table><tr><th>Код</th><th>Награда</th><th>Активаций</th><th></th></tr>${promos.map(p=>`<tr><td>${p.code}</td><td>+${p.coins}</td><td>${p.used||0}${p.max?' / '+p.max:' / ∞'}</td><td>${p.builtin?'<span class="stat">встроенный</span>':`<button class="join del" onclick="deletePromo('${p.code}')">Удалить</button>`}</td></tr>`).join('')}</table>`;
-  return (can('grant')?grantBlock:'')+(st.user.full?gaBlock+deputyBlock+permsAdmin():'')+(can('promo')?promoBlock:'')+(can('design')?designAdmin():'');
+   <table><tr><th>Код</th><th>Награда</th><th>Активаций</th><th></th></tr>${promos.map(p=>`<tr><td>${p.code}</td><td>+${p.coins}</td><td>${p.used||0}${p.max?' / '+p.max:' / ∞'}</td><td>${p.builtin?'<span class="stat">встроенный</span>':`<button class="join" onclick="editPromo('${p.code}')">Изменить</button> <button class="join del" onclick="deletePromo('${p.code}')">Удалить</button>`}</td></tr>`).join('')}</table>`;
+  return (can('grant')?grantBlock:'')+(st.user.full?gaBlock:'')+(st.user.isOwner?deputyBlock+permsAdmin():'')+(can('promo')?promoBlock:'')+(can('design')?designAdmin():'');
 }
 function adminAction(verb){
   const t=($('#adminTarget')?.value||'').trim();
@@ -665,8 +672,8 @@ function applyRole(u){
   u.hasPlus=u.plusUntil>Date.now();
   u.isDeputy=!u.isOwner&&!!u.deputy;
   u.canManage=u.isOwner||u.isDeputy;
-  u.perms=Array.isArray(u.perms)?u.perms:[];
   u.full=u.isOwner||!!u.full; // владелец и назначенные замы
+  u.perms=Array.isArray(u.perms)?u.perms:[];
   u.isAdmin=u.canManage||u.hasPlus||u.perms.length>0;
   u.role=u.isOwner?'Владелец':(u.isDeputy?'Зам':(u.hasPlus?'Админ+':(u.perms.length?'Модератор':null)));
   return u;
@@ -674,7 +681,6 @@ function applyRole(u){
 async function loadMe(){
   try{const m=await api('me');if(m){SV=m.adm||SV;delete m.adm;st.user=applyRole(m)}else st.user=null}catch(e){}
   draw();
-  if(st.user&&!st.user.avatar)loadSteamAvatar(); // запасной путь, если сервер не смог получить аватарку
 }
 function steamLogin(){location.href='/auth/steam'}
 function demoLogin(){alert('Демо отключено — войдите через Steam')}
@@ -686,16 +692,9 @@ async function logout(){
 }
 async function buyPlan(key,name){
   if(!st.user){alert('Сначала войдите через Steam, чтобы купить');return}
-  let nick;
-  if(key==='plus'){
-    const p=prompt('Введите ник, под которым вы будете админом в игре (2–32 символа):',(st.user.name||'').slice(0,32));
-    if(p===null)return;
-    nick=p.trim();
-    if(nick.length<2||nick.length>32){alert('Ник должен быть от 2 до 32 символов');return}
-  }
   try{
-    await api('buy',{key,idx:st.plan[key],nick});await loadMe();
-    alert(`Покупка успешна: ${name} на ${periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
+    await api('buy',{key,idx:st.plan[key]});await loadMe();
+    alert(`Покупка успешна: ${name} ${key==='plus'?'навсегда':'на '+periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
   }catch(e){alert(e.message)}
 }
 async function activatePromo(){
@@ -1001,7 +1000,7 @@ async function adminAction(verb){
 // ===== Серверы: владелец добавляет и удаляет =====
 let SRVDB=[];
 async function loadServers(){
-  try{SRVDB=await api('servers');servers.length=0;SRVDB.forEach(r=>servers.push([r.name,r.address,r.online,r.onlineErr]))}catch(e){}
+  try{SRVDB=await api('servers');servers.length=0;SRVDB.forEach(r=>servers.push([r.name,r.address]))}catch(e){}
   draw();
 }
 const _aos=adminOwnerSections;
@@ -1021,7 +1020,6 @@ async function delServer(id){
   try{await api('admin/server-delete',{id});await loadServers();toast('Сервер удалён','ok')}catch(e){toast(e.message,'err')}
 }
 loadServers();
-setInterval(async()=>{if(document.hidden||st.page!=='public')return;try{SRVDB=await api('servers');servers.length=0;SRVDB.forEach(r=>servers.push([r.name,r.address,r.online,r.onlineErr]));draw()}catch(e){}},20000); // онлайн обновляется, пока открыта страница серверов
 </script>
 <style>
 /* ===== Анимации: переходы между страницами, плашка меню, сообщения ===== */
@@ -1131,8 +1129,8 @@ async function agReset(){
 })();
 </script>
 <style>
-.online.on{color:#22c55e}.online.off{color:#f87171}
-.menu-user{padding:6px 14px 2px;font-weight:700;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ppl{display:flex;align-items:center;gap:10px}
+.pa{width:32px;height:32px;border-radius:8px;flex:none;background:linear-gradient(135deg,var(--acc),var(--acc-b)) center/cover no-repeat;display:grid;place-items:center;font-size:14px;font-weight:800;font-style:normal;color:#fff}
 .perm-grid{display:flex;flex-wrap:wrap;gap:10px 22px;width:100%}
 .perm{display:flex;align-items:center;gap:8px;cursor:pointer}
 .perm input,.admin-tools .perm input{flex:none;min-width:0;width:18px;height:18px;padding:0;margin:0;accent-color:var(--acc)}
@@ -1141,15 +1139,32 @@ async function agReset(){
 // ===== Права доступа и дизайн сайта =====
 function can(p){return !!(st.user&&(st.user.isOwner||(st.user.perms||[]).includes(p)))}
 const PERM_LABELS={ban:'Банить и мутить',unban:'Разбанивать и снимать мут',grant:'Выдавать и снимать Админ+',promo:'Промокоды',server:'Серверы',design:'Дизайн сайта'};
-MID.perms='#permMsg';MID.design='#designMsg';
+MID.perms='#permMsg';MID.design='#designMsg';MID.gaedit='#gaeMsg';
+function editAdmin(id){
+  const a=(SV.admins||[]).find(x=>x.id===id);if(!a)return;
+  $('#gaeId').value=a.id;$('#gaeName').value=a.name||'';$('#gaeFlags').value=a.flags||'';$('#gaeImm').value=a.imm;
+  $('#gaeDays').value='keep';$('#gaeOff').checked=!!a.off;
+  $('#gaeId').scrollIntoView({block:'center',behavior:'smooth'});$('#gaeName').focus();
+}
+function saveAdminEdit(){
+  const id=($('#gaeId').value||'').trim();
+  if(!/^\d{17}$/.test(id))return adminMsgNow('#gaeMsg','Сначала нажмите «Изменить» у админа в таблице');
+  adm('gaedit','admin-edit',{id,name:($('#gaeName').value||'').trim(),flags:($('#gaeFlags').value||'').trim(),immunity:$('#gaeImm').value,days:$('#gaeDays').value,off:$('#gaeOff').checked},'Админ изменён в базе: '+id);
+}
+function editPromo(code){
+  const p=allPromos()[code];if(!p)return;
+  const c=prompt('Награда в монетах для '+code+':',p.coins);if(c===null)return;
+  const m=prompt('Лимит активаций (0 = без лимита):',p.max||0);if(m===null)return;
+  adm('promo','promo-edit',{code,coins:+c,max:Math.floor(+m||0)},'Промокод изменён: '+code);
+}
 function permsAdmin(){
   const m=(st.adminMsg||{}).perms,list=Object.entries(SV.perms||{});
   return `<h2 class="sec">Права доступа</h2>
    <div class="admin-tools"><input id="permId" placeholder="SteamID64 игрока (17 цифр)" inputmode="numeric" maxlength="17" aria-label="SteamID64">
      <div class="perm-grid">${Object.entries(PERM_LABELS).map(([k,t])=>`<label class="perm"><input type="checkbox" data-perm="${k}">${t}</label>`).join('')}</div>
      <button class="ok" onclick="savePerms()">Сохранить права</button><div id="permMsg" class="promo-msg ${m?(m.ok?'ok':'err'):''}">${m?esc(m.text):''}</div></div>
-   <p class="stat" style="margin-bottom:10px">Права выдаются поверх роли: заместитель уже умеет банить, разбанивать и выдавать «Админ+». Чтобы банить с сайта, игрок должен быть в списке админов игры. Назначать замов и выдавать права могут владелец и замы.</p>
-   ${list.length?`<table><tr><th>Игрок</th><th>Права</th><th></th></tr>${list.map(([id,p])=>`<tr><td>${esc(p.name||'—')}<br><a class="lnk" href="https://steamcommunity.com/profiles/${id}" target="_blank" rel="noopener">${id}</a></td><td>${esc(p.perms.map(k=>PERM_LABELS[k]||k).join(', '))}</td><td><button class="join" onclick="editPerms('${id}')">Изменить</button> <button class="join del" onclick="clearPerms('${id}')">Снять все</button></td></tr>`).join('')}</table>`:'<div class="empty">Отдельные права пока никому не выданы.</div>'}`;
+   <p class="stat" style="margin-bottom:10px">Права выдаются поверх роли: заместитель уже умеет банить, разбанивать и выдавать «Админ+». Чтобы банить с сайта, игрок должен быть в списке админов игры. Назначение замов и выдача прав — только у владельца.</p>
+   ${list.length?`<table><tr><th>Игрок</th><th>Права</th><th></th></tr>${list.map(([id,p])=>`<tr><td>${ppl(id,p.name,p.avatar)}</td><td>${esc(p.perms.map(k=>PERM_LABELS[k]||k).join(', '))}</td><td><button class="join" onclick="editPerms('${id}')">Изменить</button> <button class="join del" onclick="clearPerms('${id}')">Снять все</button></td></tr>`).join('')}</table>`:'<div class="empty">Отдельные права пока никому не выданы.</div>'}`;
 }
 function editPerms(id){
   const p=(SV.perms||{})[id],el=$('#permId');
