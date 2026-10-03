@@ -152,7 +152,10 @@ app.get('/api/me', async (req, res) => {
       rows.forEach(r => g[r.steam_id] = { until: +r.grant_until, by: r.grant_by, at: +r.grant_at, name: r.name, avatar: r.avatar }); }
     if (owner) { const rows = (await db.query('select * from users where deputy')).rows; await refreshProfiles(rows);
       rows.forEach(r => d[r.steam_id] = { by: r.dep_by, at: +r.dep_at, name: r.name, avatar: r.avatar }); }
-    out.adm = { grants: g, deputies: d, promos: P.includes('promo') ? (await db.query('select * from promos order by at desc nulls last')).rows.map(p => ({ ...p, coins: +p.coins, at: +p.at })) : [] };
+    const vips = {};
+    if (isFull(u)) { const rows = (await db.query('select * from users where prem_until>0')).rows; await refreshProfiles(rows);
+      rows.forEach(r => vips[r.steam_id] = { until: +r.prem_until, name: r.name, avatar: r.avatar }); }
+    out.adm = { vips, grants: g, deputies: d, promos: P.includes('promo') ? (await db.query('select * from promos order by at desc nulls last')).rows.map(p => ({ ...p, coins: +p.coins, at: +p.at })) : [] };
     if (owner) {
       out.adm.perms = {};
       const rows = (await db.query("select steam_id,name,avatar,perms from users where perms<>''")).rows; await refreshProfiles(rows);
@@ -262,7 +265,7 @@ async function vipPurchaseCheck(id) {
   } catch (e) { console.error('vipCheck:', e.message); return 'Не удалось связаться с базой игрового сервера'; }
   return null;
 }
-async function grantGameVip(u, untilMs) { // untilMs — до какого момента VIP (в игре expires в секундах, 0 = навсегда)
+async function grantGameVip(u, untilMs, exact = false) { // untilMs — до какого момента VIP (в игре expires в секундах, 0 = навсегда)
   const conn = await game.getConnection();
   try {
     await conn.beginTransaction();
@@ -271,7 +274,7 @@ async function grantGameVip(u, untilMs) { // untilMs — до какого мо�
     const name = String(u.name || u.steam_id).slice(0, 64);
     const ex = (await q('select `expires` from vip_users where account_id=? and sid=? limit 1', [acc, sid]))[0];
     if (ex) { // продлеваем; срок не уменьшаем, если в игре он уже длиннее
-      const exp = end === 0 || +ex.expires === 0 ? 0 : Math.max(+ex.expires, end);
+      const exp = exact ? end : end === 0 || +ex.expires === 0 ? 0 : Math.max(+ex.expires, end); // exact — выдача владельцем/замом: срок ставится ровно как задан
       await q('update vip_users set `group`=?, `expires`=?, `name`=?, `lastvisit`=? where account_id=? and sid=?', [VIP_GROUP, exp, name, n, acc, sid]);
     } else {
       const cols = (await q('show columns from vip_users')).filter(c => !/auto_increment/i.test(c.Extra));
@@ -424,6 +427,36 @@ const fullOnly = async (req, res, next) => {
   if (!isFull(u)) return res.status(403).json({ error: 'Нет прав' });
   req.u = u; next();
 };
+// --- выдача/снятие VIP (Premium) владельцем и замами: на любой срок ---
+async function deleteGameVip(id) {
+  if (!game) throw new Error('база игры не подключена');
+  const sid = await vipSid(gq);
+  await gq('delete from vip_users where account_id=? and sid=?', [accountId(id), sid]);
+}
+app.post('/api/admin/vip-grant', fullOnly, async (req, res) => {
+  const id = String(req.body.id || '').trim(), days = Math.floor(+req.body.days);
+  if (!/^\d{17}$/.test(id)) return bad(res, 'Неверный SteamID64 (17 цифр)');
+  if (!game) return bad(res, 'База игры не подключена');
+  if (!Number.isFinite(days) || days < 0 || days > 36500) return bad(res, 'Срок — число дней от 1 до 36500, 0 = навсегда');
+  try {
+    await db.query('insert into users(steam_id) values($1) on conflict do nothing', [id]);
+    const row = (await db.query('select name, prem_until from users where steam_id=$1', [id])).rows[0] || {};
+    const cur = +row.prem_until || 0;
+    const until = days === 0 ? FOREVER : Math.max(Date.now(), cur < FOREVER ? cur : 0) + days * 864e5;
+    await grantGameVip({ steam_id: id, name: row.name }, until, true); // сначала игра: если не вышло — на сайте ничего не меняем
+    await db.query('update users set prem_until=$2 where steam_id=$1', [id, until]);
+    res.json({ ok: true });
+  } catch (e) { console.error('vip-grant:', e.message); res.status(500).json({ error: 'Не удалось выдать VIP в игре: ' + e.message }); }
+});
+app.post('/api/admin/vip-revoke', fullOnly, async (req, res) => {
+  const id = String(req.body.id || '').trim();
+  if (!/^\d{17}$/.test(id)) return bad(res, 'Неверный SteamID64');
+  try {
+    await deleteGameVip(id);
+    await db.query('update users set prem_until=0 where steam_id=$1', [id]);
+    res.json({ ok: true });
+  } catch (e) { console.error('vip-revoke:', e.message); res.status(500).json({ error: 'Не удалось снять VIP в игре: ' + e.message }); }
+});
 app.post('/api/admin/admin-edit', fullOnly, async (req, res) => {
   try {
     if (!game) return bad(res, 'База игрового сервера не подключена');
