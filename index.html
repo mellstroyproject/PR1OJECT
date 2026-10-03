@@ -229,6 +229,7 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
 .pf-rank{background:var(--panel2);border-radius:12px;padding:12px 18px;text-align:center}.pf-rank b{display:block;font-size:20px}.pf-rank span{color:var(--mut);font-size:13px}
 .pf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
 .pf-tile{background:var(--panel);border-radius:14px;padding:14px 16px}.pf-tile span{display:block;color:var(--mut);font-size:13px}.pf-tile b{display:block;font-size:22px;margin-top:10px}.pf-tile small{color:var(--mut);font-size:12px}
+.pf-acts{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
 .lb-who{cursor:pointer}.lb-who:hover .nm{text-decoration:underline}
 </style>
 </head>
@@ -505,7 +506,7 @@ function head(){
    `</div>`+
    (st.user.isAdmin?`<button class="promo-btn gold" onclick="go('admin')">${I('shield')}Админ-панель</button>`:'')+
    `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="alert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
-   `<button class="ava" aria-label="Профиль" style="${st.user.avatar?`background-image:url('${st.user.avatar}')`:''}" onclick="st.menu=!st.menu;st.promoOpen=false;head()">${st.user.avatar?'':esc((st.user.name||'?').trim().charAt(0).toUpperCase())}</button>`+
+   `<button class="ava" aria-label="Профиль" style="${st.user.avatar?`background-image:url('${st.user.avatar}')`:''}" onclick="openProfile(st.user.id)">${st.user.avatar?'':esc((st.user.name||'?').trim().charAt(0).toUpperCase())}</button>`+
    `<button class="gear${st.page==='settings'?' on':''}" aria-label="Настройки" title="Настройки" onclick="go('settings')">${I('gear')}</button>`+
    (st.menu?`<div class="menu${menuFresh?' pop':''}">${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти</button></div>`:'')
    :`<button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button><a class="demo" href="#" onclick="demoLogin();return false">демо</a>`;
@@ -804,7 +805,7 @@ loadLeaders();
 const PF={id:null,data:null,err:'',busy:false};
 async function openProfile(id){
   if(!/^\d{17}$/.test(id||''))return;
-  PF.id=id;PF.data=null;PF.err='';PF.busy=true;st.menu=false;st.page='profile';
+  PF.id=id;PF.data=null;PF.err='';PF.busy=true;st.menu=false;st.promoOpen=false;st.page='profile';
   try{window.scrollTo(0,0)}catch(e){}
   draw();
   try{const d=await api('player/'+id);if(PF.id===id)PF.data=d}catch(e){PF.err=e.message}
@@ -832,6 +833,7 @@ function profileView(){
     ['Убийств в голову',fmt(S.headshots)],['Выстрелов',fmt(S.shoots)],['Время игры',S.hours!==null?S.hours.toLocaleString('ru-RU')+' ч.':null],
     ['Попаданий',fmt(S.hits)],['Точность',acc],['% в голову',hs]
   ].filter(t=>t[1]!==null&&t[1]!==undefined):[];
+  const mine=st.user&&st.user.id===d.id;
   return back+`<div class="pf-head">
     <div class="pf-ava" style="${a?`background-image:url('${a}')`:''}">${a?'':esc(n.trim().charAt(0).toUpperCase())}</div>
     <div class="pf-main"><div class="pf-name">${esc(n)}
@@ -841,6 +843,7 @@ function profileView(){
     ${S&&S.rank!==null?`<div class="pf-rank"><b>${fmt(S.exp)}</b><span>опыта · звание ${S.rank}</span></div>`:''}
   </div>
   ${d.banned?`<div class="pf-banbox"><b>Игрок заблокирован</b> · срок: ${esc(d.banned.term)}${d.banned.reason?' · причина: '+esc(d.banned.reason):''}</div>`:''}
+  ${mine?`<div class="pf-acts"><button class="join" onclick="go('settings')">Настройки</button><button class="join del" onclick="logout()">Выйти из аккаунта</button></div>`:''}
   ${tiles.length?`<div class="pf-grid">${tiles.map(t=>`<div class="pf-tile"><span>${t[0]}</span><b>${t[1]}</b>${t[2]?`<small>${t[2]}</small>`:''}</div>`).join('')}</div>`:'<div class="empty">Статистики пока нет — игрок не появлялся в таблице лидеров.</div>'}`;
 }
 {const _v=view;view=function(){return st.page==='profile'?profileView():_v()}}
