@@ -214,6 +214,23 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
  transform:translateY(calc((1 - var(--e))*160px)) scale(calc(.6 + var(--e)*.4)) rotate(calc((var(--q) - .5)*10deg))}
 @media(prefers-reduced-motion:reduce){.reveal-bob{animation:none}.scroll-hint span{animation:none}}
 </style>
+<style>
+.pf-back{display:inline-flex;gap:6px;align-items:center;background:none;border:0;color:var(--mut);font:inherit;cursor:pointer;padding:6px 0;margin-bottom:10px}.pf-back:hover{color:var(--tx)}
+.pf-head{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
+.pf-ava{width:84px;height:84px;border-radius:16px;flex:none;background:linear-gradient(135deg,var(--acc),var(--acc-b)) center/cover no-repeat;display:grid;place-items:center;font-size:34px;font-weight:800}
+.pf-main{flex:1;min-width:200px}
+.pf-name{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:28px;font-weight:800;line-height:1.15;word-break:break-word}
+.pf-bdg{font-size:11px;font-weight:700;border-radius:6px;padding:3px 9px;letter-spacing:.2px}
+.pf-bdg.ban{background:var(--red);color:#fff}
+.pf-bdg.vip{background:linear-gradient(135deg,var(--acc),var(--acc-b));color:var(--on-acc)}
+.pf-steam{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--panel2);color:var(--tx);font-size:12px;font-weight:700;text-decoration:none}
+.pf-sub{color:var(--mut);font-size:14px;margin-top:6px}
+.pf-banbox{background:color-mix(in srgb,var(--red) 14%,var(--panel));border:1px solid color-mix(in srgb,var(--red) 40%,transparent);border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:14px}
+.pf-rank{background:var(--panel2);border-radius:12px;padding:12px 18px;text-align:center}.pf-rank b{display:block;font-size:20px}.pf-rank span{color:var(--mut);font-size:13px}
+.pf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.pf-tile{background:var(--panel);border-radius:14px;padding:14px 16px}.pf-tile span{display:block;color:var(--mut);font-size:13px}.pf-tile b{display:block;font-size:22px;margin-top:10px}.pf-tile small{color:var(--mut);font-size:12px}
+.lb-who{cursor:pointer}.lb-who:hover .nm{text-decoration:underline}
+</style>
 </head>
 <body>
 <header>
@@ -481,7 +498,7 @@ function head(){
   const coinsChanged=logged&&prev.logged&&from!==null&&coins!==from,loginChanged=logged!==prev.logged;
   prev.menu=st.menu;prev.promo=st.promoOpen;prev.logged=logged;prev.coins=logged?coins:null;
   $('#right').classList.toggle('swap',loginChanged);
-  const menuItems=(st.user&&st.user.isAdmin?[['Админ-панель','shield',"go('admin')"]]:[]).concat([['Профиль','user'],['Скинченджер','skin'],['Хранилище','box'],['Настройки','gear',"go('settings')"]]);
+  const menuItems=(st.user&&st.user.isAdmin?[['Админ-панель','shield',"go('admin')"]]:[]).concat([['Профиль','user',"st.user&&openProfile(st.user.id)"],['Скинченджер','skin'],['Хранилище','box'],['Настройки','gear',"go('settings')"]]);
   $('#right').innerHTML=st.user?
    `<div class="promo-wrap"><button class="promo-btn" onclick="togglePromo()">${I('promo')}Промокод</button>`+
    (st.promoOpen?`<div class="promo-pop${promoFresh?' pop':''}"><input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="Введите код" aria-label="Промокод" autofocus><button onclick="activatePromo()">Активировать</button><div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?esc(st.promoMsg.text):''}</div></div>`:'')+
@@ -501,7 +518,7 @@ function view(){
    <section class="reveal-zone" aria-hidden="true"><div class="reveal-stage"><div class="burst"></div><div class="reveal-bob"><img class="reveal-img" src="${IMG67}" alt="6 7"></div></div></section>`;
   if(st.page==='public') return `<h1>Public: серверы</h1><table><tr><th>Сервер</th><th>Подключение</th><th></th></tr>${servers.map(s=>`<tr><td>${esc(s[0])}</td><td>connect ${esc(s[1])}</td><td><button class="join" onclick="location.href='steam://connect/${esc(s[1])}'">Играть</button> <button class="join" onclick="navigator.clipboard&&navigator.clipboard.writeText('connect ${esc(s[1])}');alert('Скопировано: connect ${esc(s[1])}')">Копировать</button></td></tr>`).join('')}</table>`;
   if(st.page==='shop') return `<h1 style="text-align:center">Магазин</h1><div class="plans">${[['prem','Премиум',prem,'p'],['plus','Админ+',plus,'g']].map(([k,n,l,c])=>`<div class="plan ${c}"><h2>${n}</h2><ul>${l.map(x=>`<li>${x}</li>`).join('')}</ul><div class="periods">${periodsOf(k).map((p,i)=>`<button class="${st.plan[k]===i?'on':''}" onclick="setPeriod('${k}',${i},this)">${p}</button>`).join('')}</div><div class="price">${price[k][st.plan[k]]} ₽</div><button class="buy" onclick="buyPlan('${k}','${n}')">Купить</button></div>`).join('')}</div>`;
-  if(st.page==='leaders'){const rows=leaders[st.lb];return `<h1>Лидеры</h1><div class="bar"><div class="tabs"><button class="${st.lb==='exp'?'on':''}" onclick="st.lb='exp';draw()">По опыту</button><button class="${st.lb==='drop'?'on':''}" onclick="st.lb='drop';draw()">По дропу</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Место</th><th>Игрок</th><th>Очков</th><th>Убийств</th><th>У/С</th><th>Время игры</th></tr>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${i<2&&st.lb==='exp'?'<span class="prem">ПРЕМИУМ</span>':''}${lbWho(r)}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`).join('')}</table>`}
+  if(st.page==='leaders'){const rows=leaders[st.lb];return `<h1>Лидеры</h1><div class="bar"><div class="tabs"><button class="${st.lb==='exp'?'on':''}" onclick="st.lb='exp';draw()">По опыту</button><button class="${st.lb==='drop'?'on':''}" onclick="st.lb='drop';draw()">По дропу</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Место</th><th>Игрок</th><th>Очков</th><th>Убийств</th><th>У/С</th><th>Время игры</th></tr>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${lbWho(r)}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`).join('')}</table>`}
   if(st.page==='bans'){const rows=st.bt==='bans'?bans:mutes;return `<h1>Баны</h1><div class="bar"><div class="tabs"><button class="${st.bt==='bans'?'on':''}" onclick="st.bt='bans';draw()">Баны</button><button class="${st.bt==='mutes'?'on':''}" onclick="st.bt='mutes';draw()">Муты</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Игрок</th><th>Админ</th><th>Причина</th><th>Статус</th><th>Срок</th><th>Дата</th></tr>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="${r[3]?'ban':'ok'}">${r[3]?(st.bt==='bans'?'Забанен':'Замучен'):'Разбанен'}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`).join('')}</table>`}
   if(st.page==='rules') return `<h1>Правила</h1><div class="rules"><div class="side">${rcats.map((c,i)=>`<button class="${st.rule===i?'on':''}" onclick="st.rule=${i};draw()">${c}</button>`).join('')}</div><div class="empty">Раздел «${rcats[st.rule]}»: текст правил добавим позже.</div></div>`;
   if(st.page==='settings'){
@@ -769,19 +786,64 @@ loadBans();
 function lbWho(r){ // аватарка + ник (+ ссылка на профиль Steam, если известен SteamID)
   const a=safeAvatar(r[5]),n=String(r[0]||'');
   const av=`<i class="pa" style="${a?`background-image:url('${a}')`:''}">${a?'':esc((n||'?').trim().charAt(0).toUpperCase())}</i>`;
-  const nm=/^\d{17}$/.test(r[6]||'')?`<a class="lnk" href="https://steamcommunity.com/profiles/${r[6]}" target="_blank" rel="noopener">${esc(n)}</a>`:esc(n);
-  return `<span class="ppl">${av}<span>${nm}</span></span>`;
+  const ok=/^\d{17}$/.test(r[6]||''),nm=ok?`<a class="lnk nm" href="#" onclick="openProfile('${r[6]}');return false">${esc(n)}</a>`:esc(n);
+  return `<span class="ppl">${av}<span>${nm}</span>${r[7]?'<span class="prem">ПРЕМИУМ</span>':''}</span>`;
 }
 async function loadLeaders(){
   try{
     const rows=await api('leaders');
     if(rows.length){
-      leaders.exp=rows.map(r=>[r.name,r.exp.toLocaleString('ru-RU'),r.kills.toLocaleString('ru-RU'),(r.deaths?r.kills/r.deaths:r.kills).toFixed(2),r.hours+' ч.',r.avatar,r.id]);
+      leaders.exp=rows.map(r=>[r.name,r.exp.toLocaleString('ru-RU'),r.kills.toLocaleString('ru-RU'),(r.deaths?r.kills/r.deaths:r.kills).toFixed(2),r.hours+' ч.',r.avatar,r.id,r.prem]);
       draw();
     }
   }catch(e){}
 }
 loadLeaders();
+
+// ===== Профиль игрока =====
+const PF={id:null,data:null,err:'',busy:false};
+async function openProfile(id){
+  if(!/^\d{17}$/.test(id||''))return;
+  PF.id=id;PF.data=null;PF.err='';PF.busy=true;st.menu=false;st.page='profile';
+  try{window.scrollTo(0,0)}catch(e){}
+  draw();
+  try{const d=await api('player/'+id);if(PF.id===id)PF.data=d}catch(e){PF.err=e.message}
+  PF.busy=false;if(st.page==='profile')draw();
+}
+function pfAgo(ts){
+  const m=Math.floor((Date.now()-ts)/6e4);
+  if(m<5)return 'Был(-а) в игре только что';
+  if(m<60)return 'Был(-а) в игре '+m+' мин. назад';
+  const h=Math.floor(m/60);if(h<24)return 'Был(-а) в игре '+h+' ч. назад';
+  const d=Math.floor(h/24);return 'Был(-а) в игре '+d+' дн. назад';
+}
+function profileView(){
+  const back=`<button class="pf-back" onclick="go('leaders')">← К лидерам</button>`;
+  if(PF.err)return back+`<div class="empty">${esc(PF.err)}</div>`;
+  const d=PF.data;if(!d)return back+`<div class="empty">Загружаем профиль…</div>`;
+  const a=safeAvatar(d.avatar),n=String(d.name||d.id),S=d.stats;
+  const fmt=v=>v===null||v===undefined?null:Number(v).toLocaleString('ru-RU');
+  const kd=S&&S.kills!==null&&S.deaths!==null?(S.deaths?S.kills/S.deaths:S.kills).toFixed(2):null;
+  const acc=S&&S.shoots?(S.hits/S.shoots*100).toFixed(1)+'%':null;
+  const hs=S&&S.kills&&S.headshots!==null?(S.headshots/S.kills*100).toFixed(1)+'%':null;
+  const top=S&&S.total?Math.max(0.1,S.place/S.total*100).toFixed(1):null;
+  const tiles=S?[
+    ['Место','#'+S.place.toLocaleString('ru-RU'),top?'Топ '+top+'%':''],['У/С',kd],['Убийств',fmt(S.kills)],['Смертей',fmt(S.deaths)],
+    ['Убийств в голову',fmt(S.headshots)],['Выстрелов',fmt(S.shoots)],['Время игры',S.hours!==null?S.hours.toLocaleString('ru-RU')+' ч.':null],
+    ['Попаданий',fmt(S.hits)],['Точность',acc],['% в голову',hs]
+  ].filter(t=>t[1]!==null&&t[1]!==undefined):[];
+  return back+`<div class="pf-head">
+    <div class="pf-ava" style="${a?`background-image:url('${a}')`:''}">${a?'':esc(n.trim().charAt(0).toUpperCase())}</div>
+    <div class="pf-main"><div class="pf-name">${esc(n)}
+      ${d.banned?'<span class="pf-bdg ban">Заблокирован</span>':''}${d.vip?'<span class="pf-bdg vip">Премиум</span>':''}
+      <a class="pf-steam" href="https://steamcommunity.com/profiles/${d.id}" target="_blank" rel="noopener" title="Профиль в Steam">S</a></div>
+      <div class="pf-sub">${d.lastSeen?pfAgo(d.lastSeen):(S?'':'Игрок ещё не заходил на сервер')}</div></div>
+    ${S&&S.rank!==null?`<div class="pf-rank"><b>${fmt(S.exp)}</b><span>опыта · звание ${S.rank}</span></div>`:''}
+  </div>
+  ${d.banned?`<div class="pf-banbox"><b>Игрок заблокирован</b> · срок: ${esc(d.banned.term)}${d.banned.reason?' · причина: '+esc(d.banned.reason):''}</div>`:''}
+  ${tiles.length?`<div class="pf-grid">${tiles.map(t=>`<div class="pf-tile"><span>${t[0]}</span><b>${t[1]}</b>${t[2]?`<small>${t[2]}</small>`:''}</div>`).join('')}</div>`:'<div class="empty">Статистики пока нет — игрок не появлялся в таблице лидеров.</div>'}`;
+}
+{const _v=view;view=function(){return st.page==='profile'?profileView():_v()}}
 </script>
 <style>
 /* ===== Neon Aurora: яркий синий дизайн (цвета следуют выбранной теме) ===== */
