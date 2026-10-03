@@ -544,10 +544,36 @@ app.get('/api/bans', async (req, res) => {
       active: !r.unbanned_by && (+r.end_at === 0 || +r.end_at > n) })));
   } catch (e) { console.error('bans:', e.message); res.json([]); }
 });
+// аватарки лидеров: steam_id -> { avatar, t }; Steam запрашиваем пачкой в фоне, чтобы страница не ждала
+const lbAv = new Map(); let lbFetching = false;
+const toSteam64 = v => { // STEAM_X:Y:Z, [U:1:N] или уже SteamID64 -> SteamID64
+  v = String(v || '').trim(); let m;
+  if (/^\d{17}$/.test(v)) return v;
+  if ((m = v.match(/^STEAM_\d:([01]):(\d+)$/i))) return String(STEAM64_BASE + BigInt(m[2]) * 2n + BigInt(m[1]));
+  if ((m = v.match(/^\[U:1:(\d+)\]$/i))) return String(STEAM64_BASE + BigInt(m[1]));
+  return null;
+};
+async function fillLeaderAvatars(ids) {
+  if (lbFetching) return; lbFetching = true;
+  try {
+    const have = (await db.query('select steam_id, avatar from users where steam_id = any($1) and avatar is not null', [ids])).rows;
+    have.forEach(r => okAvatar(r.avatar) && lbAv.set(r.steam_id, { avatar: r.avatar, t: Date.now() }));
+    const need = ids.filter(i => !lbAv.has(i) || Date.now() - lbAv.get(i).t > 864e5).slice(0, 100);
+    for (let i = 0; i < need.length; i += 100) {
+      const got = await fetchProfiles(need.slice(i, i + 100));
+      need.slice(i, i + 100).forEach(id => lbAv.set(id, { avatar: okAvatar(got[id]?.avatar) ? got[id].avatar : null, t: Date.now() }));
+    }
+  } catch (e) { console.error('leader avatars:', e.message); } finally { lbFetching = false; }
+}
 app.get('/api/leaders', async (req, res) => {
   try {
-    res.json((await gq('select name, value, kills, deaths, playtime from lvl_base order by value desc limit 100'))
-      .map(r => ({ name: r.name, exp: +r.value, kills: +r.kills, deaths: +r.deaths, hours: Math.round(+r.playtime / 3600) })));
+    const rows = (await gq('select steam, name, value, kills, deaths, playtime from lvl_base order by value desc limit 100'))
+      .map(r => ({ id: toSteam64(r.steam), name: r.name, exp: +r.value, kills: +r.kills, deaths: +r.deaths, hours: Math.round(+r.playtime / 3600) }));
+    const ids = rows.map(r => r.id).filter(Boolean);
+    const missing = ids.filter(i => !lbAv.has(i));
+    if (missing.length) await Promise.race([fillLeaderAvatars(ids), new Promise(r => setTimeout(r, 3500))]); // ждём недолго, остальное дозагрузится в фоне
+    else if (ids.some(i => Date.now() - lbAv.get(i).t > 864e5)) fillLeaderAvatars(ids);
+    res.json(rows.map(r => ({ ...r, avatar: lbAv.get(r.id)?.avatar || null })));
   } catch (e) { console.error('leaders:', e.message); res.json([]); }
 });
 app.post('/api/admin/punish', can('ban'), async (req, res) => {
