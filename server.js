@@ -565,6 +565,47 @@ async function fillLeaderAvatars(ids) {
     }
   } catch (e) { console.error('leader avatars:', e.message); } finally { lbFetching = false; }
 }
+// --- профиль игрока: статистика (lvl_base), бан (iks_bans), VIP (vip_users) ---
+const steamForms = id => { const acc = BigInt(id) - STEAM64_BASE, y = acc % 2n, z = acc / 2n; return [id, `STEAM_1:${y}:${z}`, `STEAM_0:${y}:${z}`, `[U:1:${acc}]`]; };
+app.get('/api/player/:id', async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^\d{17}$/.test(id)) return bad(res, 'Неверный SteamID64');
+  const out = { id, name: null, avatar: null, banned: null, vip: null, stats: null, lastSeen: null };
+  const forms = steamForms(id);
+  try {
+    const u = (await db.query('select name, avatar from users where steam_id=$1', [id])).rows[0];
+    if (u) { out.name = u.name; out.avatar = okAvatar(u.avatar) ? u.avatar : null; }
+  } catch (e) {}
+  if (!out.avatar && lbAv.get(id)?.avatar) out.avatar = lbAv.get(id).avatar;
+  if (!out.avatar || !out.name || out.name === 'Игрок') {
+    const got = (await fetchProfiles([id]).catch(() => ({})))[id];
+    if (got) { if (got.name && (!out.name || out.name === 'Игрок')) out.name = String(got.name).slice(0, 64); if (okAvatar(got.avatar)) out.avatar = got.avatar; }
+  }
+  if (game) {
+    try {
+      const r = (await gq(`select * from lvl_base where steam in (${forms.map(() => '?').join(',')}) limit 1`, forms))[0];
+      if (r) {
+        const n = k => (r[k] === undefined || r[k] === null ? null : +r[k]);
+        const val = n('value') || 0;
+        const place = +(await gq('select count(*) c from lvl_base where value>?', [val]))[0].c + 1, total = +(await gq('select count(*) c from lvl_base'))[0].c;
+        out.stats = { exp: val, rank: n('rank'), kills: n('kills'), deaths: n('deaths'), headshots: n('headshots'), shoots: n('shoots'), hits: n('hits'),
+          hours: n('playtime') === null ? null : Math.round(n('playtime') / 360) / 10, place, total };
+        if (n('lastconnect')) out.lastSeen = n('lastconnect') * 1000;
+        if (!out.name && r.name) out.name = r.name;
+      }
+    } catch (e) { console.error('player stats:', e.message); }
+    try {
+      const b = (await gq(`select reason, duration, end_at, created_at from iks_bans where steam_id in (${forms.map(() => '?').join(',')}) and deleted_at is null and unbanned_by is null and (end_at is null or end_at=0 or end_at>?) order by id desc limit 1`, [...forms, nowS()]))[0];
+      if (b) out.banned = { reason: b.reason || '', term: +b.duration ? fmtDur(+b.duration) : 'Навсегда', at: b.created_at ? b.created_at * 1000 : null };
+    } catch (e) { console.error('player ban:', e.message); }
+    try {
+      const sid = await vipSid(gq);
+      const v = (await gq('select `expires` from vip_users where account_id=? and sid=? and (`expires`=0 or `expires`>?) limit 1', [accountId(id), sid, nowS()]))[0];
+      if (v) out.vip = { until: +v.expires ? v.expires * 1000 : 0 };
+    } catch (e) { console.error('player vip:', e.message); }
+  }
+  res.json(out);
+});
 app.get('/api/leaders', async (req, res) => {
   try {
     const rows = (await gq('select steam, name, value, kills, deaths, playtime from lvl_base order by value desc limit 100'))
@@ -573,7 +614,10 @@ app.get('/api/leaders', async (req, res) => {
     const missing = ids.filter(i => !lbAv.has(i));
     if (missing.length) await Promise.race([fillLeaderAvatars(ids), new Promise(r => setTimeout(r, 3500))]); // ждём недолго, остальное дозагрузится в фоне
     else if (ids.some(i => Date.now() - lbAv.get(i).t > 864e5)) fillLeaderAvatars(ids);
-    res.json(rows.map(r => ({ ...r, avatar: lbAv.get(r.id)?.avatar || null })));
+    const vip = new Set(); // игроки с активным VIP в игре (vip_users)
+    try { const sid = await vipSid(gq); (await gq('select account_id from vip_users where sid=? and (expires=0 or expires>?)', [sid, nowS()])).forEach(v => vip.add(String(v.account_id))); }
+    catch (e) { console.error('leaders vip:', e.message); }
+    res.json(rows.map(r => ({ ...r, avatar: lbAv.get(r.id)?.avatar || null, prem: !!r.id && vip.has(String(accountId(r.id))) })));
   } catch (e) { console.error('leaders:', e.message); res.json([]); }
 });
 app.post('/api/admin/punish', can('ban'), async (req, res) => {
