@@ -608,6 +608,13 @@ function adminOwnerSections(){
      <select id="grantDays" aria-label="Срок"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option><option value="180">180 дней</option><option value="0">Навсегда</option></select>
      <button class="ok" onclick="grantAdmin()">Выдать</button>${msg('grant','grantMsg')}</div>
    ${grants.length?`<table><tr><th>Игрок</th><th>Роль</th><th>Действует до</th><th></th></tr>${grants.map(([id,g])=>`<tr><td>${ppl(id,g.name,g.avatar)}</td><td>Админ+</td><td class="${+g.until>now?'ok':'ban'}">${+g.until>now?fmtDate(+g.until):'истёк '+fmtDate(+g.until)}</td><td><button class="join del" onclick="revokeAdmin('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">Пока никому не выдано.</div>'}`;
+  const vips=Object.entries(SV.vips||{}).sort((a,b)=>b[1].until-a[1].until);
+  const vipBlock=`<h2 class="sec">Выдать VIP (Premium)</h2>
+   <div class="admin-tools"><input id="vipId" placeholder="SteamID64 игрока (17 цифр)" inputmode="numeric" maxlength="17" aria-label="SteamID64">
+     <input id="vipDays" type="number" min="1" max="36500" placeholder="Срок, дней (любой)" aria-label="Срок в днях">
+     <label class="perm"><input type="checkbox" id="vipForever">Навсегда</label>
+     <button class="ok" onclick="grantVip()">Выдать</button>${msg('vipgrant','vipMsg')}</div>
+   ${vips.length?`<table><tr><th>Игрок</th><th>Действует до</th><th></th></tr>${vips.map(([id,v])=>`<tr><td>${ppl(id,v.name,v.avatar)}</td><td class="${+v.until>now?'ok':'ban'}">${+v.until>=1e15?'навсегда':+v.until>now?fmtDate(+v.until):'истёк '+fmtDate(+v.until)}</td><td><button class="join del" onclick="revokeVip('${id}')">Снять</button></td></tr>`).join('')}</table>`:'<div class="empty">VIP пока никому не выдан.</div>'}`;
   const promoBlock=`<h2 class="sec">Промокоды</h2>
    <div class="admin-tools"><input id="pCode" placeholder="Код (например SUMMER100 или ЛЕТО2026)" maxlength="32" aria-label="Код">
      <button onclick="genPromo()">Случайный</button>
@@ -615,7 +622,7 @@ function adminOwnerSections(){
      <input id="pMax" type="number" min="0" placeholder="Лимит активаций (0 = без лимита)" aria-label="Лимит">
      <button class="ok" onclick="createPromo()">Создать</button>${msg('promo','promoMsgA')}</div>
    <table><tr><th>Код</th><th>Награда</th><th>Активаций</th><th></th></tr>${promos.map(p=>`<tr><td>${p.code}</td><td>+${p.coins}</td><td>${p.used||0}${p.max?' / '+p.max:' / ∞'}</td><td>${p.builtin?'<span class="stat">встроенный</span>':`<button class="join" onclick="editPromo('${p.code}')">Изменить</button> <button class="join del" onclick="deletePromo('${p.code}')">Удалить</button>`}</td></tr>`).join('')}</table>`;
-  return (can('grant')?grantBlock:'')+(st.user.full?gaBlock:'')+(st.user.isOwner?deputyBlock+permsAdmin():'')+(can('promo')?promoBlock:'')+(can('design')?designAdmin():'');
+  return (can('grant')?grantBlock:'')+(st.user.full?gaBlock+vipBlock:'')+(st.user.isOwner?deputyBlock+permsAdmin():'')+(can('promo')?promoBlock:'')+(can('design')?designAdmin():'');
 }
 function adminAction(verb){
   const t=($('#adminTarget')?.value||'').trim();
@@ -705,12 +712,14 @@ async function activatePromo(){
   catch(e){st.promoMsg={ok:false,text:e.message}}
   await loadMe();
 }
-const MID={grant:'#grantMsg',deputy:'#depMsg',promo:'#promoMsgA'};
+const MID={vipgrant:'#vipMsg',grant:'#grantMsg',deputy:'#depMsg',promo:'#promoMsgA'};
 async function adm(kind,path,body,ok){
   try{await api('admin/'+path,body);await loadMe();adminOk(kind,ok)}
   catch(e){adminMsgNow(MID[kind],e.message)}
 }
 function grantAdmin(){adm('grant','grant',{id:($('#grantId').value||'').trim(),name:($('#grantName')?.value||'').trim(),flags:($('#grantFlags')?.value||'').trim(),immunity:$('#grantImm')?.value||'',days:+$('#grantDays').value},'Админка выдана')}
+function grantVip(){const f=$('#vipForever').checked,d=Math.floor(+$('#vipDays').value);if(!f&&!(d>=1))return adminMsgNow(MID.vipgrant,'Укажите срок в днях или отметьте «Навсегда»');adm('vipgrant','vip-grant',{id:($('#vipId').value||'').trim(),days:f?0:d},'VIP выдан')}
+function revokeVip(id){if(!confirm('Снять VIP у '+id+'? Запись будет удалена из базы игры.'))return;adm('vipgrant','vip-revoke',{id},'VIP снят: '+id)}
 function revokeAdmin(id){if(!confirm('Удалить админа '+id+'? Строка будет удалена из базы игры, а срок Админ+ на сайте обнулится.'))return;adm('grant','revoke',{id},'Админка снята: '+id)}
 function addDeputy(){adm('deputy','deputy',{id:($('#depId').value||'').trim(),on:true},'Зам назначен')}
 function removeDeputy(id){adm('deputy','deputy',{id,on:false},'Зам снят: '+id)}
