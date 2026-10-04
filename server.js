@@ -369,7 +369,7 @@ app.post('/api/admin/server-delete', can('server'), async (req, res) => {
 });
 
 // --- перезагрузка игрового сервера через RCON (только владелец и назначенные замы) ---
-// Нужно: в server.cfg игрового сервера rcon_password "3465ergsdfgasdfs23wwsaw%urt"; здесь переменные окружения RCON_PASSWORD (и при желании RESTART_CMD, по умолчанию quit)
+// Пароль RCON задан ниже в строке const pass = ... (он должен совпадать с rcon_password в server.cfg игрового сервера). Команда по умолчанию — quit, меняется через RESTART_CMD
 function rconExec(host, port, password, command) {
   return new Promise((resolve, reject) => {
     const net = require('net');
@@ -399,8 +399,8 @@ app.post('/api/admin/server-restart', async (req, res) => {
   const u = await getUser(req);
   if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
   if (!isFull(u)) return res.status(403).json({ error: 'Перезагружать сервер могут только владелец и замы' });
-  const pass = process.env.RCON_PASSWORD;
-  if (!pass) return bad(res, 'На сайте не задан RCON_PASSWORD (переменная окружения)');
+  const pass = process.env.RCON_PASSWORD || '3465ergsdfgasdfs23wwsaw%urt';
+  if (!pass) return bad(res, 'На сайте не задан RCON-пароль');
   const r = (await db.query('select name,address from servers where id=$1', [+req.body.id || 0])).rows[0];
   if (!r) return bad(res, 'Сервер не найден');
   const [host, port] = r.address.split(':');
