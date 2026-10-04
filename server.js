@@ -907,22 +907,38 @@ if (process.env.TG_BOT_TOKEN) {
   const CHANNEL = process.env.TG_CHANNEL || '@Next1Project'; // канал, на который надо быть подписанным
   const CHANNEL_URL = 'https://t.me/' + CHANNEL.replace('@', '');
   const BONUS_HOURS = +process.env.TG_BONUS_HOURS || 0; // 0 = промокод можно получить только один раз; 24 = раз в сутки
-  // шансы выпадения: [от, до, вес в тысячных долях] — награда кратна 10, внутри диапазона все значения равновероятны
-  const TIERS = [[10, 100, 550], [110, 400, 330], [410, 600, 80], [610, 900, 35], [910, 1000, 5]];
-  const rollCoins = () => {
-    let r = crypto.randomInt(1000);
-    for (const [lo, hi, w] of TIERS) {
-      if (r < w) return (lo / 10 + crypto.randomInt((hi - lo) / 10 + 1)) * 10;
-      r -= w;
-    }
-    return 10;
+  // призы и пределы шанса (в %): каждый день шансы внутри этих пределов выбираются заново случайно
+  const PRIZES = [
+    { lo: 10, hi: 100, min: 40, max: 60, name: '10–100 монет' },
+    { lo: 110, hi: 400, min: 25, max: 40, name: '110–400 монет' },
+    { lo: 410, hi: 600, min: 5, max: 12, name: '410–600 монет' },
+    { lo: 610, hi: 900, min: 2, max: 5, name: '610–900 монет' },
+    { lo: 910, hi: 1000, min: 0.2, max: 1, name: '910–1000 монет' },
+    { vip: 7, min: 1, max: 4, name: 'VIP на 7 дней' },
+    { vip: 30, min: 0.2, max: 1, name: 'VIP на 30 дней' }];
+  const TZ_H = +process.env.TG_TZ_OFFSET || 3; // сутки считаем по Москве (UTC+3): новые шансы в 00:00 МСК
+  const dayKey = () => new Date(Date.now() + TZ_H * 36e5).toISOString().slice(0, 10);
+  let oddsCache = { day: '', list: [] };
+  const todayOdds = () => { // шансы считаются из даты и секрета: весь день одни и те же, в полночь меняются сами, заранее не угадать
+    const day = dayKey();
+    if (oddsCache.day === day) return oddsCache.list;
+    const h = crypto.createHmac('sha256', SECRET).update('odds:' + day).digest();
+    const raw = PRIZES.map((p, i) => p.min + h.readUInt32BE(i * 4) / 2 ** 32 * (p.max - p.min));
+    const total = raw.reduce((x, y) => x + y, 0);
+    const w = raw.map(x => Math.round(x / total * 1000)); // тысячные доли процента, сумма ровно 1000 (100%)
+    w[0] += 1000 - w.reduce((x, y) => x + y, 0);
+    oddsCache = { day, list: PRIZES.map((p, i) => ({ ...p, w: w[i] })) };
+    return oddsCache.list;
   };
-  // VIP-призы: [дней, вес в тысячных долях] — проверяются раньше монет (2% и 0,5%), остальные 97,5% делят монеты по TIERS
-  const VIP_PRIZES = [[7, 20], [30, 5]];
+  const oddsText = () => '🎲 Шансы на сегодня (каждый день новые, обновляются в 00:00 МСК):\n' +
+    todayOdds().map(p => `${p.vip ? '👑' : '•'} ${p.name} — ${(p.w / 10).toFixed(1)}%`).join('\n');
   const rollPrize = () => {
     let r = crypto.randomInt(1000);
-    for (const [days, w] of VIP_PRIZES) { if (r < w) return { coins: 0, vip: days }; r -= w; }
-    return { coins: rollCoins(), vip: 0 };
+    for (const p of todayOdds()) {
+      if (r < p.w) return p.vip ? { coins: 0, vip: p.vip } : { coins: (p.lo / 10 + crypto.randomInt((p.hi - p.lo) / 10 + 1)) * 10, vip: 0 };
+      r -= p.w;
+    }
+    return { coins: 10, vip: 0 };
   };
   db.query('create table if not exists tg_claims(tg_id text primary key, code text, coins numeric, at bigint)')
     .catch(e => console.error('tg_claims:', e.message));
@@ -971,7 +987,7 @@ if (process.env.TG_BOT_TOKEN) {
   }
 
   bot.command('start', ctx => ctx.reply(
-    '👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.' +
+    '👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText() +
     (isTgAdmin(ctx) ? '\n\nАдмин: /promo КОД МОНЕТЫ АКТИВАЦИИ — создать код вручную\n(без кода: /promo МОНЕТЫ АКТИВАЦИИ; активаций 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — код на VIP' : ''),
     { reply_markup: kb() }));
   bot.callbackQuery('claim', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); return claim(ctx); });
