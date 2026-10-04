@@ -881,18 +881,80 @@ app.post('/api/skin', level('user'), async (req, res) => {
   } catch (e) { console.error('skin:', e.message); res.status(500).json({ error: 'Не удалось сохранить скин: ' + e.message }); }
 });
 
-// --- Telegram-бот: создаёт промокоды (webhook, работает в этом же сервере) ---
+// --- Telegram-бот: промокоды (webhook, работает в этом же сервере) ---
+// админ: /promo — создать код вручную; все остальные: кнопка «Получить промокод» (нужна подписка на канал)
 if (process.env.TG_BOT_TOKEN) {
-  const { Bot, webhookCallback } = require('grammy');
+  const { Bot, webhookCallback, InlineKeyboard } = require('grammy');
   const bot = new Bot(process.env.TG_BOT_TOKEN);
   const TG_ADMINS = (process.env.TG_ADMINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const isTgAdmin = ctx => TG_ADMINS.includes(String(ctx.from?.id));
+  const CHANNEL = process.env.TG_CHANNEL || '@Next1Project'; // канал, на который надо быть подписанным
+  const CHANNEL_URL = 'https://t.me/' + CHANNEL.replace('@', '');
+  const BONUS_HOURS = +process.env.TG_BONUS_HOURS || 0; // 0 = промокод можно получить только один раз; 24 = раз в сутки
+  // шансы выпадения: [от, до, вес в тысячных долях] — награда кратна 10, внутри диапазона все значения равновероятны
+  const TIERS = [[10, 100, 550], [110, 400, 330], [410, 600, 80], [610, 900, 35], [910, 1000, 5]];
+  const rollCoins = () => {
+    let r = crypto.randomInt(1000);
+    for (const [lo, hi, w] of TIERS) {
+      if (r < w) return (lo / 10 + crypto.randomInt((hi - lo) / 10 + 1)) * 10;
+      r -= w;
+    }
+    return 10;
+  };
+  db.query('create table if not exists tg_claims(tg_id text primary key, code text, coins numeric, at bigint)')
+    .catch(e => console.error('tg_claims:', e.message));
 
-  bot.use((ctx, next) => TG_ADMINS.includes(String(ctx.from?.id)) ? next() : ctx.reply('Нет доступа'));
+  const subscribed = async id => {
+    const m = await bot.api.getChatMember(CHANNEL, id); // бот должен быть админом канала
+    return ['creator', 'administrator', 'member'].includes(m.status) || (m.status === 'restricted' && m.is_member);
+  };
+  const kb = () => new InlineKeyboard().url('📢 Подписаться на канал', CHANNEL_URL).row().text('🎁 Получить промокод', 'claim');
+
+  async function claim(ctx) {
+    if (ctx.chat?.type !== 'private') return ctx.reply('Напишите мне в личные сообщения');
+    const id = String(ctx.from.id);
+    try {
+      if (!(await subscribed(ctx.from.id)))
+        return ctx.reply(`❌ Сначала подпишитесь на канал ${CHANNEL_URL} и нажмите «Получить промокод» ещё раз.`, { reply_markup: kb() });
+    } catch (e) { console.error('tg subscribe check:', e.message); return ctx.reply('Не получилось проверить подписку, попробуйте чуть позже'); }
+    let out;
+    const c = await db.connect();
+    try {
+      await c.query('begin');
+      await c.query('select pg_advisory_xact_lock(hashtext($1))', ['tgclaim' + id]); // два нажатия подряд не выдадут два кода
+      const prev = (await c.query('select at from tg_claims where tg_id=$1', [id])).rows[0];
+      const left = prev ? +prev.at + BONUS_HOURS * 36e5 - Date.now() : 0;
+      if (prev && (!BONUS_HOURS || left > 0)) {
+        await c.query('rollback');
+        out = [BONUS_HOURS ? `⏳ Следующий промокод можно получить через ${Math.ceil(left / 36e5)} ч.` : 'Вы уже получали свой промокод 🙂'];
+      } else {
+        const coins = rollCoins(); let code = null;
+        for (let i = 0; i < 5 && !code; i++) {
+          const cand = 'NP-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+          const ins = await c.query('insert into promos(code,coins,max,by,at) values($1,$2,1,$3,$4) on conflict do nothing', [cand, coins, 'tg:' + id, Date.now()]);
+          if (ins.rowCount) code = cand;
+        }
+        if (!code) { await c.query('rollback'); out = ['Не получилось создать код, попробуйте ещё раз']; }
+        else {
+          await c.query('insert into tg_claims(tg_id,code,coins,at) values($1,$2,$3,$4) on conflict (tg_id) do update set code=excluded.code, coins=excluded.coins, at=excluded.at', [id, code, coins, Date.now()]);
+          await c.query('commit');
+          out = [`🎁 Ваш промокод: <code>${code}</code>\nНаграда: ${coins} монет\n\nВведите его на сайте в окне промокода (нужен вход через Steam). Код одноразовый.`, { parse_mode: 'HTML' }];
+        }
+      }
+    } catch (e) { await c.query('rollback').catch(() => {}); console.error('tg claim:', e.message); out = ['❌ Ошибка, попробуйте позже']; }
+    finally { c.release(); }
+    return ctx.reply(...out);
+  }
 
   bot.command('start', ctx => ctx.reply(
-    'Создать промокод:\n/promo КОД МОНЕТЫ АКТИВАЦИИ\nили без кода (придумаю сам):\n/promo МОНЕТЫ АКТИВАЦИИ\nАктиваций 0 = без лимита'));
+    '👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод от 10 до 1000 монет для сайта.' +
+    (isTgAdmin(ctx) ? '\n\nАдмин: /promo КОД МОНЕТЫ АКТИВАЦИИ — создать код вручную\n(без кода: /promo МОНЕТЫ АКТИВАЦИИ; активаций 0 = без лимита)' : ''),
+    { reply_markup: kb() }));
+  bot.callbackQuery('claim', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); return claim(ctx); });
+  bot.command(['bonus', 'getpromo'], claim);
 
-  bot.command('promo', async ctx => {
+  bot.command('promo', async ctx => { // только для админов из TG_ADMINS
+    if (!isTgAdmin(ctx)) return ctx.reply('Нет доступа');
     const a = ctx.match.trim().split(/\s+/).filter(Boolean);
     if (a.length < 2 || a.length > 3) return ctx.reply('Формат: /promo КОД МОНЕТЫ АКТИВАЦИИ');
     const code = (a.length === 3 ? a[0] : crypto.randomBytes(4).toString('hex')).toUpperCase();
@@ -906,6 +968,7 @@ if (process.env.TG_BOT_TOKEN) {
       ctx.reply(r.rowCount ? `✅ Промокод создан\nКод: ${code}\nНаграда: ${coins} монет\nАктиваций: ${max || '∞'}` : '❌ Такой код уже существует');
     } catch (e) { console.error('tg promo:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
+  bot.catch(e => console.error('tg bot error:', e.message));
 
   const hook = '/tg/' + process.env.TG_WEBHOOK_SECRET;
   app.post(hook, webhookCallback(bot, 'express', { secretToken: process.env.TG_WEBHOOK_SECRET }));
