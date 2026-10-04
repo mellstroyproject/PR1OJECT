@@ -80,6 +80,8 @@ async function init() {
     create table if not exists bans(
       id serial primary key, kind text not null, steam_id text, player text, admin text, admin_id text,
       reason text, term text, until bigint not null default 0, active boolean not null default true, at bigint);
+    create table if not exists tg_links(tg_id text primary key, steam_id text not null, at bigint);
+    create table if not exists tg_link_codes(code text primary key, tg_id text not null, at bigint not null);
     insert into promos(code,coins) values('START100',100),('WELCOME50',50),('NEXTPROJECT',200)
       on conflict do nothing;`);
 }
@@ -347,6 +349,15 @@ app.post('/api/promo/create', level('user'), async (req, res) => {
 });
 app.post('/api/promo', level('user'), async (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase();
+  if (/^TG-[0-9A-F]{8}$/.test(code)) { // код привязки Telegram из команды /link бота (вводится в то же окно промокода)
+    try {
+      const r = await db.query('delete from tg_link_codes where code=$1 and at>$2 returning tg_id', [code, Date.now() - 9e5]);
+      if (!r.rowCount) return bad(res, 'Код привязки неверный или просрочен — отправьте боту /link ещё раз');
+      await db.query('delete from tg_links where steam_id=$1', [req.u.steam_id]);
+      await db.query('insert into tg_links(tg_id,steam_id,at) values($1,$2,$3) on conflict (tg_id) do update set steam_id=excluded.steam_id, at=excluded.at', [r.rows[0].tg_id, req.u.steam_id, Date.now()]);
+      return res.json({ ok: true, msg: 'Telegram привязан. Если у вас есть Админ+, команда /admin в боте теперь доступна' });
+    } catch (e) { console.error('tg link:', e.message); return res.status(500).json({ error: 'Не удалось привязать Telegram, попробуйте позже' }); }
+  }
   const c = await db.connect();
   try {
     await c.query('begin');
@@ -1021,7 +1032,7 @@ if (process.env.TG_BOT_TOKEN) {
     const adm = await isTgAdmin(ctx).catch(() => false);
     const help = !adm ? '' : '\n\nКоманды админа:\n/promo КОД МОНЕТЫ АКТИВАЦИИ — промокод на монеты (без кода: /promo МОНЕТЫ АКТИВАЦИИ; 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — промокод на VIP\n/a — админы и кто из них онлайн на сайте\n/ban ID СРОК [причина] — бан\n/unban ID — разбан\n/mute ID СРОК [причина] — мут\n/unmute ID — размут\n(СРОК: 30m, 2h, 7d или число дней; 0 = навсегда)' +
       (isOwner(ctx) ? '\n/restart — перезагрузить игровой сервер\n/adminkey ДНИ [АКТИВАЦИЙ] — ключ на Админ+ (ДНИ 0 = навсегда)\n/botkey — ключ, по которому помощник получит доступ к боту\n/admins — у кого есть доступ к боту\n/deladmin ID — убрать доступ' : '');
-    return ctx.reply('👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText() + help, { reply_markup: kb() });
+    return ctx.reply('👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText() + '\n\n🛡 Есть Админ+ (купили или вам выдали)? Привяжите Telegram командой /link, затем используйте /admin.' + help, { reply_markup: kb() });
   });
   bot.callbackQuery('claim', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); return claim(ctx); });
   bot.command(['bonus', 'getpromo'], claim);
@@ -1168,6 +1179,16 @@ if (process.env.TG_BOT_TOKEN) {
   });
 
   // --- баны и муты из Telegram (админы бота: владельцы и помощники): пишет в те же таблицы игры (iks_bans / iks_comms), что и админ-панель сайта ---
+  const tgLinked = async ctx => (await db.query('select steam_id from tg_links where tg_id=$1', [String(ctx.from?.id)])).rows[0]?.steam_id || null;
+  const tgStaff = async ctx => { // -> null (нет доступа) | { steam, limited }; доступ: админ бота, зам/владелец сайта или активный Админ+ (куплен/выдан) по привязанному Steam
+    const steam = await tgLinked(ctx);
+    if (await isTgAdmin(ctx)) return { steam, limited: false };
+    if (!steam) return null;
+    const u = (await db.query('select deputy, greatest(plus_until, grant_until) as adm from users where steam_id=$1', [steam])).rows[0];
+    if (!u) return null;
+    if (steam === OWNER || u.deputy) return { steam, limited: false };
+    return +u.adm > Date.now() ? { steam, limited: true } : null; // срок Админ+ закончился или админку сняли — доступ пропадает сам
+  };
   const tgTarget = s => { s = String(s || '').trim(); const m = s.match(/steamcommunity\.com\/profiles\/(\d{17})/i); return toSteam64(m ? m[1] : s); }; // SteamID64, STEAM_X:Y:Z, [U:1:N] или ссылка на профиль
   const tgDur = s => { // 30m, 2h, 7d, просто число = дни; 0 = навсегда -> секунды (или null, если не разобрали)
     const m = String(s || '').toLowerCase().match(/^(\d+)([mhd]?)$/); if (!m) return null;
@@ -1176,19 +1197,24 @@ if (process.env.TG_BOT_TOKEN) {
   };
   const tgPunish = kind => async ctx => {
     const isMute = kind === 'mutes', word = isMute ? 'мут' : 'бан', T = isMute ? 'iks_comms' : 'iks_bans', TY = isMute ? 'mute_type' : 'ban_type';
-    if (!(await isTgAdmin(ctx))) return ctx.reply('Нет доступа');
+    const st = await tgStaff(ctx).catch(() => null);
+    if (!st) return ctx.reply('Нет доступа к команде');
     const a = ctx.match.trim().split(/\s+/).filter(Boolean);
     const t = tgTarget(a[0]), dur = tgDur(a[1]);
     if (!a.length || !t || dur === null)
       return ctx.reply(`Формат: /${isMute ? 'mute' : 'ban'} ID СРОК [причина]\nID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam\nСРОК: 30m, 2h, 7d или просто число дней (0 = навсегда)\nПример: /${isMute ? 'mute' : 'ban'} 76561198000000000 7d читы`);
     if (t === OWNER) return ctx.reply('Нельзя наказать владельца');
     if (!game) return ctx.reply('❌ База игрового сервера не подключена');
+    if (st.limited) { // админка из магазина/выдачи не может наказывать других админов
+      const other = (await gameAdmin(t)) || (await db.query('select 1 from users where steam_id=$1 and (deputy or greatest(plus_until, grant_until) > $2)', [t, Date.now()])).rowCount;
+      if (other) return ctx.reply('Нельзя наказать другого админа');
+    }
     const reason = a.slice(2).join(' ').slice(0, 120) || 'Без причины';
     try {
       const n = nowS();
       const ex = await gq(`select id from ${T} where steam_id=? and unbanned_by is null and deleted_at is null and (end_at=0 or end_at>?) limit 1`, [t, n]);
       if (ex.length) return ctx.reply(`Этому игроку ${word} уже выдан. Снять: /${isMute ? 'unmute' : 'unban'} ${t}`);
-      const adm = await gameAdmin(OWNER); // если владельца нет в iks_admins — запись будет «от консоли»
+      const adm = (st.steam && await gameAdmin(st.steam)) || await gameAdmin(OWNER); // если админа нет в iks_admins — берём владельца, а если и его нет — нет в iks_admins — запись будет «от консоли»
       const srv = (await gq('select id from iks_servers order by id limit 1'))[0];
       const u = (await db.query('select name from users where steam_id=$1', [t])).rows[0];
       const name = String((u && u.name && u.name !== 'Игрок' && u.name) || (await fetchProfiles([t]).catch(() => ({})))[t]?.name || t).slice(0, 64);
@@ -1200,7 +1226,7 @@ if (process.env.TG_BOT_TOKEN) {
   };
   const tgRemove = kind => async ctx => {
     const isMute = kind === 'mutes', T = isMute ? 'iks_comms' : 'iks_bans';
-    if (!(await isTgAdmin(ctx))) return ctx.reply('Нет доступа');
+    if (!(await tgStaff(ctx).catch(() => null))) return ctx.reply('Нет доступа к команде');
     const t = tgTarget(ctx.match.trim().split(/\s+/)[0]);
     if (!t) return ctx.reply(`Формат: /${isMute ? 'unmute' : 'unban'} ID\nID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam`);
     if (!game) return ctx.reply('❌ База игрового сервера не подключена');
@@ -1214,6 +1240,21 @@ if (process.env.TG_BOT_TOKEN) {
   bot.command('mute', tgPunish('mutes'));
   bot.command('unban', tgRemove('bans'));
   bot.command('unmute', tgRemove('mutes'));
+  bot.command('admin', async ctx => {
+    const st = await tgStaff(ctx).catch(() => null);
+    if (!st) return ctx.reply('Нет доступа к команде');
+    ctx.reply('🛡 Команды админа:\n\n/ban ID СРОК [причина] — бан\n/unban ID — разбан\n/mute ID СРОК [причина] — мут\n/unmute ID — размут\n\nID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam\nСРОК: 30m, 2h, 7d или число дней (0 = навсегда)\nПример: /ban 76561198000000000 7d читы' +
+      (st.limited ? '\n\nДругих админов наказывать нельзя.' : ''));
+  });
+  bot.command('link', async ctx => { // привязка Telegram к Steam-аккаунту на сайте: нужна, чтобы купленный/выданный Админ+ открыл /admin
+    if (ctx.chat?.type !== 'private') return ctx.reply('Напишите мне в личные сообщения');
+    try {
+      const id = String(ctx.from.id), code = 'TG-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+      await db.query('delete from tg_link_codes where tg_id=$1 or at<$2', [id, Date.now() - 9e5]);
+      await db.query('insert into tg_link_codes(code,tg_id,at) values($1,$2,$3)', [code, id, Date.now()]);
+      ctx.reply(`🔗 Код привязки: <code>${code}</code>\nДействует 15 минут.\n\nВведите его на сайте в окне промокода (нужен вход через Steam). После этого, если у вас есть Админ+ (куплен или выдан), станет доступна команда /admin.` + ((await tgLinked(ctx)) ? '\n\nСейчас Telegram уже привязан — новый код перепривяжет его.' : ''), { parse_mode: 'HTML' });
+    } catch (e) { console.error('tg link:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
   bot.catch(e => console.error('tg bot error:', e.message));
 
   const hook = '/tg/' + process.env.TG_WEBHOOK_SECRET;
