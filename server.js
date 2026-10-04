@@ -71,6 +71,7 @@ async function init() {
       code text primary key, coins numeric not null, max int not null default 0,
       used int not null default 0, by text, at bigint);
     create table if not exists promo_used(steam_id text, code text, primary key(steam_id, code));
+    create table if not exists chat(id serial primary key, steam_id text not null, text text not null, staff boolean not null default false, at bigint not null);
     create table if not exists servers(id serial primary key, name text not null, address text not null);
     insert into servers(name,address) select 'Мираж (карта меняется)','45.95.31.64:27215' where not exists (select 1 from servers);
     create table if not exists bans(
@@ -624,6 +625,36 @@ app.get('/api/player/:id', async (req, res) => {
     } catch (e) { console.error('player vip:', e.message); }
   }
   res.json(out);
+});
+// --- чат сайта: читать могут все, писать — вошедшие через Steam; удалять сообщения — те, у кого есть право банить ---
+const chatLast = new Map();
+app.get('/api/chat', async (req, res) => {
+  const after = Math.max(0, parseInt(req.query.after) || 0);
+  try {
+    const rows = (await db.query(`select c.id, c.steam_id, c.text, c.at, c.staff, u.name, u.avatar, u.prem_until
+      from chat c left join users u on u.steam_id=c.steam_id where c.id>$1 order by c.id desc limit 60`, [after])).rows.reverse();
+    const live = (await db.query('select id from chat order by id desc limit 60')).rows.map(r => +r.id); // по этому списку браузер убирает удалённые сообщения
+    res.json({ live, msgs: rows.map(r => ({ id: +r.id, uid: r.steam_id, text: r.text, at: +r.at, staff: !!r.staff, vip: +r.prem_until > Date.now(),
+      name: r.name || 'Игрок', avatar: okAvatar(r.avatar) ? r.avatar : null })) });
+  } catch (e) { console.error('chat get:', e.message); res.status(500).json({ error: 'Чат временно недоступен' }); }
+});
+app.post('/api/chat', level('user'), async (req, res) => {
+  const text = String(req.body.text || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return bad(res, 'Введите сообщение');
+  if (text.length > 300) return bad(res, 'Сообщение слишком длинное (до 300 символов)');
+  const now = Date.now(), id = req.u.steam_id, recent = (chatLast.get(id) || []).filter(t => now - t < 10000);
+  if (recent.length && now - recent[recent.length - 1] < 1500) return bad(res, 'Не так быстро');
+  if (recent.length >= 5) return bad(res, 'Слишком много сообщений подряд, подождите немного');
+  chatLast.set(id, [...recent, now]);
+  const staff = id === OWNER || !!req.u.deputy || Math.max(+req.u.plus_until, +req.u.grant_until) > now;
+  try {
+    await db.query('insert into chat(steam_id,text,staff,at) values($1,$2,$3,$4)', [id, text, staff, now]);
+    if (Math.random() < 0.02) db.query('delete from chat where id < (select coalesce(max(id),0) - 1000 from chat)').catch(() => {}); // храним последние ~1000
+    res.json({ ok: true });
+  } catch (e) { console.error('chat post:', e.message); res.status(500).json({ error: 'Не удалось отправить, попробуйте позже' }); }
+});
+app.post('/api/chat/delete', can('ban'), async (req, res) => {
+  await db.query('delete from chat where id=$1', [parseInt(req.body.id) || 0]); res.json({ ok: true });
 });
 app.get('/api/leaders', async (req, res) => {
   try {
