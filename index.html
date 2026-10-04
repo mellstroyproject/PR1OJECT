@@ -361,6 +361,33 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
 .soc-card:hover::after{animation:skShine .9s var(--ease)}
 .soc-card:active{transform:scale(.97)}
 </style>
+<style>
+/* ===== Окно промокода ===== */
+#promoModal{position:fixed;inset:0;z-index:160;background:rgba(3,6,16,.74);backdrop-filter:blur(8px);overflow:auto;display:grid;place-items:center;padding:18px;transition:opacity .22s}
+#promoModal.fresh{animation:skmFade .25s ease-out}
+#promoModal.out{opacity:0;pointer-events:none}
+.pm-wrap{position:relative;width:min(420px,100%);margin:auto;padding-top:56px}
+#promoModal.fresh .pm-card{animation:skmPop .45s var(--ease)}
+#promoModal.out .pm-card{transform:translateY(16px) scale(.97);transition:transform .22s}
+.pm-ticket{position:absolute;top:0;left:50%;width:170px;transform:translateX(-50%) rotate(-14deg);filter:drop-shadow(0 12px 22px rgba(60,90,255,.55));animation:skFloat 4s ease-in-out infinite;pointer-events:none}
+.pm-card{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:0 30px 80px -20px #000}
+.pm-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.pm-head h2{margin:0;font-size:24px;letter-spacing:.3px}
+.pm-x{background:var(--panel);border:1px solid var(--line);color:var(--tx);border-radius:50%;width:34px;height:34px;font-size:14px}
+.pm-l{display:block;font-weight:700;margin:14px 0 8px}
+.pm-in{width:100%;box-sizing:border-box;background:rgba(0,0,0,.28);border:1px solid transparent;border-radius:12px;color:var(--tx);font:inherit;font-size:17px;padding:15px 16px;outline:0;transition:border-color .25s,box-shadow .25s}
+.pm-in:focus{border-color:rgba(var(--acc-rgb),.7);box-shadow:0 0 0 4px rgba(var(--acc-rgb),.18)}
+.pm-card small{display:block;color:var(--mut);font-size:12px;margin:8px 0 0}
+.pm-msg{min-height:20px;margin:12px 0 4px;font-size:14px}.pm-msg.err{color:var(--red);animation:msgin .4s cubic-bezier(.2,1.3,.3,1) both,shake .45s .1s}.pm-msg.ok{color:#4ade80}
+.pm-main{width:100%;display:flex;gap:10px;align-items:center;justify-content:center;border:0;border-radius:14px;padding:16px;font:inherit;font-weight:700;font-size:16px;color:var(--on-acc);
+  background:linear-gradient(135deg,var(--acc),var(--acc-b));box-shadow:0 12px 30px -10px rgba(var(--acc-rgb),.8);cursor:pointer;transition:transform .25s var(--ease),box-shadow .25s,opacity .25s}
+.pm-main:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 16px 34px -8px rgba(var(--acc-rgb),.95)}
+.pm-main:disabled{opacity:.45;cursor:not-allowed}
+.pm-main .ic{width:20px;height:20px}
+.pm-alt{display:flex;gap:8px;align-items:center;justify-content:center;width:100%;margin-top:12px;background:var(--panel2);border:1px solid var(--line);color:var(--tx);border-radius:16px;padding:16px;font:inherit;font-weight:700;cursor:pointer;transition:transform .25s var(--ease),background .25s}
+.pm-alt:hover{transform:translateY(-2px);background:var(--panel)}
+.pm-alt.in{background:var(--panel);border-radius:14px;margin-top:10px}
+</style>
 </head>
 <body>
 <header>
@@ -656,7 +683,7 @@ function head(){
   const menuItems=[['Профиль','user',"openProfile(st.user.id)"],['Скинченджер','skin',"go('skins')"]].concat(st.user&&st.user.isAdmin?[['Админ-панель','shield',"go('admin')"]]:[],[['Настройки','gear',"go('settings')"]]);
   $('#right').innerHTML=st.user?
    `<div class="promo-wrap"><button class="promo-btn" onclick="togglePromo()">${I('promo')}Промокод</button>`+
-   (st.promoOpen?`<div class="promo-pop${promoFresh?' pop':''}"><input value="${esc(st.promo)}" oninput="st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()" placeholder="Введите код" aria-label="Промокод" autofocus><button onclick="activatePromo()">Активировать</button><div class="promo-msg ${st.promoMsg?(st.promoMsg.ok?'ok':'err'):''}">${st.promoMsg?esc(st.promoMsg.text):''}</div></div>`:'')+
+   
    `</div>`+
    (st.user.isAdmin?`<button class="promo-btn gold" onclick="go('admin')">${I('shield')}Админ-панель</button>`:'')+
    `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="alert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
@@ -1261,13 +1288,67 @@ header{position:relative;z-index:30}
     if(els[0])els[0].focus();
   })};
 })();
-async function activatePromo(){
-  if(!st.user){toast('Сначала войдите через Steam');return}
-  const code=st.promo.trim().toUpperCase();
-  if(!code){st.promoMsg={ok:false,text:'Введите код'};draw();return}
-  try{const r=await api('promo',{code});st.promo='';st.promoOpen=false;st.promoMsg=null;await loadMe();toast('Код активирован: +'+r.coins+' монет','ok')}
-  catch(e){st.promoMsg={ok:false,text:e.message};draw()}
+// ===== Промокоды: окно активации и создание своего промокода =====
+const PM={view:'use',code:'',coins:'10',max:'3',msg:null,busy:false};
+const PM_TICKET='<svg class="pm-ticket" viewBox="0 0 160 90" aria-hidden="true"><defs><linearGradient id="pmg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7aa8ff"/><stop offset="1" stop-color="#3b4fd8"/></linearGradient></defs><path d="M10 14h140v18a8 8 0 0 0 0 16v28H10V48a8 8 0 0 0 0-16z" fill="url(#pmg)"/><text x="80" y="62" text-anchor="middle" font-size="34" font-weight="900" fill="#1a2a78" letter-spacing="4">XXXX</text></svg>';
+function togglePromo(){PM.view='use';PM.msg=null;PM.code=st.promo||'';st.menu=false;promoModal()}
+function closePromo(){document.body.style.overflow='';const m=document.getElementById('promoModal');if(!m)return;m.classList.add('out');setTimeout(()=>{if(m.parentNode&&m.classList.contains('out'))m.remove()},230)}
+function promoView(v){PM.view=v;PM.msg=null;promoModal()}
+function pmCost(){const c=Math.floor(+PM.coins),m=Math.floor(+PM.max);return c>0&&m>0?c*m:0}
+function pmProblem(){ // что мешает создать промокод прямо сейчас (null — ничего)
+  const c=Math.floor(+PM.coins),m=Math.floor(+PM.max),bal=+(st.user&&st.user.coins)||0;
+  if(!/^[\p{L}\p{N}_-]{3,20}$/u.test(PM.code.trim()))return 'Код: 3–20 символов — буквы, цифры, _ или -';
+  if(!(c>=10&&c<=10000))return 'Сумма: от 10 до 10 000';
+  if(!(m>=3&&m<=1000))return 'Активаций: от 3 до 1000';
+  if(pmCost()>bal)return 'Не хватает монет';
+  return null;
 }
+function pmCalc(){ // пересчитываем цену и кнопку без перерисовки окна, чтобы не терялся фокус
+  const b=document.getElementById('pmCreate');if(!b)return;
+  b.disabled=!!pmProblem();b.firstElementChild.textContent='Создать промокод за '+pmCost().toLocaleString('ru-RU');
+}
+function promoModal(){
+  let el=document.getElementById('promoModal');
+  if(!el){el=document.createElement('div');el.id='promoModal';el.className='fresh';el.onclick=e=>{if(e.target===el)closePromo()};document.body.appendChild(el);setTimeout(()=>el.classList.remove('fresh'),900)}
+  el.classList.remove('out');document.body.style.overflow='hidden';
+  const msg=PM.msg?`<p class="pm-msg ${PM.msg.ok?'ok':'err'}">${esc(PM.msg.text)}</p>`:'<p class="pm-msg"></p>';
+  if(PM.view==='create'){
+    el.innerHTML=`<div class="pm-wrap"><div class="pm-card" role="dialog" aria-modal="true">
+      <div class="pm-head"><h2>СОЗДАТЬ ПРОМОКОД</h2><button class="pm-x" onclick="closePromo()" aria-label="Закрыть">✕</button></div>
+      <label class="pm-l">Введите промокод</label><input class="pm-in" id="pmCode" placeholder="XXXXXXXX" maxlength="20" autocomplete="off" value="${esc(PM.code)}" oninput="PM.code=this.value;pmCalc()">
+      <label class="pm-l">Сумма промокода (монет за одну активацию)</label><input class="pm-in" type="number" min="10" max="10000" value="${esc(PM.coins)}" oninput="PM.coins=this.value;pmCalc()"><small>От 10 до 10 000 монет</small>
+      <label class="pm-l">Кол-во активаций</label><input class="pm-in" type="number" min="3" max="1000" value="${esc(PM.max)}" oninput="PM.max=this.value;pmCalc()"><small>От 3 до 1000 активаций</small>
+      ${msg}
+      <button class="pm-main" id="pmCreate" onclick="createUserPromo()" ${pmProblem()?'disabled':''}><span>Создать промокод за ${pmCost().toLocaleString('ru-RU')}</span></button>
+      <button class="pm-alt in" onclick="promoView('use')">Назад</button></div></div>`;
+  }else{
+    el.innerHTML=`<div class="pm-wrap">${PM_TICKET}<div class="pm-card" role="dialog" aria-modal="true">
+      <div class="pm-head"><h2>ПРОМОКОД</h2><button class="pm-x" onclick="closePromo()" aria-label="Закрыть">✕</button></div>
+      <input class="pm-in" id="pmCode" placeholder="XXXXXXXX" maxlength="32" autocomplete="off" value="${esc(PM.code)}" oninput="PM.code=this.value;st.promo=this.value" onkeydown="if(event.key==='Enter')activatePromo()">
+      ${msg}
+      <button class="pm-main" onclick="activatePromo()">${I('promo')}<span>Активировать промокод</span></button></div>
+      <button class="pm-alt" onclick="promoView('create')">+ Создать свой промокод</button></div>`;
+  }
+  const inp=el.querySelector('#pmCode');if(inp&&matchMedia('(hover:hover)').matches)inp.focus();
+}
+async function activatePromo(){
+  if(!st.user){PM.msg={ok:false,text:'Сначала войдите через Steam'};promoModal();return}
+  const code=(PM.code||st.promo||'').trim().toUpperCase();
+  if(!code){PM.msg={ok:false,text:'Введите код'};promoModal();return}
+  try{const r=await api('promo',{code});st.promo='';PM.code='';closePromo();await loadMe();toast('Код активирован: +'+r.coins+' монет','ok')}
+  catch(e){PM.msg={ok:false,text:e.message};promoModal()}
+}
+async function createUserPromo(){
+  if(!st.user){PM.msg={ok:false,text:'Сначала войдите через Steam'};promoModal();return}
+  const bad=pmProblem();if(bad){PM.msg={ok:false,text:bad};promoModal();return}
+  if(PM.busy)return;PM.busy=true;
+  try{
+    const r=await api('promo/create',{code:PM.code.trim().toUpperCase(),coins:Math.floor(+PM.coins),max:Math.floor(+PM.max)});
+    PM.code='';PM.view='use';PM.msg=null;closePromo();await loadMe();toast('Промокод '+r.code+' создан, списано '+r.cost+' монет','ok');
+  }catch(e){PM.msg={ok:false,text:e.message};promoModal()}
+  PM.busy=false;
+}
+addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('promoModal'))closePromo()});
 async function adminAction(verb){
   const t=($('#adminTarget')?.value||'').trim();
   if(!t){toast('Укажите SteamID64 игрока (17 цифр)');return}
