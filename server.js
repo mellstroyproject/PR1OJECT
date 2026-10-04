@@ -411,6 +411,7 @@ app.post('/api/admin/server-delete', can('server'), async (req, res) => {
 
 // --- перезагрузка игрового сервера через RCON (только владелец и назначенные замы) ---
 // Пароль RCON задан ниже в строке const pass = ... (он должен совпадать с rcon_password в server.cfg игрового сервера). Команда по умолчанию — quit, меняется через RESTART_CMD
+const RCON_PASS = process.env.RCON_PASSWORD || '3465ergsdfgasdfs23wwsaw%urt'; // лучше задать RCON_PASSWORD в Render и убрать значение по умолчанию отсюда
 function rconExec(host, port, password, command) {
   return new Promise((resolve, reject) => {
     const net = require('net');
@@ -470,7 +471,7 @@ async function rconGate(req, res) {
   const r = (await db.query('select name,address from servers where id=$1', [+req.body.id || 0])).rows[0];
   if (!r) { bad(res, 'Сервер не найден'); return null; }
   const [host, port] = r.address.split(':');
-  return { u, r, host, port: +port, pass: process.env.RCON_PASSWORD || '3465ergsdfgasdfs23wwsaw%urt' };
+  return { u, r, host, port: +port, pass: RCON_PASS };
 }
 // список игроков онлайн: команда status, разбираем строки игроков
 app.post('/api/admin/server-players', async (req, res) => {
@@ -503,7 +504,7 @@ app.post('/api/admin/server-restart', async (req, res) => {
   const u = await getUser(req);
   if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
   if (!isFull(u)) return res.status(403).json({ error: 'Перезагружать сервер могут только владелец и замы' });
-  const pass = process.env.RCON_PASSWORD || '3465ergsdfgasdfs23wwsaw%urt';
+  const pass = RCON_PASS;
   if (!pass) return bad(res, 'На сайте не задан RCON-пароль');
   const r = (await db.query('select name,address from servers where id=$1', [+req.body.id || 0])).rows[0];
   if (!r) return bad(res, 'Сервер не найден');
@@ -1019,7 +1020,7 @@ if (process.env.TG_BOT_TOKEN) {
   bot.command('start', async ctx => {
     const adm = await isTgAdmin(ctx).catch(() => false);
     const help = !adm ? '' : '\n\nКоманды админа:\n/promo КОД МОНЕТЫ АКТИВАЦИИ — промокод на монеты (без кода: /promo МОНЕТЫ АКТИВАЦИИ; 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — промокод на VIP\n/a — админы и кто из них онлайн на сайте' +
-      (isOwner(ctx) ? '\n/adminkey ДНИ [АКТИВАЦИЙ] — ключ на Админ+ (ДНИ 0 = навсегда)\n/botkey — ключ, по которому помощник получит доступ к боту\n/admins — у кого есть доступ к боту\n/deladmin ID — убрать доступ' : '');
+      (isOwner(ctx) ? '\n/restart — перезагрузить игровой сервер\n/adminkey ДНИ [АКТИВАЦИЙ] — ключ на Админ+ (ДНИ 0 = навсегда)\n/botkey — ключ, по которому помощник получит доступ к боту\n/admins — у кого есть доступ к боту\n/deladmin ID — убрать доступ' : '');
     return ctx.reply('👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText() + help, { reply_markup: kb() });
   });
   bot.callbackQuery('claim', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); return claim(ctx); });
@@ -1082,6 +1083,42 @@ if (process.env.TG_BOT_TOKEN) {
         return `${on ? '🟢' : '⚪'} ${r.name || r.id} — ${r.role}${on ? '' : r.t ? ` (был ${ago(r.t)})` : ' (на сайте не был)'}`;
       }).join('\n'));
     } catch (e) { console.error('tg a:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  // /restart — перезагрузка игрового сервера через RCON (та же команда, что и кнопка на сайте); только владельцы бота, с подтверждением
+  const askRestart = (ctx, s) => ctx.reply(`⚠️ Перезагрузить сервер «${s.name}» (${s.address})?\nВсе игроки будут отключены.`,
+    { reply_markup: new InlineKeyboard().text('✅ Да, перезагрузить', 'rsy:' + s.id).text('Отмена', 'rsn') });
+  const srvById = async id => (await db.query('select id, name, address from servers where id=$1', [id])).rows[0];
+  bot.command('restart', async ctx => {
+    if (!isOwner(ctx)) return ctx.reply('Нет доступа');
+    try {
+      const list = (await db.query('select id, name, address from servers order by id')).rows;
+      if (!list.length) return ctx.reply('В списке серверов на сайте пусто — добавьте сервер в админ-панели');
+      if (list.length === 1) return askRestart(ctx, list[0]);
+      const k = new InlineKeyboard(); list.forEach(x => k.text('🔄 ' + x.name, 'rs:' + x.id).row()); k.text('Отмена', 'rsn');
+      return ctx.reply('Какой сервер перезагрузить?', { reply_markup: k });
+    } catch (e) { console.error('tg restart list:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^rs:(\d+)$/, async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!isOwner(ctx)) return;
+    const x = await srvById(+ctx.match[1]);
+    return x ? askRestart(ctx, x) : ctx.reply('Сервер не найден');
+  });
+  bot.callbackQuery('rsn', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); await ctx.editMessageText('Отменено').catch(() => {}); });
+  bot.callbackQuery(/^rsy:(\d+)$/, async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!isOwner(ctx)) return;
+    try {
+      const x = await srvById(+ctx.match[1]);
+      if (!x) return ctx.editMessageText('Сервер не найден').catch(() => {});
+      await ctx.editMessageText(`⏳ Перезагружаю «${x.name}»…`).catch(() => {});
+      const [host, port] = x.address.split(':');
+      try {
+        await rconExec(host, +port, RCON_PASS, process.env.RESTART_CMD || 'quit');
+        console.log('restart (tg):', x.name, 'by', ctx.from.id);
+        await ctx.reply(`✅ Команда перезагрузки отправлена: «${x.name}». Сервер поднимется через минуту-две, если у него включён автозапуск.`);
+      } catch (e) { console.error('tg restart:', e.message); await ctx.reply('❌ Не получилось перезагрузить: ' + e.message); }
+    } catch (e) { console.error('tg restart:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
   });
   bot.command('adminkey', async ctx => { // только владелец: /adminkey ДНИ [АКТИВАЦИЙ] — ключ, который на сайте выдаёт Админ+ (ДНИ 0 = навсегда)
     if (!isOwner(ctx)) return ctx.reply('Нет доступа');
