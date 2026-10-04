@@ -881,6 +881,39 @@ app.post('/api/skin', level('user'), async (req, res) => {
   } catch (e) { console.error('skin:', e.message); res.status(500).json({ error: 'Не удалось сохранить скин: ' + e.message }); }
 });
 
+// --- Telegram-бот: создаёт промокоды (webhook, работает в этом же сервере) ---
+if (process.env.TG_BOT_TOKEN) {
+  const { Bot, webhookCallback } = require('grammy');
+  const bot = new Bot(process.env.TG_BOT_TOKEN);
+  const TG_ADMINS = (process.env.TG_ADMINS || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  bot.use((ctx, next) => TG_ADMINS.includes(String(ctx.from?.id)) ? next() : ctx.reply('Нет доступа'));
+
+  bot.command('start', ctx => ctx.reply(
+    'Создать промокод:\n/promo КОД МОНЕТЫ АКТИВАЦИИ\nили без кода (придумаю сам):\n/promo МОНЕТЫ АКТИВАЦИИ\nАктиваций 0 = без лимита'));
+
+  bot.command('promo', async ctx => {
+    const a = ctx.match.trim().split(/\s+/).filter(Boolean);
+    if (a.length < 2 || a.length > 3) return ctx.reply('Формат: /promo КОД МОНЕТЫ АКТИВАЦИИ');
+    const code = (a.length === 3 ? a[0] : crypto.randomBytes(4).toString('hex')).toUpperCase();
+    const coins = +a[a.length - 2], max = Math.floor(+a[a.length - 1]);
+    if (!/^[\p{L}\p{N}_-]{2,32}$/u.test(code)) return ctx.reply('Код: 2–32 символа — буквы, цифры, _ или -');
+    if (!(coins > 0 && coins <= 100000)) return ctx.reply('Награда: от 1 до 100 000');
+    if (!(max >= 0 && max <= 100000)) return ctx.reply('Активаций: от 0 (без лимита) до 100 000');
+    try {
+      const r = await db.query('insert into promos(code,coins,max,by,at) values($1,$2,$3,$4,$5) on conflict do nothing',
+        [code, coins, max, 'tg:' + ctx.from.id, Date.now()]);
+      ctx.reply(r.rowCount ? `✅ Промокод создан\nКод: ${code}\nНаграда: ${coins} монет\nАктиваций: ${max || '∞'}` : '❌ Такой код уже существует');
+    } catch (e) { console.error('tg promo:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+
+  const hook = '/tg/' + process.env.TG_WEBHOOK_SECRET;
+  app.post(hook, webhookCallback(bot, 'express', { secretToken: process.env.TG_WEBHOOK_SECRET }));
+  const site = process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL;
+  if (site) bot.api.setWebhook(site + hook, { secret_token: process.env.TG_WEBHOOK_SECRET })
+    .then(() => console.log('tg webhook set')).catch(e => console.error('tg webhook:', e.message));
+}
+
 // страницы сайта имеют свои адреса (/shop, /leaders, /profile/<SteamID64> …) — все отдают тот же index.html, дальше работает маршрутизация в браузере
 app.get(['/', '/shop', '/leaders', '/bans', '/rules', '/settings', '/admin', '/skins', '/public', '/profile/:id'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 init().then(() => app.listen(process.env.PORT || 3000, () => console.log('ok')))
