@@ -388,6 +388,56 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
 .pm-alt:hover{transform:translateY(-2px);background:var(--panel)}
 .pm-alt.in{background:var(--panel);border-radius:14px;margin-top:10px}
 </style>
+<style>
+/* ===== Чат ===== */
+#chatDock{position:fixed;right:18px;bottom:18px;z-index:140;display:flex;gap:10px;align-items:center;transition:opacity .25s,transform .3s var(--ease)}
+#chatDock.hide{opacity:0;pointer-events:none;transform:translateY(20px)}
+#chatDock.nohint .chat-pill{display:none}
+.chat-pill{background:rgba(14,16,28,.9);border:1px solid var(--line);color:var(--tx);border-radius:16px;padding:15px 20px;font:inherit;font-weight:700;cursor:pointer;backdrop-filter:blur(10px);transition:transform .3s var(--ease),background .25s}
+.chat-pill:hover{transform:translateY(-3px);background:var(--panel2)}
+.chat-fab{position:relative;width:52px;height:52px;border-radius:16px;border:0;cursor:pointer;color:#fff;display:grid;place-items:center;background:linear-gradient(135deg,var(--acc),var(--acc-b));box-shadow:0 14px 32px -8px rgba(var(--acc-rgb),.85);transition:transform .3s var(--ease)}
+.chat-fab:hover{transform:translateY(-3px) scale(1.06)}
+.chat-fab .ic{width:24px;height:24px;fill:currentColor;stroke:none}
+.chat-badge{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;border-radius:10px;background:var(--red);color:#fff;font:700 12px/20px inherit;font-style:normal;text-align:center;padding:0 5px;transform:scale(0);transition:transform .3s var(--ease)}
+.chat-badge.on{transform:scale(1);animation:skPulse 1.6s ease-out infinite}
+.chat-panel{position:fixed;top:10px;right:10px;bottom:10px;width:min(380px,calc(100vw - 20px));z-index:155;display:flex;flex-direction:column;gap:10px;padding:10px;border-radius:24px;
+  background:color-mix(in srgb,var(--acc) 5%,rgba(12,13,24,.96));border:1px solid var(--line);box-shadow:0 30px 80px -20px #000;backdrop-filter:blur(18px);
+  transform:translateX(115%);opacity:0;pointer-events:none;transition:transform .45s var(--ease),opacity .3s}
+.chat-panel.open{transform:none;opacity:1;pointer-events:auto}
+.chat-head{position:relative;display:flex;justify-content:space-between;align-items:center;background:var(--panel);border-radius:16px;padding:10px 12px 10px 18px}
+.chat-title{display:flex;gap:10px;align-items:center;font-weight:800;font-size:17px}.chat-title .ic{width:20px;height:20px;fill:currentColor;stroke:none}
+.chat-btns{display:flex;gap:8px}.chat-btns button{width:40px;height:40px;border-radius:12px;border:0;background:var(--panel2);color:var(--tx);font-size:16px;cursor:pointer;display:grid;place-items:center;transition:transform .3s var(--ease),background .25s}
+.chat-btns button:hover{background:var(--line);transform:rotate(8deg)}.chat-btns .ic{width:18px;height:18px}
+.chat-menu{position:absolute;top:62px;right:8px;width:270px;z-index:3;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:8px;box-shadow:0 16px 40px -10px #000;opacity:0;transform:translateY(-8px) scale(.97);pointer-events:none;transition:opacity .2s,transform .25s var(--ease)}
+.chat-menu.on{opacity:1;transform:none;pointer-events:auto}
+.chat-menu label{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;font-size:14px;cursor:pointer;border-radius:10px}.chat-menu label:hover{background:var(--panel)}
+.chat-menu input{position:absolute;opacity:0;pointer-events:none}
+.chat-menu i{flex:none;width:38px;height:22px;border-radius:12px;background:var(--panel);border:1px solid var(--line);position:relative;transition:background .25s}
+.chat-menu i:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--mut);transition:transform .25s var(--ease),background .25s}
+.chat-menu input:checked+i{background:linear-gradient(135deg,var(--acc),var(--acc-b));border-color:transparent}.chat-menu input:checked+i:after{transform:translateX(16px);background:#fff}
+.chat-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 2px 2px 0;scroll-behavior:smooth;overscroll-behavior:contain}
+.chat-list::-webkit-scrollbar{width:6px}.chat-list::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.ch-m{display:flex;gap:12px;padding:12px 14px;border-radius:18px;background:var(--panel);border:1px solid transparent}
+.ch-m.st{background:linear-gradient(135deg,rgba(244,63,94,.16),rgba(244,63,94,.05));border-color:rgba(244,63,94,.14)}
+.ch-m.vp{background:linear-gradient(135deg,rgba(80,110,255,.2),rgba(80,110,255,.06));border-color:rgba(80,110,255,.16)}
+.ch-m.new{animation:skIn .45s var(--ease) backwards}
+.ch-ava{flex:none;width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--acc),var(--acc-b)) center/cover no-repeat;display:grid;place-items:center;font-weight:800;font-size:18px;color:#fff;text-decoration:none;transition:transform .3s var(--ease)}
+.ch-ava:hover{transform:scale(1.08) rotate(-4deg)}
+.ch-b{min-width:0;flex:1}
+.ch-t{display:flex;align-items:center;gap:6px}
+.ch-n{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch-crown{width:15px;height:15px;flex:none}
+.ch-t time{margin-left:auto;color:var(--mut);font-size:13px}
+.ch-del{opacity:0;background:none;border:0;color:var(--mut);cursor:pointer;font-size:13px;padding:0 2px;transition:opacity .2s,color .2s}.ch-m:hover .ch-del{opacity:1}.ch-del:hover{color:var(--red)}
+.ch-x{margin-top:5px;font-size:15px;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
+.ch-men{color:var(--acc-b);font-weight:600}
+.chat-foot{display:flex;gap:10px;align-items:center;background:var(--panel);border-radius:18px;padding:10px}
+.chat-foot input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--tx);font:inherit;font-size:16px;padding:10px 8px}
+.ch-send{flex:none;width:44px;height:44px;border-radius:50%;border:0;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--acc),var(--acc-b));display:grid;place-items:center;transition:transform .3s var(--ease)}
+.ch-send:hover{transform:scale(1.1) rotate(-8deg)}.ch-send .ic{width:20px;height:20px}
+.ch-login{width:100%;border:0;border-radius:14px;padding:14px;font:inherit;font-weight:700;color:var(--on-acc);cursor:pointer;background:linear-gradient(135deg,var(--acc),var(--acc-b))}
+@media (max-width:700px){.chat-panel{inset:0;width:auto;border-radius:0;padding:10px;padding-top:max(10px,env(safe-area-inset-top));padding-bottom:max(10px,env(safe-area-inset-bottom))}.chat-pill{display:none}#chatDock{right:14px;bottom:14px}}
+</style>
 </head>
 <body>
 <header>
@@ -851,6 +901,7 @@ function draw(){
   urlSync();
   try{if(!['skins','profile','settings'].includes(st.page))SKN.k=null}catch(e){}
   if(typeof pfFx==='function')pfFx();
+  if(typeof chatSync==='function')chatSync();
   updateReveal();
 }
 function personalTheme(){const t=LS.get('theme','blue');return LS.get('themePick',0)||t!=='blue'?t:null} // личный выбор игрока (иначе действует тема сайта)
@@ -1202,6 +1253,108 @@ function pfFx(){
     requestAnimationFrame(f);
   });
 }
+
+// ===== Чат сайта =====
+const CH={open:false,msgs:[],last:0,unread:0,k:null,timer:0,first:true,sound:false,hint:true,menu:false,canDel:false,seen:0};
+try{CH.hasSeen=localStorage.chatSeen!==undefined;CH.sound=localStorage.chatSound==='1';CH.hint=localStorage.chatHint!=='0';CH.seen=+localStorage.chatSeen||0}catch(e){}
+const CH_CROWN=c=>`<svg class="ch-crown" viewBox="0 0 24 24" fill="${c}" aria-hidden="true"><path d="M3 7l4.5 4L12 4l4.5 7L21 7l-2 11H5z"/><rect x="5" y="19" width="14" height="2" rx="1"/></svg>`;
+const CH_ICON='<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+function chatBuild(){
+  if(document.getElementById('chatDock'))return;
+  document.body.insertAdjacentHTML('beforeend',`
+  <div id="chatDock"><button class="chat-pill" onclick="chatToggle(true)">Нужна помощь?</button><button class="chat-fab" onclick="chatToggle()" aria-label="Открыть чат">${CH_ICON}<i class="chat-badge" id="chatBadge"></i></button></div>
+  <aside id="chatPanel" class="chat-panel" aria-label="Чат">
+    <div class="chat-head"><span class="chat-title">${CH_ICON}Чат</span><span class="chat-btns"><button onclick="chatMenu()" aria-label="Настройки чата">${I('gear')}</button><button onclick="chatToggle(false)" aria-label="Закрыть чат">✕</button></span>
+      <div class="chat-menu" id="chatMenu"><label><span>Звук новых сообщений</span><input type="checkbox" id="chSound" onchange="chatSet('sound',this.checked)"><i></i></label><label><span>Подсказка «Нужна помощь?»</span><input type="checkbox" id="chHint" onchange="chatSet('hint',this.checked)"><i></i></label></div></div>
+    <div class="chat-list" id="chatList"></div>
+    <div class="chat-foot" id="chatFoot"></div>
+  </aside>`);
+  document.getElementById('chSound').checked=CH.sound;document.getElementById('chHint').checked=CH.hint;
+  document.getElementById('chatDock').classList.toggle('nohint',!CH.hint);
+  chatFoot();
+}
+function chatSet(k,v){CH[k]=v;try{localStorage['chat'+k[0].toUpperCase()+k.slice(1)]=v?'1':'0'}catch(e){}if(k==='hint')document.getElementById('chatDock').classList.toggle('nohint',!v)}
+function chatMenu(){CH.menu=!CH.menu;document.getElementById('chatMenu').classList.toggle('on',CH.menu)}
+function chatFoot(){
+  const f=document.getElementById('chatFoot');if(!f)return;
+  const keep=document.getElementById('chatIn')?document.getElementById('chatIn').value:'';
+  f.innerHTML=st.user
+    ?`<input id="chatIn" placeholder="Написать..." maxlength="300" autocomplete="off" onkeydown="if(event.key==='Enter')chatSend()"><button class="ch-send" onclick="chatSend()" aria-label="Отправить">${I('tg')}</button>`
+    :`<button class="ch-login" onclick="steamLogin()">Войдите через Steam, чтобы писать</button>`;
+  const i=document.getElementById('chatIn');if(i)i.value=keep;
+}
+function chatSync(){ // вошёл/вышел или изменились права — перерисовываем поле ввода и кнопки удаления
+  const k=(st.user?st.user.id:'')+'|'+((st.user&&st.user.perms||[]).includes('ban')?1:0);
+  if(k===CH.k)return;CH.k=k;CH.canDel=k.endsWith('|1');chatFoot();chatRender(true);
+}
+function chMsg(m){
+  const a=safeAvatar(m.avatar),n=String(m.name||'Игрок'),cls=m.staff?'st':m.vip?'vp':'',d=new Date(m.at);
+  const t=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  const text=esc(m.text).replace(/@[^\s,.!?:;]+/g,x=>`<span class="ch-men">${x}</span>`);
+  return `<div class="ch-m ${cls}" data-id="${m.id}"><a class="ch-ava" href="/profile/${m.uid}" onclick="chatProfile('${m.uid}');return false" style="${a?`background-image:url('${a}')`:''}">${a?'':esc(n.trim().charAt(0).toUpperCase())}</a>
+    <div class="ch-b"><div class="ch-t"><b class="ch-n">${esc(n)}</b>${m.staff?CH_CROWN('#f472b6'):m.vip?CH_CROWN('#6b8cff'):''}<time>${t}</time>${CH.canDel?`<button class="ch-del" onclick="chatDel(${m.id})" title="Удалить сообщение">✕</button>`:''}</div><div class="ch-x">${text}</div></div></div>`;
+}
+function chatProfile(id){if(innerWidth<700)chatToggle(false);openProfile(id)}
+function chatRender(all){
+  const list=document.getElementById('chatList');if(!list)return;
+  const near=list.scrollHeight-list.scrollTop-list.clientHeight<90;
+  if(all){list.innerHTML=CH.msgs.map(chMsg).join('')}
+  else{
+    const have=new Set([...list.children].map(e=>+e.dataset.id));
+    [...list.children].forEach(e=>{if(!CH.msgs.some(m=>m.id===+e.dataset.id))e.remove()});
+    CH.msgs.filter(m=>!have.has(m.id)).forEach(m=>{list.insertAdjacentHTML('beforeend',chMsg(m).replace('class="ch-m ','class="ch-m new '))});
+  }
+  if(near||all||CH.first)list.scrollTop=list.scrollHeight;
+}
+function chatBeep(){
+  try{const C=window.AudioContext||window.webkitAudioContext,c=CH.ac||(CH.ac=new C()),o=c.createOscillator(),g=c.createGain();
+    o.type='sine';o.frequency.value=880;g.gain.setValueAtTime(.0001,c.currentTime);g.gain.exponentialRampToValueAtTime(.08,c.currentTime+.02);g.gain.exponentialRampToValueAtTime(.0001,c.currentTime+.25);
+    o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+.26)}catch(e){}
+}
+async function chatPoll(){
+  clearTimeout(CH.timer);
+  try{
+    const r=await api('chat?after='+CH.last);
+    const live=new Set(r.live),min=Math.min(...r.live,Infinity);
+    const before=CH.msgs.length;
+    CH.msgs=r.live.length?CH.msgs.filter(m=>m.id<min||live.has(m.id)):[]; // удалённые модератором исчезают
+    const fresh=r.msgs.filter(m=>!CH.msgs.some(x=>x.id===m.id));
+    CH.msgs=CH.msgs.concat(fresh).slice(-120);
+    if(fresh.length){
+      CH.last=Math.max(CH.last,...fresh.map(m=>m.id));
+      if(CH.first&&!CH.hasSeen){CH.seen=CH.last;CH.hasSeen=true} // новый посетитель: старая история не считается непрочитанной
+      const mine=st.user?st.user.id:null,theirs=fresh.filter(m=>m.uid!==mine);
+      if(!CH.open){
+        CH.unread+=theirs.filter(m=>m.id>CH.seen).length;
+        if(!CH.first&&theirs.length&&CH.sound)chatBeep();
+      }else if(theirs.length&&CH.sound&&!CH.first)chatBeep();
+    }
+    if(fresh.length||CH.msgs.length!==before)chatRender(false);
+    CH.first=false;chatBadge();
+  }catch(e){}
+  CH.timer=setTimeout(chatPoll,document.hidden?30000:CH.open?3500:15000);
+}
+function chatBadge(){const b=document.getElementById('chatBadge');if(!b)return;b.textContent=CH.unread>9?'9+':CH.unread;b.classList.toggle('on',CH.unread>0)}
+function chatToggle(v){
+  CH.open=v===undefined?!CH.open:v;
+  const p=document.getElementById('chatPanel');p.classList.toggle('open',CH.open);document.getElementById('chatDock').classList.toggle('hide',CH.open&&innerWidth<700);
+  if(CH.open){
+    CH.unread=0;CH.seen=CH.last;try{localStorage.chatSeen=CH.last}catch(e){}chatBadge();
+    const l=document.getElementById('chatList');l.scrollTop=l.scrollHeight;
+    const i=document.getElementById('chatIn');if(i&&matchMedia('(hover:hover)').matches)setTimeout(()=>i.focus(),250);
+    chatPoll();
+  }else{CH.menu=false;document.getElementById('chatMenu').classList.remove('on')}
+}
+async function chatSend(){
+  const i=document.getElementById('chatIn');if(!i)return;const text=i.value.trim();if(!text||CH.busy)return;
+  CH.busy=true;
+  try{await api('chat',{text});i.value='';CH.first=true;await chatPoll();CH.seen=CH.last;try{localStorage.chatSeen=CH.last}catch(e){}}
+  catch(e){toast(e.message,'err')}
+  CH.busy=false;if(i&&matchMedia('(hover:hover)').matches)i.focus();
+}
+async function chatDel(id){try{await api('chat/delete',{id});CH.msgs=CH.msgs.filter(m=>m.id!==id);chatRender(false)}catch(e){toast(e.message,'err')}}
+addEventListener('keydown',e=>{if(e.key==='Escape'&&CH.open&&!document.getElementById('promoModal')&&!document.getElementById('skModal'))chatToggle(false)});
+chatBuild();chatPoll();
 </script>
 <style>
 .sk-ws{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
