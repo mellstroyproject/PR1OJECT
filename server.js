@@ -71,6 +71,7 @@ async function init() {
       code text primary key, coins numeric not null, max int not null default 0,
       used int not null default 0, by text, at bigint);
     create table if not exists promo_used(steam_id text, code text, primary key(steam_id, code));
+    alter table promos add column if not exists vip_days int not null default 0;
     create table if not exists chat(id serial primary key, steam_id text not null, text text not null, staff boolean not null default false, at bigint not null);
     create table if not exists servers(id serial primary key, name text not null, address text not null);
     insert into servers(name,address) select 'Мираж (карта меняется)','45.95.31.64:27215' where not exists (select 1 from servers);
@@ -341,12 +342,27 @@ app.post('/api/promo', level('user'), async (req, res) => {
     const p = (await c.query('select * from promos where code=$1 for update', [code])).rows[0]; // блокируем строку: лимит не обойти двумя запросами сразу
     if (!p) { await c.query('rollback'); return res.status(404).json({ error: 'Код не найден' }); }
     if (p.max > 0 && p.used >= p.max) { await c.query('rollback'); return bad(res, 'Лимит активаций этого кода исчерпан'); }
+    let vipUntil = 0;
+    if (+p.vip_days > 0) { // промокод на VIP: сначала проверяем, что VIP можно выдать, — при отказе код не тратится
+      const cur = (await c.query('select prem_until from users where steam_id=$1', [req.u.steam_id])).rows[0];
+      const curUntil = cur ? +cur.prem_until : 0;
+      const err = curUntil >= FOREVER ? 'У вас уже постоянный VIP — этот код не нужен' : await vipPurchaseCheck(req.u.steam_id);
+      if (err) { await c.query('rollback'); return bad(res, err); }
+      vipUntil = Math.max(Date.now(), curUntil) + p.vip_days * 864e5;
+    }
     const ins = await c.query('insert into promo_used values($1,$2) on conflict do nothing', [req.u.steam_id, code]);
     if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Этот код уже был использован'); }
     await c.query('update promos set used=used+1 where code=$1', [code]);
     await c.query('update users set coins=coins+$1 where steam_id=$2', [p.coins, req.u.steam_id]);
+    if (vipUntil) {
+      let nick = String(req.u.name || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 32);
+      if (nick.length < 2 || nick === 'Игрок') nick = req.u.steam_id;
+      try { await grantGameVip({ steam_id: req.u.steam_id, name: nick }, vipUntil); }
+      catch (e) { await c.query('rollback'); console.error('promo vip:', e.message); return res.status(500).json({ error: 'Не удалось выдать VIP в игре, код не потрачен. Попробуйте позже.' }); }
+      await c.query('update users set prem_until=$1 where steam_id=$2', [vipUntil, req.u.steam_id]);
+    }
     await c.query('commit');
-    res.json({ ok: true, coins: +p.coins });
+    res.json({ ok: true, coins: +p.coins, vip: +p.vip_days, msg: vipUntil ? `Код активирован: VIP на ${p.vip_days} дн.` : undefined });
   } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo:', e.message); res.status(500).json({ error: 'Не удалось активировать код, попробуйте позже' }); }
   finally { c.release(); }
 });
@@ -901,6 +917,13 @@ if (process.env.TG_BOT_TOKEN) {
     }
     return 10;
   };
+  // VIP-призы: [дней, вес в тысячных долях] — проверяются раньше монет (2% и 0,5%), остальные 97,5% делят монеты по TIERS
+  const VIP_PRIZES = [[7, 20], [30, 5]];
+  const rollPrize = () => {
+    let r = crypto.randomInt(1000);
+    for (const [days, w] of VIP_PRIZES) { if (r < w) return { coins: 0, vip: days }; r -= w; }
+    return { coins: rollCoins(), vip: 0 };
+  };
   db.query('create table if not exists tg_claims(tg_id text primary key, code text, coins numeric, at bigint)')
     .catch(e => console.error('tg_claims:', e.message));
 
@@ -928,17 +951,18 @@ if (process.env.TG_BOT_TOKEN) {
         await c.query('rollback');
         out = [BONUS_HOURS ? `⏳ Следующий промокод можно получить через ${Math.ceil(left / 36e5)} ч.` : 'Вы уже получали свой промокод 🙂'];
       } else {
-        const coins = rollCoins(); let code = null;
+        const prize = rollPrize(), coins = prize.coins; let code = null;
         for (let i = 0; i < 5 && !code; i++) {
           const cand = 'NP-' + crypto.randomBytes(4).toString('hex').toUpperCase();
-          const ins = await c.query('insert into promos(code,coins,max,by,at) values($1,$2,1,$3,$4) on conflict do nothing', [cand, coins, 'tg:' + id, Date.now()]);
+          const ins = await c.query('insert into promos(code,coins,max,by,at,vip_days) values($1,$2,1,$3,$4,$5) on conflict do nothing', [cand, coins, 'tg:' + id, Date.now(), prize.vip]);
           if (ins.rowCount) code = cand;
         }
         if (!code) { await c.query('rollback'); out = ['Не получилось создать код, попробуйте ещё раз']; }
         else {
           await c.query('insert into tg_claims(tg_id,code,coins,at) values($1,$2,$3,$4) on conflict (tg_id) do update set code=excluded.code, coins=excluded.coins, at=excluded.at', [id, code, coins, Date.now()]);
           await c.query('commit');
-          out = [`🎁 Ваш промокод: <code>${code}</code>\nНаграда: ${coins} монет\n\nВведите его на сайте в окне промокода (нужен вход через Steam). Код одноразовый.`, { parse_mode: 'HTML' }];
+          const win = prize.vip ? `🎉 Вам выпал VIP на ${prize.vip} дн.!` : `🎁 Награда: ${coins} монет`;
+          out = [`${win}\nПромокод: <code>${code}</code>\n\nВведите его на сайте в окне промокода (нужен вход через Steam). Код одноразовый.`, { parse_mode: 'HTML' }];
         }
       }
     } catch (e) { await c.query('rollback').catch(() => {}); console.error('tg claim:', e.message); out = ['❌ Ошибка, попробуйте позже']; }
@@ -947,8 +971,8 @@ if (process.env.TG_BOT_TOKEN) {
   }
 
   bot.command('start', ctx => ctx.reply(
-    '👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод от 10 до 1000 монет для сайта.' +
-    (isTgAdmin(ctx) ? '\n\nАдмин: /promo КОД МОНЕТЫ АКТИВАЦИИ — создать код вручную\n(без кода: /promo МОНЕТЫ АКТИВАЦИИ; активаций 0 = без лимита)' : ''),
+    '👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.' +
+    (isTgAdmin(ctx) ? '\n\nАдмин: /promo КОД МОНЕТЫ АКТИВАЦИИ — создать код вручную\n(без кода: /promo МОНЕТЫ АКТИВАЦИИ; активаций 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — код на VIP' : ''),
     { reply_markup: kb() }));
   bot.callbackQuery('claim', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); return claim(ctx); });
   bot.command(['bonus', 'getpromo'], claim);
@@ -967,6 +991,20 @@ if (process.env.TG_BOT_TOKEN) {
         [code, coins, max, 'tg:' + ctx.from.id, Date.now()]);
       ctx.reply(r.rowCount ? `✅ Промокод создан\nКод: ${code}\nНаграда: ${coins} монет\nАктиваций: ${max || '∞'}` : '❌ Такой код уже существует');
     } catch (e) { console.error('tg promo:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.command('vip', async ctx => { // /vip КОД ДНИ АКТИВАЦИИ (только админ): промокод, который выдаёт VIP
+    if (!isTgAdmin(ctx)) return ctx.reply('Нет доступа');
+    const a = ctx.match.trim().split(/\s+/).filter(Boolean);
+    if (a.length < 2 || a.length > 3) return ctx.reply('Формат: /vip КОД ДНИ АКТИВАЦИИ (без кода: /vip ДНИ АКТИВАЦИИ)');
+    const code = (a.length === 3 ? a[0] : 'VIP-' + crypto.randomBytes(3).toString('hex')).toUpperCase();
+    const days = Math.floor(+a[a.length - 2]), max = Math.floor(+a[a.length - 1]);
+    if (!/^[\p{L}\p{N}_-]{2,32}$/u.test(code)) return ctx.reply('Код: 2–32 символа — буквы, цифры, _ или -');
+    if (!(days >= 1 && days <= 3650)) return ctx.reply('Дней VIP: от 1 до 3650');
+    if (!(max >= 0 && max <= 100000)) return ctx.reply('Активаций: от 0 (без лимита) до 100 000');
+    try {
+      const r = await db.query('insert into promos(code,coins,max,by,at,vip_days) values($1,0,$2,$3,$4,$5) on conflict do nothing', [code, max, 'tg:' + ctx.from.id, Date.now(), days]);
+      ctx.reply(r.rowCount ? `✅ VIP-промокод создан\nКод: ${code}\nVIP: ${days} дн.\nАктиваций: ${max || '∞'}` : '❌ Такой код уже существует');
+    } catch (e) { console.error('tg vip:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
   bot.catch(e => console.error('tg bot error:', e.message));
 
