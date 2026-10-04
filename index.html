@@ -1589,11 +1589,16 @@ adminOwnerSections=function(){return _aos()+(can('server')?serversAdmin():'')};
 function serversAdmin(){
   return `<h2 class="sec">Серверы</h2>
    <div class="admin-tools"><input id="srvName" placeholder="Название (например: Мираж)" maxlength="60" aria-label="Название сервера"><input id="srvAddr" placeholder="Адрес: 45.95.31.64:27215" maxlength="70" aria-label="Адрес сервера"><button class="ok" onclick="addServer()">Добавить</button></div>
-   ${SRVDB.length?`<table><tr><th>Сервер</th><th>Адрес</th><th></th></tr>${SRVDB.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.address)}</td><td><button class="join del" onclick="delServer(${+r.id})">Удалить</button></td></tr>`).join('')}</table>`:'<div class="empty">Серверов пока нет.</div>'}`;
+   ${SRVDB.length?`<table><tr><th>Сервер</th><th>Адрес</th><th></th></tr>${SRVDB.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.address)}</td><td><button class="join" onclick="restartServer(${+r.id})">Перезагрузить</button> <button class="join del" onclick="delServer(${+r.id})">Удалить</button></td></tr>`).join('')}</table>`:'<div class="empty">Серверов пока нет.</div>'}`;
 }
 async function addServer(){
   const name=($('#srvName')?.value||'').trim(),address=($('#srvAddr')?.value||'').trim();
   try{await api('admin/server',{name,address});await loadServers();toast('Сервер добавлен: '+name,'ok')}catch(e){toast(e.message,'err')}
+}
+async function restartServer(id){
+  const r=SRVDB.find(x=>x.id===id);if(!r)return;
+  if(!await ask('Перезагрузить сервер «'+r.name+'»? Все игроки будут отключены.',[],'Перезагрузить'))return;
+  try{await api('admin/server-restart',{id});toast('Команда отправлена: «'+r.name+'» перезагружается','ok')}catch(e){toast(e.message,'err')}
 }
 async function delServer(id){
   const r=SRVDB.find(x=>x.id===id);if(!r)return;
