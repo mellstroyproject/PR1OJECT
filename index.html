@@ -438,6 +438,12 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
 .ch-login{width:100%;border:0;border-radius:14px;padding:14px;font:inherit;font-weight:700;color:var(--on-acc);cursor:pointer;background:linear-gradient(135deg,var(--acc),var(--acc-b))}
 @media (max-width:700px){.chat-panel{inset:0;width:auto;border-radius:0;padding:10px;padding-top:max(10px,env(safe-area-inset-top));padding-bottom:max(10px,env(safe-area-inset-bottom))}.chat-pill{display:none}#chatDock{right:14px;bottom:14px}}
 </style>
+<style>
+.pf-bdg.role.own{background:linear-gradient(135deg,#f5b53a,#f97316);color:#1a1204;box-shadow:0 0 16px -2px rgba(249,115,22,.7)}
+.pf-bdg.role.dep{background:#f43f5e;color:#fff;box-shadow:0 0 16px -2px rgba(244,63,94,.7)}
+.pf-bdg.role.plus{background:rgba(245,181,58,.16);color:var(--gold,#f5b53a);border:1px solid rgba(245,181,58,.5)}
+.pf-bdg.role.mod{background:rgba(80,110,255,.2);color:#9db2ff;border:1px solid rgba(80,110,255,.45)}
+</style>
 </head>
 <body>
 <header>
@@ -1071,7 +1077,7 @@ function profileView(){
   return `<div class="${fx?'pf-fx':''}">`+back+`<div class="pf-head">
     <div class="pf-ava" style="${a?`background-image:url('${a}')`:''}">${a?'':esc(n.trim().charAt(0).toUpperCase())}</div>
     <div class="pf-main"><div class="pf-name">${esc(n)}
-      ${d.banned?'<span class="pf-bdg ban">Заблокирован</span>':''}${d.vip?'<span class="pf-bdg vip">Премиум</span>':''}
+      ${d.role?`<span class="pf-bdg role ${({'Владелец':'own','Зам':'dep','Админ+':'plus'})[d.role]||'mod'}">${esc(d.role)}</span>`:''}${d.banned?'<span class="pf-bdg ban">Заблокирован</span>':''}${d.vip?'<span class="pf-bdg vip">Премиум</span>':''}
       <a class="pf-steam" href="https://steamcommunity.com/profiles/${d.id}" target="_blank" rel="noopener" title="Профиль в Steam">S</a></div>
       <div class="pf-sub">${d.lastSeen?pfAgo(d.lastSeen):(S?'':'Игрок ещё не заходил на сервер')}</div></div>
     ${S&&S.rank!==null?`<div class="pf-rank"><b>${fmt(S.exp)}</b><span>опыта · звание ${S.rank}</span></div>`:''}
