@@ -368,6 +368,49 @@ app.post('/api/admin/server-delete', can('server'), async (req, res) => {
   await db.query('delete from servers where id=$1', [+req.body.id || 0]); res.json({ ok: true });
 });
 
+// --- перезагрузка игрового сервера через RCON (только владелец и назначенные замы) ---
+// Нужно: в server.cfg игрового сервера rcon_password "3465ergsdfgasdfs23wwsaw%urt"; здесь переменные окружения RCON_PASSWORD (и при желании RESTART_CMD, по умолчанию quit)
+function rconExec(host, port, password, command) {
+  return new Promise((resolve, reject) => {
+    const net = require('net');
+    const sock = net.connect({ host, port });
+    let buf = Buffer.alloc(0), authed = false, done = false;
+    const finish = (err, val) => { if (done) return; done = true; clearTimeout(timer); sock.destroy(); err ? reject(err) : resolve(val); };
+    const timer = setTimeout(() => finish(new Error('Сервер не отвечает по RCON')), 8000);
+    const pack = (id, type, body) => { const b = Buffer.from(body, 'utf8'), out = Buffer.alloc(14 + b.length); out.writeInt32LE(10 + b.length, 0); out.writeInt32LE(id, 4); out.writeInt32LE(type, 8); b.copy(out, 12); return out; };
+    sock.on('connect', () => sock.write(pack(1, 3, password)));
+    sock.on('error', e => finish(new Error('Нет связи с сервером: ' + e.message)));
+    sock.on('close', () => finish(authed ? null : new Error('Соединение закрыто'), 'ok'));
+    sock.on('data', d => {
+      buf = Buffer.concat([buf, d]);
+      while (buf.length >= 12) {
+        const size = buf.readInt32LE(0); if (buf.length < size + 4) break;
+        const id = buf.readInt32LE(4), type = buf.readInt32LE(8); buf = buf.subarray(size + 4);
+        if (type === 2 && !authed) { // ответ на авторизацию
+          if (id === -1) return finish(new Error('Неверный RCON-пароль'));
+          authed = true; sock.write(pack(2, 2, command));
+          setTimeout(() => finish(null, 'ok'), 700); // команда quit обрывает соединение — это нормально
+        }
+      }
+    });
+  });
+}
+app.post('/api/admin/server-restart', async (req, res) => {
+  const u = await getUser(req);
+  if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
+  if (!isFull(u)) return res.status(403).json({ error: 'Перезагружать сервер могут только владелец и замы' });
+  const pass = process.env.RCON_PASSWORD;
+  if (!pass) return bad(res, 'На сайте не задан RCON_PASSWORD (переменная окружения)');
+  const r = (await db.query('select name,address from servers where id=$1', [+req.body.id || 0])).rows[0];
+  if (!r) return bad(res, 'Сервер не найден');
+  const [host, port] = r.address.split(':');
+  try {
+    await rconExec(host, +port, pass, process.env.RESTART_CMD || 'quit');
+    console.log('restart:', r.name, 'by', u.steam_id);
+    res.json({ ok: true });
+  } catch (e) { console.error('restart:', e.message); bad(res, e.message); }
+});
+
 // --- агенты (плагин WeaponPaints: wp_player_agents) ---
 let AGC = null, AGT = 0;
 async function agentCatalog() {
