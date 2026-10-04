@@ -313,6 +313,25 @@ app.post('/api/buy', level('user'), async (req, res) => {
   }
   res.json({ ok: true });
 });
+// любой игрок может создать свой промокод: награда за активацию × число активаций списывается с его баланса сразу
+app.post('/api/promo/create', level('user'), async (req, res) => {
+  const code = String(req.body.code || '').trim().toUpperCase(), coins = Math.floor(+req.body.coins), max = Math.floor(+req.body.max);
+  if (!/^[\p{L}\p{N}_-]{3,20}$/u.test(code)) return bad(res, 'Код: 3–20 символов — буквы, цифры, _ или -, без пробелов');
+  if (!(coins >= 10 && coins <= 10000)) return bad(res, 'Сумма промокода: от 10 до 10 000 монет');
+  if (!(max >= 3 && max <= 1000)) return bad(res, 'Количество активаций: от 3 до 1000');
+  const cost = coins * max, c = await db.connect();
+  try {
+    await c.query('begin');
+    const u = (await c.query('select coins from users where steam_id=$1 for update', [req.u.steam_id])).rows[0]; // блокируем баланс: нельзя потратить одни и те же монеты дважды
+    if (!u || +u.coins < cost) { await c.query('rollback'); return bad(res, `Не хватает монет: нужно ${cost}`); }
+    const ins = await c.query('insert into promos(code,coins,max,by,at) values($1,$2,$3,$4,$5) on conflict do nothing', [code, coins, max, req.u.steam_id, Date.now()]);
+    if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Такой промокод уже существует, придумайте другой'); }
+    await c.query('update users set coins=coins-$1 where steam_id=$2', [cost, req.u.steam_id]);
+    await c.query('commit');
+    res.json({ ok: true, code, cost });
+  } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo-create:', e.message); res.status(500).json({ error: 'Не удалось создать промокод, попробуйте позже' }); }
+  finally { c.release(); }
+});
 app.post('/api/promo', level('user'), async (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase();
   const c = await db.connect();
