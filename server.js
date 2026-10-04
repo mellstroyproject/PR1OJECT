@@ -66,6 +66,7 @@ async function init() {
       grant_until bigint not null default 0, grant_by text, grant_at bigint,
       deputy boolean not null default false, dep_by text, dep_at bigint);
     alter table users add column if not exists perms text not null default '';
+    alter table users add column if not exists last_seen bigint not null default 0;
     create table if not exists site(key text primary key, value text);
     create table if not exists promos(
       code text primary key, coins numeric not null, max int not null default 0,
@@ -83,6 +84,15 @@ async function init() {
       on conflict do nothing;`);
 }
 
+// --- присутствие на сайте: сайт каждые 15–30 секунд опрашивает чат, по этому запросу отмечаем «был онлайн» ---
+const seenAt = new Map(); // steam_id -> когда последний раз писали в базу
+function touchSeen(req) {
+  const m = (req.headers.cookie || '').match(/(?:^|;\s*)s=(\d{17})\.([\w-]+)/);
+  if (!m || m[2] !== sign(m[1])) return;
+  if (Date.now() - (seenAt.get(m[1]) || 0) < 60000) return;
+  seenAt.set(m[1], Date.now());
+  db.query('update users set last_seen=$2 where steam_id=$1', [m[1], Date.now()]).catch(() => {});
+}
 // --- сессия ---
 async function getUser(req) {
   const m = (req.headers.cookie || '').match(/(?:^|;\s*)s=(\d{17})\.([\w-]+)/);
@@ -774,6 +784,7 @@ app.get('/api/player/:id', async (req, res) => {
 // --- чат сайта: читать могут все, писать — вошедшие через Steam; удалять сообщения — те, у кого есть право банить ---
 const chatLast = new Map();
 app.get('/api/chat', async (req, res) => {
+  touchSeen(req);
   const after = Math.max(0, parseInt(req.query.after) || 0);
   try {
     const rows = (await db.query(`select c.id, c.steam_id, c.text, c.at, c.staff, u.name, u.avatar, u.prem_until
@@ -1007,7 +1018,7 @@ if (process.env.TG_BOT_TOKEN) {
 
   bot.command('start', async ctx => {
     const adm = await isTgAdmin(ctx).catch(() => false);
-    const help = !adm ? '' : '\n\nКоманды админа:\n/promo КОД МОНЕТЫ АКТИВАЦИИ — промокод на монеты (без кода: /promo МОНЕТЫ АКТИВАЦИИ; 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — промокод на VIP' +
+    const help = !adm ? '' : '\n\nКоманды админа:\n/promo КОД МОНЕТЫ АКТИВАЦИИ — промокод на монеты (без кода: /promo МОНЕТЫ АКТИВАЦИИ; 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — промокод на VIP\n/a — админы и кто из них онлайн на сайте' +
       (isOwner(ctx) ? '\n/adminkey ДНИ [АКТИВАЦИЙ] — ключ на Админ+ (ДНИ 0 = навсегда)\n/botkey — ключ, по которому помощник получит доступ к боту\n/admins — у кого есть доступ к боту\n/deladmin ID — убрать доступ' : '');
     return ctx.reply('👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText() + help, { reply_markup: kb() });
   });
@@ -1044,6 +1055,33 @@ if (process.env.TG_BOT_TOKEN) {
       const r = await db.query('insert into promos(code,coins,max,by,at,vip_days) values($1,0,$2,$3,$4,$5) on conflict do nothing', [code, max, 'tg:' + ctx.from.id, Date.now(), days]);
       ctx.reply(r.rowCount ? `✅ VIP-промокод создан\nКод: ${code}\nVIP: ${days} дн.\nАктиваций: ${max || '∞'}` : '❌ Такой код уже существует');
     } catch (e) { console.error('tg vip:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.command('a', async ctx => { // список админов и кто из них сейчас на сайте (для владельцев и помощников бота)
+    if (!(await isTgAdmin(ctx))) return ctx.reply('Нет доступа');
+    try {
+      const now = Date.now(), list = new Map(); // steam_id -> { role, name }
+      const add = (id, role, name) => { const o = list.get(id); if (!o) list.set(id, { role, name }); else if (!o.name && name) o.name = name; };
+      add(OWNER, '👑 владелец', null);
+      for (const r of (await db.query('select steam_id, name from users where deputy')).rows) add(r.steam_id, 'зам', r.name);
+      for (const r of (await db.query('select steam_id, name from users where greatest(plus_until, grant_until) > $1', [now])).rows) add(r.steam_id, 'Админ+', r.name);
+      if (game) {
+        try { for (const r of await gq('select steam_id, name from iks_admins where is_disabled=0 and deleted_at is null and (end_at is null or end_at=0 or end_at>?)', [nowS()])) add(String(r.steam_id), 'админ игры', r.name); }
+        catch (e) { console.error('tg a (iks_admins):', e.message); }
+      }
+      const ids = [...list.keys()];
+      const seen = {};
+      for (const r of (await db.query('select steam_id, name, last_seen from users where steam_id = any($1)', [ids])).rows) {
+        seen[r.steam_id] = +r.last_seen || 0;
+        const o = list.get(r.steam_id); if (r.name && r.name !== 'Игрок') o.name = r.name;
+      }
+      const ago = t => { const m = Math.round((now - t) / 6e4); return m < 60 ? `${Math.max(m, 1)} мин назад` : m < 1440 ? `${Math.floor(m / 60)} ч назад` : `${Math.floor(m / 1440)} дн. назад`; };
+      const rows = ids.map(id => ({ id, ...list.get(id), t: seen[id] || 0 })).sort((x, y) => y.t - x.t);
+      const online = rows.filter(r => now - r.t < 180000).length; // онлайн = был активен на сайте последние 3 минуты
+      ctx.reply(`👥 Админы — онлайн на сайте: ${online} из ${rows.length}\n\n` + rows.map(r => {
+        const on = now - r.t < 180000;
+        return `${on ? '🟢' : '⚪'} ${r.name || r.id} — ${r.role}${on ? '' : r.t ? ` (был ${ago(r.t)})` : ' (на сайте не был)'}`;
+      }).join('\n'));
+    } catch (e) { console.error('tg a:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
   });
   bot.command('adminkey', async ctx => { // только владелец: /adminkey ДНИ [АКТИВАЦИЙ] — ключ, который на сайте выдаёт Админ+ (ДНИ 0 = навсегда)
     if (!isOwner(ctx)) return ctx.reply('Нет доступа');
