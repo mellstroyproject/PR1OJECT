@@ -590,11 +590,18 @@ const steamForms = id => { const acc = BigInt(id) - STEAM64_BASE, y = acc % 2n, 
 app.get('/api/player/:id', async (req, res) => {
   const id = String(req.params.id || '');
   if (!/^\d{17}$/.test(id)) return bad(res, 'Неверный SteamID64');
-  const out = { id, name: null, avatar: null, banned: null, vip: null, stats: null, lastSeen: null };
+  const out = { id, name: null, avatar: null, banned: null, vip: null, stats: null, lastSeen: null, role: null };
   const forms = steamForms(id);
   try {
-    const u = (await db.query('select name, avatar from users where steam_id=$1', [id])).rows[0];
-    if (u) { out.name = u.name; out.avatar = okAvatar(u.avatar) ? u.avatar : null; }
+    const u = (await db.query('select name, avatar, deputy, plus_until, grant_until, perms from users where steam_id=$1', [id])).rows[0];
+    if (u) {
+      out.name = u.name; out.avatar = okAvatar(u.avatar) ? u.avatar : null;
+      if (id === OWNER) out.role = 'Владелец';
+      else if (u.deputy) out.role = 'Зам';
+      else if (Math.max(+u.plus_until, +u.grant_until) > Date.now()) out.role = 'Админ+';
+      else if (String(u.perms || '').split(',').some(p => PERMS[p])) out.role = 'Модератор';
+    }
+    if (!out.role && id === OWNER) out.role = 'Владелец';
   } catch (e) {}
   if (!out.avatar && lbAv.get(id)?.avatar) out.avatar = lbAv.get(id).avatar;
   if (!out.avatar || !out.name || out.name === 'Игрок') {
@@ -618,6 +625,7 @@ app.get('/api/player/:id', async (req, res) => {
       const b = (await gq(`select reason, duration, end_at, created_at from iks_bans where steam_id in (${forms.map(() => '?').join(',')}) and deleted_at is null and unbanned_by is null and (end_at is null or end_at=0 or end_at>?) order by id desc limit 1`, [...forms, nowS()]))[0];
       if (b) out.banned = { reason: b.reason || '', term: +b.duration ? fmtDur(+b.duration) : 'Навсегда', at: b.created_at ? b.created_at * 1000 : null };
     } catch (e) { console.error('player ban:', e.message); }
+    if (!out.role) { try { if (await gameAdmin(id)) out.role = 'Админ'; } catch (e) {} } // штатный админ игрового сервера
     try {
       const sid = await vipSid(gq);
       const v = (await gq('select `expires` from vip_users where account_id=? and sid=? and (`expires`=0 or `expires`>?) limit 1', [accountId(id), sid, nowS()]))[0];
