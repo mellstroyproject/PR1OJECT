@@ -1019,7 +1019,7 @@ if (process.env.TG_BOT_TOKEN) {
 
   bot.command('start', async ctx => {
     const adm = await isTgAdmin(ctx).catch(() => false);
-    const help = !adm ? '' : '\n\nКоманды админа:\n/promo КОД МОНЕТЫ АКТИВАЦИИ — промокод на монеты (без кода: /promo МОНЕТЫ АКТИВАЦИИ; 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — промокод на VIP\n/a — админы и кто из них онлайн на сайте' +
+    const help = !adm ? '' : '\n\nКоманды админа:\n/promo КОД МОНЕТЫ АКТИВАЦИИ — промокод на монеты (без кода: /promo МОНЕТЫ АКТИВАЦИИ; 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — промокод на VIP\n/a — админы и кто из них онлайн на сайте\n/ban ID СРОК [причина] — бан\n/unban ID — разбан\n/mute ID СРОК [причина] — мут\n/unmute ID — размут\n(СРОК: 30m, 2h, 7d или число дней; 0 = навсегда)' +
       (isOwner(ctx) ? '\n/restart — перезагрузить игровой сервер\n/adminkey ДНИ [АКТИВАЦИЙ] — ключ на Админ+ (ДНИ 0 = навсегда)\n/botkey — ключ, по которому помощник получит доступ к боту\n/admins — у кого есть доступ к боту\n/deladmin ID — убрать доступ' : '');
     return ctx.reply('👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText() + help, { reply_markup: kb() });
   });
@@ -1166,6 +1166,54 @@ if (process.env.TG_BOT_TOKEN) {
     try { ctx.reply((await db.query('delete from tg_admins where tg_id=$1', [id])).rowCount ? '✅ Доступ убран' : 'Такого ID нет в списке'); }
     catch (e) { console.error('tg deladmin:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
+
+  // --- баны и муты из Telegram (админы бота: владельцы и помощники): пишет в те же таблицы игры (iks_bans / iks_comms), что и админ-панель сайта ---
+  const tgTarget = s => { s = String(s || '').trim(); const m = s.match(/steamcommunity\.com\/profiles\/(\d{17})/i); return toSteam64(m ? m[1] : s); }; // SteamID64, STEAM_X:Y:Z, [U:1:N] или ссылка на профиль
+  const tgDur = s => { // 30m, 2h, 7d, просто число = дни; 0 = навсегда -> секунды (или null, если не разобрали)
+    const m = String(s || '').toLowerCase().match(/^(\d+)([mhd]?)$/); if (!m) return null;
+    const sec = +m[1] * { m: 60, h: 3600, d: 86400, '': 86400 }[m[2]];
+    return sec <= 3650 * 86400 ? sec : null;
+  };
+  const tgPunish = kind => async ctx => {
+    const isMute = kind === 'mutes', word = isMute ? 'мут' : 'бан', T = isMute ? 'iks_comms' : 'iks_bans', TY = isMute ? 'mute_type' : 'ban_type';
+    if (!(await isTgAdmin(ctx))) return ctx.reply('Нет доступа');
+    const a = ctx.match.trim().split(/\s+/).filter(Boolean);
+    const t = tgTarget(a[0]), dur = tgDur(a[1]);
+    if (!a.length || !t || dur === null)
+      return ctx.reply(`Формат: /${isMute ? 'mute' : 'ban'} ID СРОК [причина]\nID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam\nСРОК: 30m, 2h, 7d или просто число дней (0 = навсегда)\nПример: /${isMute ? 'mute' : 'ban'} 76561198000000000 7d читы`);
+    if (t === OWNER) return ctx.reply('Нельзя наказать владельца');
+    if (!game) return ctx.reply('❌ База игрового сервера не подключена');
+    const reason = a.slice(2).join(' ').slice(0, 120) || 'Без причины';
+    try {
+      const n = nowS();
+      const ex = await gq(`select id from ${T} where steam_id=? and unbanned_by is null and deleted_at is null and (end_at=0 or end_at>?) limit 1`, [t, n]);
+      if (ex.length) return ctx.reply(`Этому игроку ${word} уже выдан. Снять: /${isMute ? 'unmute' : 'unban'} ${t}`);
+      const adm = await gameAdmin(OWNER); // если владельца нет в iks_admins — запись будет «от консоли»
+      const srv = (await gq('select id from iks_servers order by id limit 1'))[0];
+      const u = (await db.query('select name from users where steam_id=$1', [t])).rows[0];
+      const name = String((u && u.name && u.name !== 'Игрок' && u.name) || (await fetchProfiles([t]).catch(() => ({})))[t]?.name || t).slice(0, 64);
+      await gq(`insert into ${T}(steam_id,name,duration,reason,${TY},server_id,admin_id,created_at,end_at,updated_at) values(?,?,?,?,?,?,?,?,?,?)`,
+        [t, name, dur, reason, isMute ? 2 : 0, srv ? srv.id : null, adm ? adm.id : null, n, dur ? n + dur : 0, n]);
+      console.log('tg', word, ':', t, dur, 'by', ctx.from.id);
+      ctx.reply(`✅ ${isMute ? '🔇 Мут' : '🔨 Бан'} выдан\nИгрок: ${name}\nSteamID: ${t}\nСрок: ${dur ? fmtDur(dur) : 'навсегда'}\nПричина: ${reason}`);
+    } catch (e) { console.error('tg ' + word + ':', e.message); ctx.reply('❌ Не удалось записать в базу игрового сервера: ' + e.message); }
+  };
+  const tgRemove = kind => async ctx => {
+    const isMute = kind === 'mutes', T = isMute ? 'iks_comms' : 'iks_bans';
+    if (!(await isTgAdmin(ctx))) return ctx.reply('Нет доступа');
+    const t = tgTarget(ctx.match.trim().split(/\s+/)[0]);
+    if (!t) return ctx.reply(`Формат: /${isMute ? 'unmute' : 'unban'} ID\nID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam`);
+    if (!game) return ctx.reply('❌ База игрового сервера не подключена');
+    try {
+      const r = await gq(`delete from ${T} where steam_id=? and unbanned_by is null and deleted_at is null and (end_at=0 or end_at>?)`, [t, nowS()]);
+      console.log('tg un' + (isMute ? 'mute' : 'ban') + ':', t, 'by', ctx.from.id);
+      ctx.reply(r.affectedRows ? `✅ ${isMute ? 'Мут снят' : 'Разбанен'}: ${t}` : `Активного ${isMute ? 'мута' : 'бана'} у ${t} не найдено`);
+    } catch (e) { console.error('tg un' + (isMute ? 'mute' : 'ban') + ':', e.message); ctx.reply('❌ Не удалось изменить базу игрового сервера: ' + e.message); }
+  };
+  bot.command('ban', tgPunish('bans'));
+  bot.command('mute', tgPunish('mutes'));
+  bot.command('unban', tgRemove('bans'));
+  bot.command('unmute', tgRemove('mutes'));
   bot.catch(e => console.error('tg bot error:', e.message));
 
   const hook = '/tg/' + process.env.TG_WEBHOOK_SECRET;
