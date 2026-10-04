@@ -72,6 +72,7 @@ async function init() {
       used int not null default 0, by text, at bigint);
     create table if not exists promo_used(steam_id text, code text, primary key(steam_id, code));
     alter table promos add column if not exists vip_days int not null default 0;
+    alter table promos add column if not exists admin_days int not null default -1;
     create table if not exists chat(id serial primary key, steam_id text not null, text text not null, staff boolean not null default false, at bigint not null);
     create table if not exists servers(id serial primary key, name text not null, address text not null);
     insert into servers(name,address) select 'Мираж (карта меняется)','45.95.31.64:27215' where not exists (select 1 from servers);
@@ -350,6 +351,13 @@ app.post('/api/promo', level('user'), async (req, res) => {
       if (err) { await c.query('rollback'); return bad(res, err); }
       vipUntil = Math.max(Date.now(), curUntil) + p.vip_days * 864e5;
     }
+    let admUntil = 0;
+    if (+p.admin_days >= 0) { // ключ на Админ+ (0 дней = навсегда): проверяем заранее — при отказе ключ не тратится
+      const curG = +req.u.grant_until || 0;
+      const err = curG >= FOREVER ? 'У вас уже постоянная админка — этот ключ не нужен' : await adminPurchaseCheck(req.u.steam_id);
+      if (err) { await c.query('rollback'); return bad(res, err); }
+      admUntil = +p.admin_days === 0 ? FOREVER : Math.max(Date.now(), curG) + p.admin_days * 864e5;
+    }
     const ins = await c.query('insert into promo_used values($1,$2) on conflict do nothing', [req.u.steam_id, code]);
     if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Этот код уже был использован'); }
     await c.query('update promos set used=used+1 where code=$1', [code]);
@@ -361,8 +369,15 @@ app.post('/api/promo', level('user'), async (req, res) => {
       catch (e) { await c.query('rollback'); console.error('promo vip:', e.message); return res.status(500).json({ error: 'Не удалось выдать VIP в игре, код не потрачен. Попробуйте позже.' }); }
       await c.query('update users set prem_until=$1 where steam_id=$2', [vipUntil, req.u.steam_id]);
     }
+    if (admUntil) {
+      let nick = String(req.u.name || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 32);
+      if (nick.length < 2 || nick === 'Игрок') nick = req.u.steam_id;
+      try { await grantGameAdmin({ steam_id: req.u.steam_id, name: nick }, admUntil, { name: nick }); }
+      catch (e) { await c.query('rollback'); console.error('promo admin:', e.message); return res.status(500).json({ error: 'Не удалось выдать админку в игре, ключ не потрачен. Попробуйте позже.' }); }
+      await c.query('update users set grant_until=$1, grant_by=$2, grant_at=$3 where steam_id=$4', [admUntil, 'key:' + code, Date.now(), req.u.steam_id]);
+    }
     await c.query('commit');
-    res.json({ ok: true, coins: +p.coins, vip: +p.vip_days, msg: vipUntil ? `Код активирован: VIP на ${p.vip_days} дн.` : undefined });
+    res.json({ ok: true, coins: +p.coins, vip: +p.vip_days, msg: vipUntil ? `Код активирован: VIP на ${p.vip_days} дн.` : admUntil ? `Ключ активирован: Админ+ ${+p.admin_days ? 'на ' + p.admin_days + ' дн.' : 'навсегда'}` : undefined });
   } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo:', e.message); res.status(500).json({ error: 'Не удалось активировать код, попробуйте позже' }); }
   finally { c.release(); }
 });
@@ -903,7 +918,9 @@ if (process.env.TG_BOT_TOKEN) {
   const { Bot, webhookCallback, InlineKeyboard } = require('grammy');
   const bot = new Bot(process.env.TG_BOT_TOKEN);
   const TG_ADMINS = (process.env.TG_ADMINS || '').split(',').map(s => s.trim()).filter(Boolean);
-  const isTgAdmin = ctx => TG_ADMINS.includes(String(ctx.from?.id));
+  const isOwner = ctx => TG_ADMINS.includes(String(ctx.from?.id)); // владельцы: из переменной TG_ADMINS в Render — могут всё
+  const isTgAdmin = async ctx => isOwner(ctx) || !!(await db.query('select 1 from tg_admins where tg_id=$1', [String(ctx.from?.id)])).rowCount; // + помощники, получившие доступ по ключу
+  const HELPER = { coins: 1000, vipDays: 30, max: 100 }; // лимиты для помощников (у владельцев лимитов нет)
   const CHANNEL = process.env.TG_CHANNEL || '@Next1Project'; // канал, на который надо быть подписанным
   const CHANNEL_URL = 'https://t.me/' + CHANNEL.replace('@', '');
   const BONUS_HOURS = +process.env.TG_BONUS_HOURS || 0; // 0 = промокод можно получить только один раз; 24 = раз в сутки
@@ -940,6 +957,8 @@ if (process.env.TG_BOT_TOKEN) {
     }
     return { coins: 10, vip: 0 };
   };
+  db.query(`create table if not exists tg_admins(tg_id text primary key, name text, added_by text, at bigint);
+    create table if not exists tg_keys(key text primary key, by text, at bigint, used_by text)`).catch(e => console.error('tg_admins:', e.message));
   db.query('create table if not exists tg_claims(tg_id text primary key, code text, coins numeric, at bigint)')
     .catch(e => console.error('tg_claims:', e.message));
 
@@ -986,15 +1005,17 @@ if (process.env.TG_BOT_TOKEN) {
     return ctx.reply(...out);
   }
 
-  bot.command('start', ctx => ctx.reply(
-    '👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText() +
-    (isTgAdmin(ctx) ? '\n\nАдмин: /promo КОД МОНЕТЫ АКТИВАЦИИ — создать код вручную\n(без кода: /promo МОНЕТЫ АКТИВАЦИИ; активаций 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — код на VIP' : ''),
-    { reply_markup: kb() }));
+  bot.command('start', async ctx => {
+    const adm = await isTgAdmin(ctx).catch(() => false);
+    const help = !adm ? '' : '\n\nКоманды админа:\n/promo КОД МОНЕТЫ АКТИВАЦИИ — промокод на монеты (без кода: /promo МОНЕТЫ АКТИВАЦИИ; 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — промокод на VIP' +
+      (isOwner(ctx) ? '\n/adminkey ДНИ [АКТИВАЦИЙ] — ключ на Админ+ (ДНИ 0 = навсегда)\n/botkey — ключ, по которому помощник получит доступ к боту\n/admins — у кого есть доступ к боту\n/deladmin ID — убрать доступ' : '');
+    return ctx.reply('👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText() + help, { reply_markup: kb() });
+  });
   bot.callbackQuery('claim', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); return claim(ctx); });
   bot.command(['bonus', 'getpromo'], claim);
 
   bot.command('promo', async ctx => { // только для админов из TG_ADMINS
-    if (!isTgAdmin(ctx)) return ctx.reply('Нет доступа');
+    if (!(await isTgAdmin(ctx))) return ctx.reply('Нет доступа');
     const a = ctx.match.trim().split(/\s+/).filter(Boolean);
     if (a.length < 2 || a.length > 3) return ctx.reply('Формат: /promo КОД МОНЕТЫ АКТИВАЦИИ');
     const code = (a.length === 3 ? a[0] : crypto.randomBytes(4).toString('hex')).toUpperCase();
@@ -1002,6 +1023,7 @@ if (process.env.TG_BOT_TOKEN) {
     if (!/^[\p{L}\p{N}_-]{2,32}$/u.test(code)) return ctx.reply('Код: 2–32 символа — буквы, цифры, _ или -');
     if (!(coins > 0 && coins <= 100000)) return ctx.reply('Награда: от 1 до 100 000');
     if (!(max >= 0 && max <= 100000)) return ctx.reply('Активаций: от 0 (без лимита) до 100 000');
+    if (!isOwner(ctx) && (coins > HELPER.coins || !max || max > HELPER.max)) return ctx.reply(`Лимит для помощников: до ${HELPER.coins} монет и до ${HELPER.max} активаций (без безлимита)`);
     try {
       const r = await db.query('insert into promos(code,coins,max,by,at) values($1,$2,$3,$4,$5) on conflict do nothing',
         [code, coins, max, 'tg:' + ctx.from.id, Date.now()]);
@@ -1009,7 +1031,7 @@ if (process.env.TG_BOT_TOKEN) {
     } catch (e) { console.error('tg promo:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
   bot.command('vip', async ctx => { // /vip КОД ДНИ АКТИВАЦИИ (только админ): промокод, который выдаёт VIP
-    if (!isTgAdmin(ctx)) return ctx.reply('Нет доступа');
+    if (!(await isTgAdmin(ctx))) return ctx.reply('Нет доступа');
     const a = ctx.match.trim().split(/\s+/).filter(Boolean);
     if (a.length < 2 || a.length > 3) return ctx.reply('Формат: /vip КОД ДНИ АКТИВАЦИИ (без кода: /vip ДНИ АКТИВАЦИИ)');
     const code = (a.length === 3 ? a[0] : 'VIP-' + crypto.randomBytes(3).toString('hex')).toUpperCase();
@@ -1017,10 +1039,57 @@ if (process.env.TG_BOT_TOKEN) {
     if (!/^[\p{L}\p{N}_-]{2,32}$/u.test(code)) return ctx.reply('Код: 2–32 символа — буквы, цифры, _ или -');
     if (!(days >= 1 && days <= 3650)) return ctx.reply('Дней VIP: от 1 до 3650');
     if (!(max >= 0 && max <= 100000)) return ctx.reply('Активаций: от 0 (без лимита) до 100 000');
+    if (!isOwner(ctx) && (days > HELPER.vipDays || !max || max > HELPER.max)) return ctx.reply(`Лимит для помощников: VIP до ${HELPER.vipDays} дн. и до ${HELPER.max} активаций (без безлимита)`);
     try {
       const r = await db.query('insert into promos(code,coins,max,by,at,vip_days) values($1,0,$2,$3,$4,$5) on conflict do nothing', [code, max, 'tg:' + ctx.from.id, Date.now(), days]);
       ctx.reply(r.rowCount ? `✅ VIP-промокод создан\nКод: ${code}\nVIP: ${days} дн.\nАктиваций: ${max || '∞'}` : '❌ Такой код уже существует');
     } catch (e) { console.error('tg vip:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.command('adminkey', async ctx => { // только владелец: /adminkey ДНИ [АКТИВАЦИЙ] — ключ, который на сайте выдаёт Админ+ (ДНИ 0 = навсегда)
+    if (!isOwner(ctx)) return ctx.reply('Нет доступа');
+    const a = ctx.match.trim().split(/\s+/).filter(Boolean);
+    const days = Math.floor(+a[0]), max = a[1] === undefined ? 1 : Math.floor(+a[1]);
+    if (!a.length || a.length > 2 || !(days >= 0 && days <= 3650)) return ctx.reply('Формат: /adminkey ДНИ [АКТИВАЦИЙ]\nДНИ: 0 = навсегда, иначе 1–3650. Активаций по умолчанию 1.');
+    if (!(max >= 1 && max <= 50)) return ctx.reply('Активаций: от 1 до 50');
+    const code = 'ADM-' + crypto.randomBytes(8).toString('hex').toUpperCase(); // длинный случайный код: подобрать нельзя
+    try {
+      await db.query('insert into promos(code,coins,max,by,at,admin_days) values($1,0,$2,$3,$4,$5)', [code, max, 'tg:' + ctx.from.id, Date.now(), days]);
+      ctx.reply(`🔑 Ключ на Админ+\n<code>${code}</code>\nСрок: ${days ? days + ' дн.' : 'навсегда'}\nАктиваций: ${max}\n\nИгрок вводит его на сайте в окне промокода (нужен вход через Steam). Не показывайте ключ посторонним.`, { parse_mode: 'HTML' });
+    } catch (e) { console.error('tg adminkey:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.command('botkey', async ctx => { // только владелец: одноразовый ключ на 24 часа — по нему человек сам получает доступ к командам бота
+    if (!isOwner(ctx)) return ctx.reply('Нет доступа');
+    const key = 'BOT-' + crypto.randomBytes(6).toString('hex').toUpperCase();
+    try {
+      await db.query('insert into tg_keys(key,by,at) values($1,$2,$3)', [key, String(ctx.from.id), Date.now()]);
+      ctx.reply(`🔑 Ключ доступа к боту: <code>${key}</code>\nДействует 24 часа, один раз.\n\nПусть человек напишет боту:\n/access ${key}\n\nЕму станут доступны /promo и /vip с лимитами (до ${HELPER.coins} монет, до ${HELPER.vipDays} дн. VIP, до ${HELPER.max} активаций).`, { parse_mode: 'HTML' });
+    } catch (e) { console.error('tg botkey:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.command('access', async ctx => { // любой человек с ключом от владельца
+    const key = ctx.match.trim().toUpperCase();
+    if (!/^BOT-[0-9A-F]{12}$/.test(key)) return ctx.reply('Формат: /access КЛЮЧ');
+    try {
+      if (await isTgAdmin(ctx)) return ctx.reply('У вас уже есть доступ 🙂');
+      const r = await db.query('update tg_keys set used_by=$2 where key=$1 and used_by is null and at>$3 returning key', [key, String(ctx.from.id), Date.now() - 864e5]);
+      if (!r.rowCount) return ctx.reply('❌ Ключ неверный, уже использован или просрочен');
+      const name = [ctx.from.first_name, ctx.from.username && '@' + ctx.from.username].filter(Boolean).join(' ').slice(0, 64);
+      await db.query('insert into tg_admins(tg_id,name,added_by,at) values($1,$2,$3,$4) on conflict do nothing', [String(ctx.from.id), name, key, Date.now()]);
+      ctx.reply('✅ Доступ к боту выдан.\n/promo КОД МОНЕТЫ АКТИВАЦИИ — промокод на монеты\n/vip КОД ДНИ АКТИВАЦИИ — промокод на VIP\nВсе команды — /start');
+    } catch (e) { console.error('tg access:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.command('admins', async ctx => {
+    if (!isOwner(ctx)) return ctx.reply('Нет доступа');
+    try {
+      const rows = (await db.query('select tg_id, name from tg_admins order by at')).rows;
+      ctx.reply(rows.length ? 'Доступ к боту у:\n' + rows.map(r => `${r.tg_id} — ${r.name || ''}`).join('\n') + '\n\nУбрать: /deladmin ID' : 'Помощников пока нет. Создать ключ доступа: /botkey');
+    } catch (e) { console.error('tg admins:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.command('deladmin', async ctx => {
+    if (!isOwner(ctx)) return ctx.reply('Нет доступа');
+    const id = ctx.match.trim();
+    if (!/^\d{3,15}$/.test(id)) return ctx.reply('Формат: /deladmin ID (ID смотрите в /admins)');
+    try { ctx.reply((await db.query('delete from tg_admins where tg_id=$1', [id])).rowCount ? '✅ Доступ убран' : 'Такого ID нет в списке'); }
+    catch (e) { console.error('tg deladmin:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
   bot.catch(e => console.error('tg bot error:', e.message));
 
