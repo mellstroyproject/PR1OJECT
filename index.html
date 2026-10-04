@@ -444,6 +444,27 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
 .pf-bdg.role.plus{background:rgba(245,181,58,.16);color:var(--gold,#f5b53a);border:1px solid rgba(245,181,58,.5)}
 .pf-bdg.role.mod{background:rgba(80,110,255,.2);color:#9db2ff;border:1px solid rgba(80,110,255,.45)}
 </style>
+<style>
+/* ===== Окна подтверждения ===== */
+#uiDlg{position:fixed;inset:0;z-index:300;background:rgba(3,6,16,.72);backdrop-filter:blur(7px);display:grid;place-items:center;padding:18px;transition:opacity .2s}
+#uiDlg.fresh{animation:skmFade .2s ease-out}
+#uiDlg.out{opacity:0;pointer-events:none}
+.dlg{width:min(420px,100%);background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:24px;box-shadow:0 30px 80px -20px #000}
+#uiDlg.fresh .dlg{animation:skmPop .4s var(--ease)}
+#uiDlg.out .dlg{transform:translateY(14px) scale(.97);transition:transform .2s}
+.dlg h3{margin:0 0 10px;font-size:20px}
+.dlg p{margin:0 0 6px;color:var(--mut);font-size:15px;line-height:1.5;overflow-wrap:anywhere}
+.dlg-f{display:block;margin-top:14px;font-weight:700;font-size:14px}
+.dlg-f input{display:block;width:100%;box-sizing:border-box;margin-top:8px;background:rgba(0,0,0,.28);border:1px solid transparent;border-radius:12px;color:var(--tx);font:inherit;font-size:16px;padding:13px 14px;outline:0;transition:border-color .25s,box-shadow .25s}
+.dlg-f input:focus{border-color:rgba(var(--acc-rgb),.7);box-shadow:0 0 0 4px rgba(var(--acc-rgb),.18)}
+.dlg-b{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
+.dlg-b button{border:0;border-radius:12px;padding:12px 22px;font:inherit;font-weight:700;cursor:pointer;transition:transform .25s var(--ease),box-shadow .25s,background .25s}
+.dlg-c{background:var(--panel);color:var(--tx);border:1px solid var(--line)!important}.dlg-c:hover{background:var(--line)}
+.dlg-ok{color:var(--on-acc);background:linear-gradient(135deg,var(--acc),var(--acc-b));box-shadow:0 10px 24px -8px rgba(var(--acc-rgb),.8)}
+.dlg-ok.danger{color:#fff;background:linear-gradient(135deg,#f43f5e,#e11d48);box-shadow:0 10px 24px -8px rgba(244,63,94,.8)}
+.dlg-b button:hover{transform:translateY(-2px)}
+@media (max-width:480px){.dlg-b{flex-direction:column-reverse}.dlg-b button{width:100%}}
+</style>
 </head>
 <body>
 <header>
@@ -484,17 +505,17 @@ const usedPromoKey='usedPromoCodes';
 function getUsedPromo(){try{return JSON.parse(localStorage.getItem(usedPromoKey)||'[]')}catch(e){return []}}
 function togglePromo(){st.promoOpen=!st.promoOpen;st.menu=false;st.promoMsg=null;draw()}
 function buyPlan(key,name){
-  if(!st.user){alert('Сначала войдите через Steam, чтобы купить');return}
+  if(!st.user){uiAlert('Сначала войдите через Steam, чтобы купить');return}
   const cost=price[key][st.plan[key]];
   const bal=st.user.coins||0;
-  if(bal<cost){alert(`Недостаточно средств: не хватает ${(cost-bal).toFixed(2)} ₽. Пополните баланс или используйте промокод.`);return}
+  if(bal<cost){uiAlert(`Недостаточно средств: не хватает ${(cost-bal).toFixed(2)} ₽. Пополните баланс или используйте промокод.`);return}
   st.user.coins=bal-cost;
   if(key==='plus'){
     const until=Math.max(Date.now(),getPlusUntil(st.user.id))+PERIOD_DAYS[st.plan[key]]*864e5;
     try{localStorage.setItem('plusUntil:'+st.user.id,String(until))}catch(e){}
     applyRole(st.user);
   }
-  alert(`Покупка успешна: ${name} ${key==='plus'?'навсегда':'на '+periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
+  uiAlert(`Покупка успешна: ${name} ${key==='plus'?'навсегда':'на '+periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
   draw();
 }
 function activatePromo(){
@@ -671,7 +692,7 @@ function demoLogin(){st.user=applyRole({id:OWNER_STEAM_ID,name:'Демо',coins:
 
 function steamLogin(){
   if(!location.protocol.startsWith('http')){
-    alert('Вход через Steam работает, только когда сайт открыт по адресу http(s):// — из файла на компьютере Steam не сможет вернуть вас обратно.\n\nДля проверки запустите в папке с index.html команду:\npython -m http.server 8000\nи откройте http://localhost:8000\n\nПока можно нажать «демо».');
+    uiAlert('Вход через Steam работает, только когда сайт открыт по адресу http(s):// — из файла на компьютере Steam не сможет вернуть вас обратно.\n\nДля проверки запустите в папке с index.html команду:\npython -m http.server 8000\nи откройте http://localhost:8000\n\nПока можно нажать «демо».');
     return;
   }
   const p=new URLSearchParams({'openid.ns':'http://specs.openid.net/auth/2.0','openid.mode':'checkid_setup',
@@ -742,7 +763,7 @@ function head(){
    
    `</div>`+
    (st.user.isAdmin?`<button class="promo-btn gold" onclick="go('admin')">${I('shield')}Админ-панель</button>`:'')+
-   `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="alert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
+   `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="uiAlert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
    `<button class="ava" aria-label="Профиль" style="${st.user.avatar?`background-image:url('${st.user.avatar}')`:''}" onclick="openProfile(st.user.id)">${st.user.avatar?'':esc((st.user.name||'?').trim().charAt(0).toUpperCase())}</button>`+
    `<button class="gear${st.page==='settings'?' on':''}" aria-label="Настройки" title="Настройки" onclick="go('settings')">${I('gear')}</button>`+
    (st.menu?`<div class="menu${menuFresh?' pop':''}">${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти</button></div>`:'')
@@ -754,7 +775,7 @@ function view(){
   if(st.page==='home') return `<div class="cards"><div class="mode" onclick="go('public')" role="button" tabindex="0"><svg class="mode-art" viewBox="0 0 320 460" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="mg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="s1"/><stop offset="1" class="s2"/></linearGradient><radialGradient id="mg2"><stop offset="0" class="g1"/><stop offset="1" class="g2"/></radialGradient></defs><rect width="320" height="460" fill="url(#mg1)"/><circle cx="160" cy="190" r="175" fill="url(#mg2)"/><g class="st"><circle cx="30" cy="40" r="1.4"/><circle cx="92" cy="22" r="1"/><circle cx="270" cy="34" r="1.4"/><circle cx="292" cy="120" r="1"/><circle cx="24" cy="150" r="1"/><circle cx="60" cy="260" r="1.2"/><circle cx="300" cy="250" r="1.2"/><circle cx="200" cy="18" r="1"/></g><path class="sp" d="M52 84l2-6 6-2-6-2-2-6-2 6-6 2 6 2z"/><path class="sp" d="M262 300l2-6 6-2-6-2-2-6-2 6-6 2 6 2z"/><path class="ln" d="M-10 350L330 40"/><path class="ln l2" d="M-10 420L330 110"/><g fill="none"><circle class="ring" cx="160" cy="190" r="112"/><circle class="ring2" cx="160" cy="190" r="94"/><path class="cross" d="M160 62V162M160 218V318M32 190H132M188 190H288"/><path class="tick" d="M160 88v12M160 280v12M58 190h12M250 190h12"/></g><circle class="dot" cx="160" cy="190" r="3.5"/><g transform="translate(232 92) rotate(35)"><rect class="bl" width="40" height="9" rx="4.5"/><rect class="bl2" width="12" height="9" rx="3"/></g><path class="sk1" transform="translate(0 -30)" d="M0 460V392h20v-16q10-16 20 0v16h16v-34h5v-12h5v12h5v34h22v-24q16-30 32 0v24h24v-40l9-14 9 14v40h24v-20h22v-12h14v12h20v-30q14-24 28 0v30h24v-18h21V460Z"/><path class="sk2" d="M0 460V392h20v-16q10-16 20 0v16h16v-34h5v-12h5v12h5v34h22v-24q16-30 32 0v24h24v-40l9-14 9 14v40h24v-20h22v-12h14v12h20v-30q14-24 28 0v30h24v-18h21V460Z"/><g class="win"><rect x="60" y="384" width="3" height="4"/><rect x="146" y="374" width="3" height="4"/><rect x="238" y="380" width="3" height="4"/><rect x="284" y="382" width="3" height="4"/></g></svg><b>PUBLIC</b><span class="mode-go">Играть →</span></div></div>
    <div class="scroll-hint">Листай вниз<span>↓</span></div>
    <section class="reveal-zone"><div class="reveal-stage"><div class="burst" aria-hidden="true"></div><div class="reveal-bob"><div class="soc"><h2>Присоединяйся к нам</h2><div class="soc-row"><a class="soc-card tg" href="https://t.me/MellstroyProjectcs2" target="_blank" rel="noopener">${I('tg')}<b>Telegram</b><span>Наш канал</span></a><a class="soc-card dc" href="https://discord.gg/3RStaDa98Z" target="_blank" rel="noopener">${I('dc')}<b>Discord</b><span>Наш сервер</span></a></div></div></div></div></section>`;
-  if(st.page==='public') return `<h1>Public: серверы</h1><table><tr><th>Сервер</th><th>Подключение</th><th></th></tr>${servers.map(s=>`<tr><td>${esc(s[0])}</td><td>connect ${esc(s[1])}</td><td><button class="join" onclick="location.href='steam://connect/${esc(s[1])}'">Играть</button> <button class="join" onclick="navigator.clipboard&&navigator.clipboard.writeText('connect ${esc(s[1])}');alert('Скопировано: connect ${esc(s[1])}')">Копировать</button></td></tr>`).join('')}</table>`;
+  if(st.page==='public') return `<h1>Public: серверы</h1><table><tr><th>Сервер</th><th>Подключение</th><th></th></tr>${servers.map(s=>`<tr><td>${esc(s[0])}</td><td>connect ${esc(s[1])}</td><td><button class="join" onclick="location.href='steam://connect/${esc(s[1])}'">Играть</button> <button class="join" onclick="navigator.clipboard&&navigator.clipboard.writeText('connect ${esc(s[1])}');uiAlert('Скопировано: connect ${esc(s[1])}')">Копировать</button></td></tr>`).join('')}</table>`;
   if(st.page==='shop') return `<h1 style="text-align:center">Магазин</h1><div class="plans">${[['prem','Премиум',prem,'p'],['plus','Админ+',plus,'g']].map(([k,n,l,c])=>`<div class="plan ${c}"><h2>${n}</h2><ul>${l.map(x=>`<li>${x}</li>`).join('')}</ul><div class="periods">${periodsOf(k).map((p,i)=>`<button class="${st.plan[k]===i?'on':''}" onclick="setPeriod('${k}',${i},this)">${p}</button>`).join('')}</div><div class="price">${price[k][st.plan[k]]} ₽</div><button class="buy" onclick="buyPlan('${k}','${n}')">Купить</button></div>`).join('')}</div>`;
   if(st.page==='leaders'){const rows=leaders[st.lb];return `<h1>Лидеры</h1><div class="bar"><div class="tabs"><button class="${st.lb==='exp'?'on':''}" onclick="st.lb='exp';draw()">По опыту</button><button class="${st.lb==='drop'?'on':''}" onclick="st.lb='drop';draw()">По дропу</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Место</th><th>Игрок</th><th>Очков</th><th>Убийств</th><th>У/С</th><th>Время игры</th></tr>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${lbWho(r)}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`).join('')}</table>`}
   if(st.page==='bans'){const rows=st.bt==='bans'?bans:mutes;return `<h1>Баны</h1><div class="bar"><div class="tabs"><button class="${st.bt==='bans'?'on':''}" onclick="st.bt='bans';draw()">Баны</button><button class="${st.bt==='mutes'?'on':''}" onclick="st.bt='mutes';draw()">Муты</button></div><input placeholder="Поиск по нику / SteamID..." aria-label="Поиск"></div><table><tr><th>Игрок</th><th>Админ</th><th>Причина</th><th>Статус</th><th>Срок</th><th>Дата</th></tr>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="${r[3]?'ban':'ok'}">${r[3]?(st.bt==='bans'?'Забанен':'Замучен'):'Разбанен'}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`).join('')}</table>`}
@@ -881,8 +902,8 @@ function adminOwnerSections(){
 }
 function adminAction(verb){
   const t=($('#adminTarget')?.value||'').trim();
-  if(!t){alert('Укажите SteamID64 игрока (17 цифр)');return}
-  alert(`${t}: ${verb.toLowerCase()}`);
+  if(!t){uiAlert('Укажите SteamID64 игрока (17 цифр)');return}
+  uiAlert(`${t}: ${verb.toLowerCase()}`);
 }
 let scrollTick=false;
 function updateReveal(){
@@ -949,7 +970,7 @@ async function loadMe(){
   draw();
 }
 function steamLogin(){location.href='/auth/steam'}
-function demoLogin(){alert('Демо отключено — войдите через Steam')}
+function demoLogin(){uiAlert('Демо отключено — войдите через Steam')}
 async function logout(){
   try{await fetch('/auth/logout',{method:'POST'})}catch(e){}
   st.user=null;st.menu=false;st.promoOpen=false;st.adminMsg={};
@@ -957,11 +978,11 @@ async function logout(){
   draw();
 }
 async function buyPlan(key,name){
-  if(!st.user){alert('Сначала войдите через Steam, чтобы купить');return}
+  if(!st.user){uiAlert('Сначала войдите через Steam, чтобы купить');return}
   try{
     await api('buy',{key,idx:st.plan[key]});await loadMe();
-    alert(`Покупка успешна: ${name} ${key==='plus'?'навсегда':'на '+periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
-  }catch(e){alert(e.message)}
+    uiAlert(`Покупка успешна: ${name} ${key==='plus'?'навсегда':'на '+periods[st.plan[key]]}`+(key==='plus'?'. Рядом с промокодом появилась кнопка «Админ-панель».':''));
+  }catch(e){uiAlert(e.message)}
 }
 async function activatePromo(){
   if(!st.user){st.promoMsg={ok:false,text:'Сначала войдите через Steam'};draw();return}
@@ -978,8 +999,8 @@ async function adm(kind,path,body,ok){
 }
 function grantAdmin(){adm('grant','grant',{id:($('#grantId').value||'').trim(),name:($('#grantName')?.value||'').trim(),flags:($('#grantFlags')?.value||'').trim(),immunity:$('#grantImm')?.value||'',days:+$('#grantDays').value},'Админка выдана')}
 function grantVip(){const f=$('#vipForever').checked,d=Math.floor(+$('#vipDays').value);if(!f&&!(d>=1))return adminMsgNow(MID.vipgrant,'Укажите срок в днях или отметьте «Навсегда»');adm('vipgrant','vip-grant',{id:($('#vipId').value||'').trim(),days:f?0:d},'VIP выдан')}
-function revokeVip(id){if(!confirm('Снять VIP у '+id+'? Запись будет удалена из базы игры.'))return;adm('vipgrant','vip-revoke',{id},'VIP снят: '+id)}
-function revokeAdmin(id){if(!confirm('Удалить админа '+id+'? Строка будет удалена из базы игры, а срок Админ+ на сайте обнулится.'))return;adm('grant','revoke',{id},'Админка снята: '+id)}
+async function revokeVip(id){if(!await uiConfirm('Игрок '+id+' потеряет VIP. Запись будет удалена из базы игры.',{title:'Снять VIP?',ok:'Снять'}))return;adm('vipgrant','vip-revoke',{id},'VIP снят: '+id)}
+async function revokeAdmin(id){if(!await uiConfirm('Админ '+id+' будет удалён. Строка исчезнет из базы игры, а срок Админ+ на сайте обнулится.',{title:'Удалить админа?',ok:'Удалить'}))return;adm('grant','revoke',{id},'Админка снята: '+id)}
 function addDeputy(){adm('deputy','deputy',{id:($('#depId').value||'').trim(),on:true},'Зам назначен')}
 function removeDeputy(id){adm('deputy','deputy',{id,on:false},'Зам снят: '+id)}
 function createPromo(){adm('promo','promo',{code:($('#pCode').value||'').trim().toUpperCase(),coins:+$('#pCoins').value,max:Math.floor(+$('#pMax').value||0)},'Промокод создан')}
@@ -1000,26 +1021,25 @@ async function loadBans(){
 }
 async function adminAction(verb){
   const t=($('#adminTarget')?.value||'').trim();
-  if(!t){alert('Укажите SteamID64 игрока (17 цифр)');return}
+  if(!t){uiAlert('Укажите SteamID64 игрока (17 цифр)');return}
   if(verb==='Разбанен'||verb==='Размьючен'){
-    if(!/^\d{17}$/.test(t)){alert('Для разбана укажите SteamID64 игрока (17 цифр)');return}
-    const why=prompt('Причина разбана:','Разбан с сайта');if(why===null)return;
+    if(!/^\d{17}$/.test(t)){uiAlert('Для разбана укажите SteamID64 игрока (17 цифр)');return}
+    const fw=await uiForm(verb==='Разбанен'?'Разбанить игрока':'Снять мут',t,[{key:'why',label:'Причина',value:'Разбан с сайта'}],{ok:verb==='Разбанен'?'Разбанить':'Снять мут',danger:false});if(!fw)return;const why=fw.why;
     const isBan=verb==='Разбанен';
     try{
       const r=await api('admin/unban',{target:t,kind:isBan?'bans':'mutes',reason:why});
       await loadBans();
-      alert(r.count?((isBan?'Разбанен: ':'Мут снят: ')+t):('У этого игрока нет активных '+(isBan?'банов':'мутов')));
-    }catch(e){alert(e.message)}
+      uiAlert(r.count?((isBan?'Разбанен: ':'Мут снят: ')+t):('У этого игрока нет активных '+(isBan?'банов':'мутов')));
+    }catch(e){uiAlert(e.message)}
     return;
   }
-  if(verb!=='Забанен'&&verb!=='Замьючен'){alert('Это действие выполняется прямо в игре — нужен плагин на игровом сервере.');return}
-  const reason=prompt('Причина:');if(reason===null)return;
-  const d=prompt('На сколько дней? (0 = навсегда)','7');if(d===null)return;
+  if(verb!=='Забанен'&&verb!=='Замьючен'){uiAlert('Это действие выполняется прямо в игре — нужен плагин на игровом сервере.');return}
+  const fp=await uiForm(verb==='Забанен'?'Забанить игрока':'Замьютить игрока',t,[{key:'reason',label:'Причина'},{key:'days',label:'На сколько дней? (0 = навсегда)',value:'7',type:'number'}],{ok:verb==='Забанен'?'Забанить':'Замьютить'});if(!fp)return;const reason=fp.reason,d=fp.days;
   try{
     await api('admin/punish',{target:t,kind:verb==='Забанен'?'bans':'mutes',reason,days:+d||0});
     await loadBans();
-    alert((verb==='Забанен'?'Бан':'Мут')+' записан: '+t);
-  }catch(e){alert(e.message)}
+    uiAlert((verb==='Забанен'?'Бан':'Мут')+' записан: '+t);
+  }catch(e){uiAlert(e.message)}
 }
 loadBans();
 </script>
@@ -1361,6 +1381,31 @@ async function chatSend(){
 async function chatDel(id){try{await api('chat/delete',{id});CH.msgs=CH.msgs.filter(m=>m.id!==id);chatRender(false)}catch(e){toast(e.message,'err')}}
 addEventListener('keydown',e=>{if(e.key==='Escape'&&CH.open&&!document.getElementById('promoModal')&&!document.getElementById('skModal'))chatToggle(false)});
 chatBuild();chatPoll();
+
+// ===== Красивые окна подтверждения вместо браузерных confirm/alert/prompt =====
+let UI_CLOSE=null;
+function uiDialog({title='',text='',fields=[],ok='ОК',cancel='Отмена',danger=false}={}){
+  return new Promise(res=>{
+    if(UI_CLOSE)UI_CLOSE(null);
+    const el=document.createElement('div');el.id='uiDlg';el.className='fresh';
+    el.innerHTML=`<div class="dlg" role="dialog" aria-modal="true">${title?`<h3>${esc(title)}</h3>`:''}${text?`<p>${esc(text).replace(/\n/g,'<br>')}</p>`:''}
+      ${fields.map(f=>`<label class="dlg-f">${esc(f.label||'')}<input data-k="${esc(f.key)}" type="${f.type||'text'}" value="${esc(f.value===undefined?'':f.value)}" autocomplete="off"></label>`).join('')}
+      <div class="dlg-b">${cancel===false?'':`<button class="dlg-c" type="button">${esc(cancel)}</button>`}<button class="dlg-ok${danger?' danger':''}" type="button">${esc(ok)}</button></div></div>`;
+    document.body.appendChild(el);setTimeout(()=>el.classList.remove('fresh'),700);
+    let closed=false;
+    const done=v=>{if(closed)return;closed=true;UI_CLOSE=null;removeEventListener('keydown',key,true);el.classList.add('out');setTimeout(()=>el.remove(),220);res(v)};
+    const submit=()=>{const o={};el.querySelectorAll('input').forEach(i=>o[i.dataset.k]=i.value);done(fields.length?o:true)};
+    const key=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(null)}else if(e.key==='Enter'){e.preventDefault();e.stopPropagation();submit()}};
+    UI_CLOSE=done;addEventListener('keydown',key,true);
+    el.onclick=e=>{if(e.target===el&&cancel!==false)done(null)};
+    el.querySelector('.dlg-ok').onclick=submit;
+    const c=el.querySelector('.dlg-c');if(c)c.onclick=()=>done(null);
+    const first=el.querySelector('input');(first||el.querySelector('.dlg-ok')).focus();if(first)first.select();
+  });
+}
+const uiConfirm=(text,o={})=>uiDialog({title:o.title||'Подтвердите действие',text,ok:o.ok||'Подтвердить',danger:o.danger!==false}).then(v=>!!v);
+const uiForm=(title,text,fields,o={})=>uiDialog({title,text,fields,ok:o.ok||'Готово',danger:!!o.danger});
+const uiAlert=(text,title)=>uiDialog({title:title||'',text:String(text),ok:'Понятно',cancel:false}).then(()=>{});
 </script>
 <style>
 .sk-ws{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
@@ -1687,10 +1732,9 @@ function saveAdminEdit(){
   if(!/^\d{17}$/.test(id))return adminMsgNow('#gaeMsg','Сначала нажмите «Изменить» у админа в таблице');
   adm('gaedit','admin-edit',{id,name:($('#gaeName').value||'').trim(),flags:($('#gaeFlags').value||'').trim(),immunity:$('#gaeImm').value,days:$('#gaeDays').value,off:$('#gaeOff').checked},'Админ изменён в базе: '+id);
 }
-function editPromo(code){
+async function editPromo(code){
   const p=allPromos()[code];if(!p)return;
-  const c=prompt('Награда в монетах для '+code+':',p.coins);if(c===null)return;
-  const m=prompt('Лимит активаций (0 = без лимита):',p.max||0);if(m===null)return;
+  const fe=await uiForm('Промокод '+code,'',[{key:'c',label:'Награда в монетах',value:p.coins,type:'number'},{key:'m',label:'Лимит активаций (0 = без лимита)',value:p.max||0,type:'number'}],{ok:'Сохранить',danger:false});if(!fe)return;const c=fe.c,m=fe.m;
   adm('promo','promo-edit',{code,coins:+c,max:Math.floor(+m||0)},'Промокод изменён: '+code);
 }
 function permsAdmin(){
@@ -1711,7 +1755,7 @@ function savePerms(){
   const id=($('#permId').value||'').trim(),perms=[...document.querySelectorAll('[data-perm]')].filter(c=>c.checked).map(c=>c.dataset.perm);
   adm('perms','perms',{id,perms},perms.length?'Права сохранены: '+id:'Права сняты: '+id);
 }
-function clearPerms(id){if(!confirm('Снять все права у '+id+'?'))return;adm('perms','perms',{id,perms:[]},'Права сняты: '+id)}
+async function clearPerms(id){if(!await uiConfirm('У игрока '+id+' будут сняты все отдельные права.',{title:'Снять права?',ok:'Снять'}))return;adm('perms','perms',{id,perms:[]},'Права сняты: '+id)}
 
 let SITE={theme:'blue'};
 async function loadSite(){
