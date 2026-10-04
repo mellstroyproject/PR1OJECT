@@ -531,8 +531,8 @@ app.post('/api/admin/perms', level('owner'), async (req, res) => {
 });
 const THEME_KEYS = ['blue', 'red', 'yellow', 'green', 'rgb'];
 app.get('/api/site', async (req, res) => { // тема сайта по умолчанию — для всех посетителей
-  try { const r = (await db.query("select value from site where key='theme'")).rows[0]; res.json({ theme: r && THEME_KEYS.includes(r.value) ? r.value : 'blue' }); }
-  catch (e) { console.error('site:', e.message); res.json({ theme: 'blue' }); }
+  try { const r = (await db.query("select value from site where key='theme'")).rows[0]; res.json({ theme: r && THEME_KEYS.includes(r.value) ? r.value : 'red' }); }
+  catch (e) { console.error('site:', e.message); res.json({ theme: 'red' }); }
 });
 app.post('/api/admin/design', can('design'), async (req, res) => {
   const theme = String(req.body.theme || '');
