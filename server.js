@@ -395,6 +395,69 @@ function rconExec(host, port, password, command) {
     });
   });
 }
+// RCON-запрос с получением ответа (нужен для списка игроков)
+function rconQuery(host, port, password, command) {
+  return new Promise((resolve, reject) => {
+    const net = require('net');
+    const sock = net.connect({ host, port });
+    let buf = Buffer.alloc(0), authed = false, done = false, out = '';
+    const finish = (err, val) => { if (done) return; done = true; clearTimeout(timer); sock.destroy(); err ? reject(err) : resolve(val); };
+    const timer = setTimeout(() => finish(authed ? null : new Error('Сервер не отвечает по RCON'), out), 8000);
+    const pack = (id, type, body) => { const b = Buffer.from(body, 'utf8'), o = Buffer.alloc(14 + b.length); o.writeInt32LE(10 + b.length, 0); o.writeInt32LE(id, 4); o.writeInt32LE(type, 8); b.copy(o, 12); return o; };
+    sock.on('connect', () => sock.write(pack(1, 3, password)));
+    sock.on('error', e => finish(new Error('Нет связи с сервером: ' + e.message)));
+    sock.on('close', () => finish(authed ? null : new Error('Соединение закрыто'), out));
+    sock.on('data', d => {
+      buf = Buffer.concat([buf, d]);
+      while (buf.length >= 12) {
+        const size = buf.readInt32LE(0); if (buf.length < size + 4) break;
+        const id = buf.readInt32LE(4), type = buf.readInt32LE(8), body = buf.subarray(12, size + 2).toString('utf8'); buf = buf.subarray(size + 4);
+        if (type === 2 && !authed) {
+          if (id === -1) return finish(new Error('Неверный RCON-пароль'));
+          authed = true; sock.write(pack(2, 2, command)); sock.write(pack(3, 0, '')); // второй пакет — «метка конца» ответа
+        } else if (authed && id === 2) out += body;
+        else if (authed && id === 3) return finish(null, out);
+      }
+    });
+  });
+}
+// общая проверка для RCON-действий: только владелец и назначенные замы
+async function rconGate(req, res) {
+  const u = await getUser(req);
+  if (!u) { res.status(401).json({ error: 'Войдите через Steam' }); return null; }
+  if (!isFull(u)) { res.status(403).json({ error: 'Доступно только владельцу и замам' }); return null; }
+  const r = (await db.query('select name,address from servers where id=$1', [+req.body.id || 0])).rows[0];
+  if (!r) { bad(res, 'Сервер не найден'); return null; }
+  const [host, port] = r.address.split(':');
+  return { u, r, host, port: +port, pass: process.env.RCON_PASSWORD || '3465ergsdfgasdfs23wwsaw%urt' };
+}
+// список игроков онлайн: команда status, разбираем строки игроков
+app.post('/api/admin/server-players', async (req, res) => {
+  const g = await rconGate(req, res); if (!g) return;
+  try {
+    const raw = await rconQuery(g.host, g.port, g.pass, 'status');
+    const players = [];
+    for (const line of raw.split('\n')) {
+      let m = line.match(/^\s*(\d+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\d+)\s+(\S+)\s+'(.*)'\s*$/); // формат CS2
+      if (m && m[7] !== '[NoChan]') { players.push({ userid: m[1], name: m[8] || '(без ника)', bot: m[2] === 'BOT', time: m[2], ping: +m[3] }); continue; }
+      m = line.match(/^#\s*(\d+)\s+\d+\s+"(.*)"\s+(\S+)/); // запасной формат (как в CS:GO)
+      if (m) players.push({ userid: m[1], name: m[2], bot: m[3] === 'BOT' });
+    }
+    res.json({ players: players.filter(p => !p.bot), raw: raw.slice(0, 3000) });
+  } catch (e) { console.error('players:', e.message); bad(res, e.message); }
+});
+// кик игрока по userid (kickid)
+app.post('/api/admin/server-kick', async (req, res) => {
+  const g = await rconGate(req, res); if (!g) return;
+  const userid = String(req.body.userid || '');
+  if (!/^\d{1,6}$/.test(userid)) return bad(res, 'Неверный номер игрока');
+  const reason = String(req.body.reason || 'Кик администратором').replace(/["';\\\r\n]/g, ' ').slice(0, 60).trim() || 'Кик администратором';
+  try {
+    await rconQuery(g.host, g.port, g.pass, `kickid ${userid} "${reason}"`);
+    console.log('kick:', g.r.name, 'userid', userid, 'by', g.u.steam_id);
+    res.json({ ok: true });
+  } catch (e) { console.error('kick:', e.message); bad(res, e.message); }
+});
 app.post('/api/admin/server-restart', async (req, res) => {
   const u = await getUser(req);
   if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
