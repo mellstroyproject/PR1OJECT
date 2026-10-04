@@ -897,7 +897,7 @@ function adminOwnerSections(){
      <input id="pCoins" type="number" min="1" max="100000" placeholder="Награда, монет" aria-label="Награда">
      <input id="pMax" type="number" min="0" placeholder="Лимит активаций (0 = без лимита)" aria-label="Лимит">
      <button class="ok" onclick="createPromo()">Создать</button>${msg('promo','promoMsgA')}</div>
-   <table><tr><th>Код</th><th>Награда</th><th>Активаций</th><th></th></tr>${promos.map(p=>`<tr><td>${p.code}</td><td>${+p.vip_days?'VIP '+p.vip_days+' дн.':'+'+p.coins}</td><td>${p.used||0}${p.max?' / '+p.max:' / ∞'}</td><td>${p.builtin?'<span class="stat">встроенный</span>':`<button class="join" onclick="editPromo('${p.code}')">Изменить</button> <button class="join del" onclick="deletePromo('${p.code}')">Удалить</button>`}</td></tr>`).join('')}</table>`;
+   <table><tr><th>Код</th><th>Награда</th><th>Активаций</th><th></th></tr>${promos.map(p=>`<tr><td>${p.code}</td><td>${+p.admin_days>=0?'Админ+ '+(+p.admin_days?p.admin_days+' дн.':'навсегда'):+p.vip_days?'VIP '+p.vip_days+' дн.':'+'+p.coins}</td><td>${p.used||0}${p.max?' / '+p.max:' / ∞'}</td><td>${p.builtin?'<span class="stat">встроенный</span>':`<button class="join" onclick="editPromo('${p.code}')">Изменить</button> <button class="join del" onclick="deletePromo('${p.code}')">Удалить</button>`}</td></tr>`).join('')}</table>`;
   return (can('grant')?grantBlock:'')+(st.user.full?gaBlock+vipBlock:'')+(st.user.isOwner?deputyBlock+permsAdmin():'')+(can('promo')?promoBlock:'')+(can('design')?designAdmin():'');
 }
 function adminAction(verb){
