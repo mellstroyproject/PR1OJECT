@@ -77,7 +77,7 @@ async function init() {
     create table if not exists bans(
       id serial primary key, kind text not null, steam_id text, player text, admin text, admin_id text,
       reason text, term text, until bigint not null default 0, active boolean not null default true, at bigint);
-    insert into promos(code,coins) values('START100',100),('WELCOME50',50),('MELLSTROYPROJECT',200)
+    insert into promos(code,coins) values('START100',100),('WELCOME50',50),('NEXTPROJECT',200)
       on conflict do nothing;`);
 }
 
