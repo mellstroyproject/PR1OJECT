@@ -355,7 +355,7 @@ app.post('/api/promo', level('user'), async (req, res) => {
       if (!r.rowCount) return bad(res, 'Код привязки неверный или просрочен — отправьте боту /link ещё раз');
       await db.query('delete from tg_links where steam_id=$1', [req.u.steam_id]);
       await db.query('insert into tg_links(tg_id,steam_id,at) values($1,$2,$3) on conflict (tg_id) do update set steam_id=excluded.steam_id, at=excluded.at', [r.rows[0].tg_id, req.u.steam_id, Date.now()]);
-      return res.json({ ok: true, msg: 'Telegram привязан. Если у вас есть Админ+, команда /admin в боте теперь доступна' });
+      return res.json({ ok: true, msg: 'Telegram привязан. Если у вас есть Админ+, в боте откроется «Админ панель»' });
     } catch (e) { console.error('tg link:', e.message); return res.status(500).json({ error: 'Не удалось привязать Telegram, попробуйте позже' }); }
   }
   const c = await db.connect();
@@ -940,6 +940,10 @@ app.post('/api/skin', level('user'), async (req, res) => {
 if (process.env.TG_BOT_TOKEN) {
   const { Bot, webhookCallback, InlineKeyboard } = require('grammy');
   const bot = new Bot(process.env.TG_BOT_TOKEN);
+  const H = {}; // обработчики команд: их же вызывают кнопки меню (команды тоже продолжают работать)
+  const cmd = (name, fn) => { H[name] = fn; bot.command(name, fn); };
+  const sub = (ctx, match) => Object.create(ctx, { match: { value: match } }); // тот же ctx, но с «аргументами», которые человек прислал текстом
+  const pending = new Map(); // tg_id -> { act, at }: какое действие админ-панели ждёт ввода
   const TG_ADMINS = (process.env.TG_ADMINS || '').split(',').map(s => s.trim()).filter(Boolean);
   const isOwner = ctx => TG_ADMINS.includes(String(ctx.from?.id)); // владельцы: из переменной TG_ADMINS в Render — могут всё
   const isTgAdmin = async ctx => isOwner(ctx) || !!(await db.query('select 1 from tg_admins where tg_id=$1', [String(ctx.from?.id)])).rowCount; // + помощники, получившие доступ по ключу
@@ -989,14 +993,17 @@ if (process.env.TG_BOT_TOKEN) {
     const m = await bot.api.getChatMember(CHANNEL, id); // бот должен быть админом канала
     return ['creator', 'administrator', 'member'].includes(m.status) || (m.status === 'restricted' && m.is_member);
   };
-  const kb = () => new InlineKeyboard().url('📢 Подписаться на канал', CHANNEL_URL).row().text('🎁 Получить промокод', 'claim');
+  const kb = (panel = true) => { // главное меню: канал, промокод, админ-панель
+    const k = new InlineKeyboard().url('📢 Подписаться на канал', CHANNEL_URL).row().text('🎁 Получить промокод', 'claim');
+    return panel ? k.row().text('🛠 Админ панель', 'ap') : k;
+  };
 
   async function claim(ctx) {
     if (ctx.chat?.type !== 'private') return ctx.reply('Напишите мне в личные сообщения');
     const id = String(ctx.from.id);
     try {
       if (!(await subscribed(ctx.from.id)))
-        return ctx.reply(`❌ Сначала подпишитесь на канал ${CHANNEL_URL} и нажмите «Получить промокод» ещё раз.`, { reply_markup: kb() });
+        return ctx.reply(`❌ Сначала подпишитесь на канал ${CHANNEL_URL} и нажмите «Получить промокод» ещё раз.`, { reply_markup: kb(false) });
     } catch (e) { console.error('tg subscribe check:', e.message); return ctx.reply('Не получилось проверить подписку, попробуйте чуть позже'); }
     let out;
     const c = await db.connect();
@@ -1028,16 +1035,12 @@ if (process.env.TG_BOT_TOKEN) {
     return ctx.reply(...out);
   }
 
-  bot.command('start', async ctx => {
-    const adm = await isTgAdmin(ctx).catch(() => false);
-    const help = !adm ? '' : '\n\nКоманды админа:\n/promo КОД МОНЕТЫ АКТИВАЦИИ — промокод на монеты (без кода: /promo МОНЕТЫ АКТИВАЦИИ; 0 = без лимита)\n/vip КОД ДНИ АКТИВАЦИИ — промокод на VIP\n/a — админы и кто из них онлайн на сайте\n/ban ID СРОК [причина] — бан\n/unban ID — разбан\n/mute ID СРОК [причина] — мут\n/unmute ID — размут\n(СРОК: 30m, 2h, 7d или число дней; 0 = навсегда)' +
-      (isOwner(ctx) ? '\n/restart — перезагрузить игровой сервер\n/adminkey ДНИ [АКТИВАЦИЙ] — ключ на Админ+ (ДНИ 0 = навсегда)\n/botkey — ключ, по которому помощник получит доступ к боту\n/admins — у кого есть доступ к боту\n/deladmin ID — убрать доступ' : '');
-    return ctx.reply('👋 Привет! Подпишитесь на канал и нажмите кнопку — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText() + '\n\n🛡 Есть Админ+ (купили или вам выдали)? Привяжите Telegram командой /link, затем используйте /admin.' + help, { reply_markup: kb() });
-  });
+  const MENU_TEXT = () => '👋 Привет! Подпишитесь на канал и нажмите «Получить промокод» — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText();
+  bot.command('start', ctx => ctx.reply(MENU_TEXT(), { reply_markup: kb() }));
   bot.callbackQuery('claim', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); return claim(ctx); });
   bot.command(['bonus', 'getpromo'], claim);
 
-  bot.command('promo', async ctx => { // только для админов из TG_ADMINS
+  cmd('promo', async ctx => { // только для админов из TG_ADMINS
     if (!(await isTgAdmin(ctx))) return ctx.reply('Нет доступа');
     const a = ctx.match.trim().split(/\s+/).filter(Boolean);
     if (a.length < 2 || a.length > 3) return ctx.reply('Формат: /promo КОД МОНЕТЫ АКТИВАЦИИ');
@@ -1053,7 +1056,7 @@ if (process.env.TG_BOT_TOKEN) {
       ctx.reply(r.rowCount ? `✅ Промокод создан\nКод: ${code}\nНаграда: ${coins} монет\nАктиваций: ${max || '∞'}` : '❌ Такой код уже существует');
     } catch (e) { console.error('tg promo:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
-  bot.command('vip', async ctx => { // /vip КОД ДНИ АКТИВАЦИИ (только админ): промокод, который выдаёт VIP
+  cmd('vip', async ctx => { // /vip КОД ДНИ АКТИВАЦИИ (только админ): промокод, который выдаёт VIP
     if (!(await isTgAdmin(ctx))) return ctx.reply('Нет доступа');
     const a = ctx.match.trim().split(/\s+/).filter(Boolean);
     if (a.length < 2 || a.length > 3) return ctx.reply('Формат: /vip КОД ДНИ АКТИВАЦИИ (без кода: /vip ДНИ АКТИВАЦИИ)');
@@ -1068,7 +1071,7 @@ if (process.env.TG_BOT_TOKEN) {
       ctx.reply(r.rowCount ? `✅ VIP-промокод создан\nКод: ${code}\nVIP: ${days} дн.\nАктиваций: ${max || '∞'}` : '❌ Такой код уже существует');
     } catch (e) { console.error('tg vip:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
-  bot.command('a', async ctx => { // список админов и кто из них сейчас на сайте (для владельцев и помощников бота)
+  cmd('a', async ctx => { // список админов и кто из них сейчас на сайте (для владельцев и помощников бота)
     if (!(await isTgAdmin(ctx))) return ctx.reply('Нет доступа');
     try {
       const now = Date.now(), list = new Map(); // steam_id -> { role, name }
@@ -1099,7 +1102,7 @@ if (process.env.TG_BOT_TOKEN) {
   const askRestart = (ctx, s) => ctx.reply(`⚠️ Перезагрузить сервер «${s.name}» (${s.address})?\nВсе игроки будут отключены.`,
     { reply_markup: new InlineKeyboard().text('✅ Да, перезагрузить', 'rsy:' + s.id).text('Отмена', 'rsn') });
   const srvById = async id => (await db.query('select id, name, address from servers where id=$1', [id])).rows[0];
-  bot.command('restart', async ctx => {
+  cmd('restart', async ctx => {
     if (!isOwner(ctx)) return ctx.reply('Нет доступа');
     try {
       const list = (await db.query('select id, name, address from servers order by id')).rows;
@@ -1131,7 +1134,7 @@ if (process.env.TG_BOT_TOKEN) {
       } catch (e) { console.error('tg restart:', e.message); await ctx.reply('❌ Не получилось перезагрузить: ' + e.message); }
     } catch (e) { console.error('tg restart:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
   });
-  bot.command('adminkey', async ctx => { // только владелец: /adminkey ДНИ [АКТИВАЦИЙ] — ключ, который на сайте выдаёт Админ+ (ДНИ 0 = навсегда)
+  cmd('adminkey', async ctx => { // только владелец: /adminkey ДНИ [АКТИВАЦИЙ] — ключ, который на сайте выдаёт Админ+ (ДНИ 0 = навсегда)
     if (!isOwner(ctx)) return ctx.reply('Нет доступа');
     const a = ctx.match.trim().split(/\s+/).filter(Boolean);
     const days = Math.floor(+a[0]), max = a[1] === undefined ? 1 : Math.floor(+a[1]);
@@ -1143,15 +1146,15 @@ if (process.env.TG_BOT_TOKEN) {
       ctx.reply(`🔑 Ключ на Админ+\n<code>${code}</code>\nСрок: ${days ? days + ' дн.' : 'навсегда'}\nАктиваций: ${max}\n\nИгрок вводит его на сайте в окне промокода (нужен вход через Steam). Не показывайте ключ посторонним.`, { parse_mode: 'HTML' });
     } catch (e) { console.error('tg adminkey:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
-  bot.command('botkey', async ctx => { // только владелец: одноразовый ключ на 24 часа — по нему человек сам получает доступ к командам бота
+  cmd('botkey', async ctx => { // только владелец: одноразовый ключ на 24 часа — по нему человек сам получает доступ к командам бота
     if (!isOwner(ctx)) return ctx.reply('Нет доступа');
     const key = 'BOT-' + crypto.randomBytes(6).toString('hex').toUpperCase();
     try {
       await db.query('insert into tg_keys(key,by,at) values($1,$2,$3)', [key, String(ctx.from.id), Date.now()]);
-      ctx.reply(`🔑 Ключ доступа к боту: <code>${key}</code>\nДействует 24 часа, один раз.\n\nПусть человек напишет боту:\n/access ${key}\n\nЕму станут доступны /promo и /vip с лимитами (до ${HELPER.coins} монет, до ${HELPER.vipDays} дн. VIP, до ${HELPER.max} активаций).`, { parse_mode: 'HTML' });
+      ctx.reply(`🔑 Ключ доступа к боту: <code>${key}</code>\nДействует 24 часа, один раз.\n\nПусть человек откроет бота → «🛠 Админ панель» → «🔐 У меня ключ» и отправит этот ключ.\n\nЕму откроется админ-панель: промокоды на монеты и VIP, баны и муты, с лимитами (до ${HELPER.coins} монет, до ${HELPER.vipDays} дн. VIP, до ${HELPER.max} активаций).`, { parse_mode: 'HTML' });
     } catch (e) { console.error('tg botkey:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
-  bot.command('access', async ctx => { // любой человек с ключом от владельца
+  cmd('access', async ctx => { // любой человек с ключом от владельца
     const key = ctx.match.trim().toUpperCase();
     if (!/^BOT-[0-9A-F]{12}$/.test(key)) return ctx.reply('Формат: /access КЛЮЧ');
     try {
@@ -1160,7 +1163,7 @@ if (process.env.TG_BOT_TOKEN) {
       if (!r.rowCount) return ctx.reply('❌ Ключ неверный, уже использован или просрочен');
       const name = [ctx.from.first_name, ctx.from.username && '@' + ctx.from.username].filter(Boolean).join(' ').slice(0, 64);
       await db.query('insert into tg_admins(tg_id,name,added_by,at) values($1,$2,$3,$4) on conflict do nothing', [String(ctx.from.id), name, key, Date.now()]);
-      ctx.reply('✅ Доступ к боту выдан.\n/promo КОД МОНЕТЫ АКТИВАЦИИ — промокод на монеты\n/vip КОД ДНИ АКТИВАЦИИ — промокод на VIP\nВсе команды — /start');
+      ctx.reply('✅ Доступ к боту выдан. Откройте «🛠 Админ панель» — кнопка в меню /start.');
     } catch (e) { console.error('tg access:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
   bot.command('admins', async ctx => {
@@ -1236,24 +1239,102 @@ if (process.env.TG_BOT_TOKEN) {
       ctx.reply(r.affectedRows ? `✅ ${isMute ? 'Мут снят' : 'Разбанен'}: ${t}` : `Активного ${isMute ? 'мута' : 'бана'} у ${t} не найдено`);
     } catch (e) { console.error('tg un' + (isMute ? 'mute' : 'ban') + ':', e.message); ctx.reply('❌ Не удалось изменить базу игрового сервера: ' + e.message); }
   };
-  bot.command('ban', tgPunish('bans'));
-  bot.command('mute', tgPunish('mutes'));
-  bot.command('unban', tgRemove('bans'));
-  bot.command('unmute', tgRemove('mutes'));
-  bot.command('admin', async ctx => {
-    const st = await tgStaff(ctx).catch(() => null);
-    if (!st) return ctx.reply('Нет доступа к команде');
-    ctx.reply('🛡 Команды админа:\n\n/ban ID СРОК [причина] — бан\n/unban ID — разбан\n/mute ID СРОК [причина] — мут\n/unmute ID — размут\n\nID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam\nСРОК: 30m, 2h, 7d или число дней (0 = навсегда)\nПример: /ban 76561198000000000 7d читы' +
-      (st.limited ? '\n\nДругих админов наказывать нельзя.' : ''));
-  });
-  bot.command('link', async ctx => { // привязка Telegram к Steam-аккаунту на сайте: нужна, чтобы купленный/выданный Админ+ открыл /admin
+  cmd('ban', tgPunish('bans'));
+  cmd('mute', tgPunish('mutes'));
+  cmd('unban', tgRemove('bans'));
+  cmd('unmute', tgRemove('mutes'));
+  bot.command('admin', ctx => openPanel(ctx, true));
+  cmd('link', async ctx => { // привязка Telegram к Steam-аккаунту на сайте: нужна, чтобы купленный/выданный Админ+ открыл /admin
     if (ctx.chat?.type !== 'private') return ctx.reply('Напишите мне в личные сообщения');
     try {
       const id = String(ctx.from.id), code = 'TG-' + crypto.randomBytes(4).toString('hex').toUpperCase();
       await db.query('delete from tg_link_codes where tg_id=$1 or at<$2', [id, Date.now() - 9e5]);
       await db.query('insert into tg_link_codes(code,tg_id,at) values($1,$2,$3)', [code, id, Date.now()]);
-      ctx.reply(`🔗 Код привязки: <code>${code}</code>\nДействует 15 минут.\n\nВведите его на сайте в окне промокода (нужен вход через Steam). После этого, если у вас есть Админ+ (куплен или выдан), станет доступна команда /admin.` + ((await tgLinked(ctx)) ? '\n\nСейчас Telegram уже привязан — новый код перепривяжет его.' : ''), { parse_mode: 'HTML' });
+      ctx.reply(`🔗 Код привязки: <code>${code}</code>\nДействует 15 минут.\n\nВведите его на сайте в окне промокода (нужен вход через Steam). После этого, если у вас есть Админ+ (куплен или выдан), в боте откроется «🛠 Админ панель».` + ((await tgLinked(ctx)) ? '\n\nСейчас Telegram уже привязан — новый код перепривяжет его.' : ''), { parse_mode: 'HTML' });
     } catch (e) { console.error('tg link:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  // --- кнопочное меню: /start → «Получить промокод» и «Админ панель». Действия с вводом (промокод, бан…) спрашивают данные следующим сообщением ---
+  const show = async (ctx, text, k) => {
+    try { if (ctx.callbackQuery) return await ctx.editMessageText(text, { reply_markup: k }); } catch (e) { if (/not modified/i.test(e.message)) return; }
+    return ctx.reply(text, { reply_markup: k });
+  };
+  const PROMPTS = {
+    promo: ['💰 Промокод на монеты', 'КОД МОНЕТЫ АКТИВАЦИИ\nнапример: MELL500 500 10\nили без кода: 500 10 (код придумаю сам)\nАктиваций 0 = без лимита'],
+    vip: ['👑 Промокод на VIP', 'КОД ДНИ АКТИВАЦИИ\nнапример: GIFT30 30 10\nили без кода: 30 10'],
+    adminkey: ['🔑 Ключ на Админ+', 'ДНИ [АКТИВАЦИЙ]\nнапример: 30 или 30 5\nДНИ 0 = навсегда'],
+    ban: ['🔨 Бан', 'ID СРОК [причина]\nID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam\nСРОК: 30m, 2h, 7d или число дней (0 = навсегда)\nнапример: 76561198000000000 7d читы'],
+    unban: ['♻️ Разбан', 'ID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam'],
+    mute: ['🔇 Мут', 'ID СРОК [причина]\nID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam\nСРОК: 30m, 2h, 7d или число дней (0 = навсегда)\nнапример: 76561198000000000 1d мат'],
+    unmute: ['🔊 Размут', 'ID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam'],
+    access: ['🔐 Ключ доступа к боту', 'ключ вида BOT-XXXXXXXXXXXX (его даёт владелец)'],
+  };
+  const CAN = { // кто может начать действие (сами команды всё равно проверяют права ещё раз)
+    promo: ctx => isTgAdmin(ctx), vip: ctx => isTgAdmin(ctx), adminkey: async ctx => isOwner(ctx),
+    ban: ctx => tgStaff(ctx), unban: ctx => tgStaff(ctx), mute: ctx => tgStaff(ctx), unmute: ctx => tgStaff(ctx),
+    access: async () => true };
+
+  async function openPanel(ctx, fresh) {
+    const st = await tgStaff(ctx).catch(() => null);
+    const send = (t, k) => fresh ? ctx.reply(t, { reply_markup: k }) : show(ctx, t, k);
+    if (!st) return send('🛡 Админ панель — для админов.\n\nЕсть Админ+ (куплен или выдан)? Нажмите «Привязать Telegram» и введите код на сайте.\nВладелец дал ключ доступа к боту? Нажмите «У меня ключ».',
+      new InlineKeyboard().text('🔗 Привязать Telegram', 'do:link').row().text('🔐 У меня ключ', 'in:access').row().text('⬅️ Назад', 'home'));
+    const adm = await isTgAdmin(ctx), own = isOwner(ctx), k = new InlineKeyboard();
+    if (adm) k.text('💰 Промокод на монеты', 'in:promo').text('👑 VIP-промокод', 'in:vip').row();
+    if (own) k.text('🔑 Ключ Админ+', 'in:adminkey').text('🔐 Ключ для помощника', 'do:botkey').row();
+    k.text('🔨 Бан', 'in:ban').text('♻️ Разбан', 'in:unban').row().text('🔇 Мут', 'in:mute').text('🔊 Размут', 'in:unmute').row();
+    if (adm) k.text('👥 Админы онлайн', 'do:a');
+    if (own) k.text('📋 Помощники', 'admlist');
+    if (adm) k.row();
+    if (own) k.text('🔄 Перезагрузить сервер', 'do:restart').row();
+    k.text('⬅️ Назад', 'home');
+    return send('🛠 Админ панель' + (st.limited ? '\n\nДругих админов наказывать нельзя.' : ''), k);
+  }
+  const showHelpers = async ctx => {
+    const rows = (await db.query('select tg_id, name from tg_admins order by at')).rows;
+    const k = new InlineKeyboard(); rows.forEach(r => k.text('❌ ' + String(r.name || r.tg_id).slice(0, 40), 'da:' + r.tg_id).row()); k.text('⬅️ Назад', 'ap');
+    return show(ctx, rows.length ? 'Помощники бота. Нажмите на имя, чтобы убрать доступ:' : 'Помощников пока нет. Создать ключ: «🔐 Ключ для помощника» в админ-панели.', k);
+  };
+  bot.callbackQuery('home', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id)); return show(ctx, MENU_TEXT(), kb()); });
+  bot.callbackQuery('ap', async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id));
+    try { await openPanel(ctx, false); } catch (e) { console.error('tg panel:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery('cx', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id)); await ctx.editMessageText('Отменено').catch(() => {}); });
+  bot.callbackQuery(/^in:(promo|vip|adminkey|ban|unban|mute|unmute|access)$/, async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    const act = ctx.match[1];
+    try {
+      if (!(await CAN[act](ctx))) return ctx.reply('Нет доступа');
+      pending.set(String(ctx.from.id), { act, at: Date.now() });
+      const [title, hint] = PROMPTS[act];
+      return ctx.reply(`${title}\n\nОтправьте одним сообщением:\n${hint}`, { reply_markup: new InlineKeyboard().text('✖️ Отмена', 'cx') });
+    } catch (e) { console.error('tg input:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^do:(a|botkey|link|restart)$/, async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    const act = ctx.match[1];
+    try { await H[act](sub(ctx, '')); if (act === 'a' || act === 'botkey') await openPanel(ctx, true); }
+    catch (e) { console.error('tg do ' + act + ':', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery('admlist', async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!isOwner(ctx)) return;
+    try { await showHelpers(ctx); } catch (e) { console.error('tg admlist:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^da:(\d{3,15})$/, async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    if (!isOwner(ctx)) return;
+    try { await db.query('delete from tg_admins where tg_id=$1', [ctx.match[1]]); await showHelpers(ctx); } catch (e) { console.error('tg deladmin:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.on('message:text', async ctx => { // ответ на вопрос админ-панели («Отправьте КОД МОНЕТЫ АКТИВАЦИИ…»); команды сюда не попадают
+    const id = String(ctx.from.id), p = pending.get(id);
+    if (!p) return;
+    pending.delete(id);
+    const text = ctx.message.text.trim();
+    if (text.startsWith('/')) return;
+    if (Date.now() - p.at > 10 * 60000) return ctx.reply('Время ввода вышло — выберите действие в админ-панели ещё раз', { reply_markup: new InlineKeyboard().text('🛠 Админ панель', 'ap') });
+    try { await H[p.act](sub(ctx, text)); await openPanel(ctx, true); }
+    catch (e) { console.error('tg input ' + p.act + ':', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
   });
   bot.catch(e => console.error('tg bot error:', e.message));
 
