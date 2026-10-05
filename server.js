@@ -112,7 +112,7 @@ const level = need => async (req, res, next) => {
   req.u = u; next();
 };
 // --- права доступа: владелец выдаёт любому игроку отдельные права ---
-const PERMS = { ban: 'Банить и мутить', unban: 'Разбанивать и снимать мут', grant: 'Выдавать и снимать Админ+', promo: 'Промокоды', server: 'Серверы', design: 'Дизайн сайта' };
+const PERMS = { ban: 'Банить и мутить', unban: 'Разбанивать и снимать мут', grant: 'Выдавать и снимать Админ+', promo: 'Промокоды', server: 'Серверы', design: 'Дизайн сайта', fun: 'Дополнительные команды' };
 const DEPUTY_PERMS = ['ban', 'unban', 'grant']; // что зам умеет «из коробки»
 const isFull = u => u.steam_id === OWNER || (!!u.deputy && !u.staff); // владелец и назначенные замы — всё одинаково; штатные админы игры (u.staff) — только DEPUTY_PERMS
 const permsOf = u => isFull(u) ? Object.keys(PERMS)
@@ -760,6 +760,20 @@ const glentSet = async until => {
   else await db.query("delete from site where key='glent'");
   glentCache = { until, at: Date.now() };
 };
+const glentToggle = async want => { // want: true/false — явно, undefined — переключить
+  const cur = (await glentUntil()) > Date.now(), on = typeof want === 'boolean' ? want : !cur;
+  if (!on) { await glentSet(0); return { on: false, left: 0, until: 0 }; }
+  if (cur && want === true) { const u = await glentUntil(); return { on: true, left: u - Date.now(), until: u }; }
+  const until = Date.now() + GLENT_MS; await glentSet(until);
+  return { on: true, left: GLENT_MS, until };
+};
+// «Дополнительные команды» в админ-панели сайта: те же смешные команды, что и в Telegram-боте
+app.post('/api/admin/fun', can('fun'), async (req, res) => {
+  try {
+    if (String(req.body.cmd || '') !== 'glent') return bad(res, 'Неизвестная команда');
+    res.json({ ok: true, ...(await glentToggle(typeof req.body.on === 'boolean' ? req.body.on : undefined)) });
+  } catch (e) { console.error('fun:', e.message); res.status(500).json({ error: 'Ошибка базы, попробуйте позже' }); }
+});
 app.get('/api/glent', async (req, res) => {
   const left = Math.max(0, (await glentUntil()) - Date.now());
   res.set('Cache-Control', 'no-store').json({ on: left > 0, left });
@@ -1481,12 +1495,9 @@ if (process.env.TG_BOT_TOKEN) {
   bot.hears(/^\/(глент|glent)(@\w+)?\s*$/i, async ctx => {
     if (!isOwner(ctx)) return ctx.reply('Нет доступа');
     try {
-      if ((await glentUntil()) > Date.now()) {
-        await glentSet(0);
-        return ctx.reply('🔇 Взрывы на сайте ВЫКЛЮЧЕНЫ.\n\nВключить снова: /глент');
-      }
-      const until = Date.now() + GLENT_MS, d = new Date(until + TZ_H * 36e5).toISOString();
-      await glentSet(until);
+      const r = await glentToggle();
+      if (!r.on) return ctx.reply('🔇 Взрывы на сайте ВЫКЛЮЧЕНЫ.\n\nВключить снова: /глент');
+      const d = new Date(r.until + TZ_H * 36e5).toISOString();
       ctx.reply(`💥 Взрывы на сайте ВКЛЮЧЕНЫ на 24 часа (до ${d.slice(8, 10)}.${d.slice(5, 7)} ${d.slice(11, 16)} МСК).\n\nВыключить раньше: /глент ещё раз.`);
     } catch (e) { console.error('tg glent:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
