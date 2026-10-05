@@ -83,6 +83,10 @@ async function init() {
     create table if not exists tg_links(tg_id text primary key, steam_id text not null, at bigint);
     create table if not exists tg_link_codes(code text primary key, tg_id text not null, at bigint not null);
     alter table tg_link_codes add column if not exists tg_name text;
+    create table if not exists tg_settings(
+      tg_id text primary key,
+      notifications boolean not null default true,
+      updated_at bigint not null default 0);
     insert into promos(code,coins) values('START100',100),('WELCOME50',50),('NEXTPROJECT',200)
       on conflict do nothing;`);
 }
@@ -157,6 +161,7 @@ app.get('/auth/steam/callback', async (req, res) => {
 
 // --- связка с Telegram-ботом: человек жмёт в боте «Войти через сайт» → открывается эта страница → вход через Steam → подтверждение → аккаунт привязан ---
 let tgNotify = () => {}, tgBotName = ''; // заполняются при запуске бота
+let tgNotifyStaff = async () => {}; // уведомления владельцу и замам; заполняется после запуска Telegram-бота
 const escH = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const linkPage = (title, text, btns = '') => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escH(title)}</title>
 <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0e0f14;color:#e8e9ef;font:16px/1.5 system-ui,sans-serif}
@@ -206,6 +211,46 @@ app.post('/tg/link/:token', express.urlencoded({ extended: false }), async (req,
 app.post('/auth/logout', (req, res) => { res.setHeader('Set-Cookie', 's=; Path=/; Max-Age=0'); res.json({ ok: true }); });
 
 // --- данные игрока ---
+// --- общие эффекты сайта ---
+app.get('/api/site-effects', async (req, res) => {
+  try {
+    const row = (await db.query("select value from site where key='abuse_until'")).rows[0];
+    const until = row ? +row.value || 0 : 0;
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ abuse: until > Date.now(), abuseUntil: until });
+  } catch (e) {
+    res.json({ abuse: false, abuseUntil: 0 });
+  }
+});
+
+// --- настройки Telegram-уведомлений для профиля сайта ---
+app.get('/api/notifications', async (req, res) => {
+  const u = await getUser(req);
+  if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
+  try {
+    const row = (await db.query(`select s.notifications from tg_links l
+      left join tg_settings s on s.tg_id=l.tg_id where l.steam_id=$1 limit 1`, [u.steam_id])).rows[0];
+    res.json({ linked: !!row, enabled: row ? row.notifications !== false : false });
+  } catch (e) {
+    res.status(500).json({ error: 'Не удалось получить настройки уведомлений' });
+  }
+});
+app.post('/api/notifications', async (req, res) => {
+  const u = await getUser(req);
+  if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
+  const enabled = !!req.body.enabled;
+  try {
+    const link = (await db.query('select tg_id from tg_links where steam_id=$1 limit 1', [u.steam_id])).rows[0];
+    if (!link) return bad(res, 'Сначала привяжите Telegram к аккаунту');
+    await db.query(`insert into tg_settings(tg_id,notifications,updated_at) values($1,$2,$3)
+      on conflict(tg_id) do update set notifications=excluded.notifications, updated_at=excluded.updated_at`,
+      [link.tg_id, enabled, Date.now()]);
+    res.json({ ok: true, enabled });
+  } catch (e) {
+    res.status(500).json({ error: 'Не удалось сохранить настройку уведомлений' });
+  }
+});
+
 app.get('/api/me', async (req, res) => {
   const u = await getUser(req);
   if (!u) return res.json(null);
@@ -394,6 +439,11 @@ app.post('/api/promo/create', level('user'), async (req, res) => {
     if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Такой промокод уже существует, придумайте другой'); }
     await c.query('update users set coins=coins-$1 where steam_id=$2', [cost, req.u.steam_id]);
     await c.query('commit');
+    await tgNotifyStaff(`🎟 Создан новый промокод
+Код: <code>${escH(code)}</code>
+Награда: ${coins} монет
+Активаций: ${max || '∞'}
+Создал: ${escH(req.u.name || req.u.steam_id)}`, { parse_mode: 'HTML' });
     res.json({ ok: true, code, cost });
   } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo-create:', e.message); res.status(500).json({ error: 'Не удалось создать промокод, попробуйте позже' }); }
   finally { c.release(); }
@@ -611,6 +661,24 @@ app.post('/api/agent-reset', level('user'), async (req, res) => {
   catch (e) { console.error('agent-reset:', e.message); res.status(500).json({ error: 'Не удалось сбросить агента' }); }
 });
 
+// --- админ-обьюз: визуальные взрывы на фоне сайта на 24 часа ---
+app.post('/api/admin/abuse-toggle', async (req, res) => {
+  const u = await getUser(req);
+  if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
+  if (!isFull(u)) return res.status(403).json({ error: 'Нет прав' });
+  try {
+    const cur = +(await db.query("select value from site where key='abuse_until'")).rows[0]?.value || 0;
+    const on = cur <= Date.now();
+    const until = on ? Date.now() + 24 * 60 * 60 * 1000 : 0;
+    await db.query(`insert into site(key,value) values('abuse_until',$1)
+      on conflict(key) do update set value=excluded.value`, [String(until)]);
+    res.json({ ok: true, abuse: on, abuseUntil: until });
+  } catch (e) {
+    console.error('abuse-toggle:', e.message);
+    res.status(500).json({ error: 'Не удалось изменить режим обьюза' });
+  }
+});
+
 // --- админка ---
 app.post('/api/admin/grant', can('grant'), async (req, res) => {
   const { id, days } = req.body;
@@ -634,6 +702,10 @@ app.post('/api/admin/grant', can('grant'), async (req, res) => {
     await grantGameAdmin({ steam_id: id, name: row.name }, until, opts); // сначала игра: если не вышло — на сайте ничего не меняем
     await db.query('insert into users(steam_id) values($1) on conflict do nothing', [id]);
     await db.query('update users set grant_until=$2, grant_by=$3, grant_at=$4 where steam_id=$1', [id, until, req.u.steam_id, Date.now()]);
+    await tgNotifyStaff(`👑 Добавлен админ на сайте
+Игрок: ${escH(row.name || id)}
+SteamID64: <code>${id}</code>
+Кто добавил: ${escH(req.u.name || req.u.steam_id)}`, { parse_mode: 'HTML' });
     res.json({ ok: true });
   } catch (e) { console.error('grant:', e.message); res.status(500).json({ error: 'Не удалось выдать админку в игре: ' + e.message }); }
 });
@@ -996,7 +1068,25 @@ if (process.env.TG_BOT_TOKEN) {
   const sub = (ctx, match) => Object.create(ctx, { match: { value: match } }); // тот же ctx, но с «аргументами», которые человек прислал текстом
   const pending = new Map(); // tg_id -> { act, at }: какое действие админ-панели ждёт ввода
   const SITE = (process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
-  tgNotify = (id, text) => bot.api.sendMessage(id, text, { reply_markup: new InlineKeyboard().text('👤 Мой аккаунт', 'me') }).catch(e => console.error('tg notify:', e.message));
+  const tgSend = (id, text, extra = {}) => bot.api.sendMessage(id, text, {
+    reply_markup: new InlineKeyboard().text('👤 Мой аккаунт', 'me'),
+    ...extra
+  }).catch(e => console.error('tg notify:', e.message));
+  tgNotify = (id, text, extra = {}) => tgSend(id, text, extra);
+  tgNotifyStaff = async (text, extra = {}) => {
+    try {
+      const ids = new Set(TG_ADMINS);
+      const rows = (await db.query(`select distinct l.tg_id from tg_links l
+        join users u on u.steam_id=l.steam_id
+        left join tg_settings s on s.tg_id=l.tg_id
+        where (u.deputy=true or u.steam_id=$1) and coalesce(s.notifications,true)=true`, [OWNER])).rows;
+      rows.forEach(r => ids.add(String(r.tg_id)));
+      const settings = (await db.query('select tg_id from tg_settings where notifications=true')).rows;
+      // Для TG_ADMINS тоже уважаем настройку, если она уже создана.
+      const pref = new Map(settings.map(r => [String(r.tg_id), true]));
+      await Promise.all([...ids].filter(id => pref.get(String(id)) !== false).map(id => tgSend(id, text, extra)));
+    } catch (e) { console.error('tg staff notify:', e.message); }
+  };
   bot.api.getMe().then(m => { tgBotName = m.username || ''; }).catch(() => {});
   const TG_ADMINS = (process.env.TG_ADMINS || '').split(',').map(s => s.trim()).filter(Boolean);
   const isOwner = ctx => TG_ADMINS.includes(String(ctx.from?.id)); // владельцы: из переменной TG_ADMINS в Render — могут всё
@@ -1109,6 +1199,13 @@ if (process.env.TG_BOT_TOKEN) {
     try {
       const r = await db.query('insert into promos(code,coins,max,by,at) values($1,$2,$3,$4,$5) on conflict do nothing',
         [code, coins, max, 'tg:' + ctx.from.id, Date.now()]);
+      if (r.rowCount) {
+        await tgNotifyStaff(`🎟 Создан новый промокод
+Код: <code>${escH(code)}</code>
+Награда: ${coins} монет
+Активаций: ${max || '∞'}
+Создал: ${escH(ctx.from.first_name || ctx.from.username || ctx.from.id)}`, { parse_mode: 'HTML' });
+      }
       ctx.reply(r.rowCount ? `✅ Промокод создан\nКод: ${code}\nНаграда: ${coins} монет\nАктиваций: ${max || '∞'}` : '❌ Такой код уже существует');
     } catch (e) { console.error('tg promo:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
@@ -1124,6 +1221,13 @@ if (process.env.TG_BOT_TOKEN) {
     if (!isOwner(ctx) && (days > HELPER.vipDays || !max || max > HELPER.max)) return ctx.reply(`Лимит для помощников: VIP до ${HELPER.vipDays} дн. и до ${HELPER.max} активаций (без безлимита)`);
     try {
       const r = await db.query('insert into promos(code,coins,max,by,at,vip_days) values($1,0,$2,$3,$4,$5) on conflict do nothing', [code, max, 'tg:' + ctx.from.id, Date.now(), days]);
+      if (r.rowCount) {
+        await tgNotifyStaff(`🎟 Создан новый VIP-промокод
+Код: <code>${escH(code)}</code>
+VIP: ${days} дн.
+Активаций: ${max || '∞'}
+Создал: ${escH(ctx.from.first_name || ctx.from.username || ctx.from.id)}`, { parse_mode: 'HTML' });
+      }
       ctx.reply(r.rowCount ? `✅ VIP-промокод создан\nКод: ${code}\nVIP: ${days} дн.\nАктиваций: ${max || '∞'}` : '❌ Такой код уже существует');
     } catch (e) { console.error('tg vip:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
@@ -1219,6 +1323,9 @@ if (process.env.TG_BOT_TOKEN) {
       if (!r.rowCount) return ctx.reply('❌ Ключ неверный, уже использован или просрочен');
       const name = [ctx.from.first_name, ctx.from.username && '@' + ctx.from.username].filter(Boolean).join(' ').slice(0, 64);
       await db.query('insert into tg_admins(tg_id,name,added_by,at) values($1,$2,$3,$4) on conflict do nothing', [String(ctx.from.id), name, key, Date.now()]);
+      await tgNotifyStaff(`👑 Добавлен админ бота
+Telegram: <code>${String(ctx.from.id)}</code>
+Имя: ${escH(name)}`, { parse_mode: 'HTML' });
       ctx.reply('✅ Доступ к боту выдан. Откройте «🛠 Админ панель» — кнопка в меню /start.');
     } catch (e) { console.error('tg access:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
@@ -1300,6 +1407,28 @@ if (process.env.TG_BOT_TOKEN) {
   cmd('unban', tgRemove('bans'));
   cmd('unmute', tgRemove('mutes'));
   bot.command('admin', ctx => openPanel(ctx, true));
+
+  // Telegram не разрешает кириллические bot-command имена, поэтому поддерживаем
+  // именно пользовательский ввод «/админ обьюз» через обычное текстовое сообщение.
+  bot.on('message:text', async ctx => {
+    const raw = String(ctx.message.text || '').trim();
+    if (!/^\/?(?:админ|admin)\s+(?:обьюз|обьюз|abuse)$/iu.test(raw)) return;
+    const st = await tgStaff(ctx).catch(() => null);
+    if (!st || st.limited) return ctx.reply('❌ Только владелец или зам может включать обьюз.');
+    try {
+      const cur = +(await db.query("select value from site where key='abuse_until'")).rows[0]?.value || 0;
+      const on = cur <= Date.now(), until = on ? Date.now() + 864e5 : 0;
+      await db.query(`insert into site(key,value) values('abuse_until',$1)
+        on conflict(key) do update set value=excluded.value`, [String(until)]);
+      return ctx.reply(on
+        ? '💥 Админ-обьюз включён на 24 часа. На сайте будут взрывы на заднем фоне.'
+        : '🛑 Админ-обьюз выключен.');
+    } catch (e) {
+      console.error('tg abuse:', e.message);
+      return ctx.reply('❌ Не удалось изменить режим обьюза');
+    }
+  });
+
   cmd('link', async ctx => { if (ctx.chat?.type !== 'private') return ctx.reply('Напишите мне в личные сообщения'); return openMe(ctx, true); });
   // --- кнопочное меню: /start → «Получить промокод» и «Админ панель». Действия с вводом (промокод, бан…) спрашивают данные следующим сообщением ---
   const show = async (ctx, text, k) => {
@@ -1401,7 +1530,10 @@ if (process.env.TG_BOT_TOKEN) {
       (await linkKb(ctx)).text('⬅️ Назад', 'home'));
     const u = (await db.query('select name, coins, prem_until, plus_until, grant_until from users where steam_id=$1', [steam])).rows[0];
     if (!u) { await db.query('delete from tg_links where tg_id=$1', [String(ctx.from.id)]); return openMe(ctx, fresh); }
+    const ns = (await db.query('select notifications from tg_settings where tg_id=$1', [String(ctx.from.id)])).rows[0];
+    const notifications = ns ? ns.notifications !== false : true;
     const k = new InlineKeyboard().text('🎟 Ввести промокод', 'in:redeem').text('🛒 Магазин', 'shop').row();
+    k.text(notifications ? '🔔 Уведомления: ВКЛ' : '🔕 Уведомления: ВЫКЛ', 'tgnotif').row();
     if (SITE) k.url('🌐 Открыть сайт', SITE).row();
     k.text('🔓 Отвязать', 'ul').text('⬅️ Назад', 'home');
     return send(`👤 ${u.name || 'Игрок'}\nSteam ID: ${steam}\n\n💰 Монет: ${Math.round(+u.coins * 100) / 100}\n👑 VIP: ${fmtUntil(u.prem_until)}\n🛡 Админ+: ${fmtUntil(Math.max(+u.plus_until, +u.grant_until))}`, k);
@@ -1417,6 +1549,18 @@ if (process.env.TG_BOT_TOKEN) {
   bot.callbackQuery('me', async ctx => {
     await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id));
     try { await openMe(ctx, false); } catch (e) { console.error('tg me:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery('tgnotif', async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    try {
+      const id = String(ctx.from.id);
+      const old = (await db.query('select notifications from tg_settings where tg_id=$1', [id])).rows[0];
+      const enabled = old ? !old.notifications : false;
+      await db.query(`insert into tg_settings(tg_id,notifications,updated_at) values($1,$2,$3)
+        on conflict(tg_id) do update set notifications=excluded.notifications, updated_at=excluded.updated_at`,
+        [id, enabled, Date.now()]);
+      return openMe(ctx, false);
+    } catch (e) { console.error('tg notif:', e.message); return ctx.reply('❌ Не удалось сохранить настройку'); }
   });
   bot.callbackQuery('shop', async ctx => {
     await ctx.answerCallbackQuery().catch(() => {});
