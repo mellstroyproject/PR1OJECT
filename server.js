@@ -744,6 +744,26 @@ app.get('/api/site', async (req, res) => { // тема сайта по умол�
   try { const r = (await db.query("select value from site where key='theme'")).rows[0]; res.json({ theme: r && THEME_KEYS.includes(r.value) ? r.value : 'red' }); }
   catch (e) { console.error('site:', e.message); res.json({ theme: 'red' }); }
 });
+// --- взрывы на сайте: включаются/выключаются командой /глент (/glent) в Telegram-боте, сами гаснут через 24 часа ---
+const GLENT_MS = 24 * 36e5;
+let glentCache = { until: 0, at: 0 }; // until — время окончания в мс (0 = выключено); кэш на 5 секунд, чтобы опрос с сайта не грузил базу
+const glentUntil = async () => {
+  if (Date.now() - glentCache.at < 5000) return glentCache.until;
+  try {
+    const r = (await db.query("select value from site where key='glent'")).rows[0];
+    glentCache = { until: r ? +r.value || 0 : 0, at: Date.now() };
+  } catch (e) { console.error('glent:', e.message); }
+  return glentCache.until;
+};
+const glentSet = async until => {
+  if (until) await db.query("insert into site(key,value) values('glent',$1) on conflict (key) do update set value=excluded.value", [String(until)]);
+  else await db.query("delete from site where key='glent'");
+  glentCache = { until, at: Date.now() };
+};
+app.get('/api/glent', async (req, res) => {
+  const left = Math.max(0, (await glentUntil()) - Date.now());
+  res.set('Cache-Control', 'no-store').json({ on: left > 0, left });
+});
 app.post('/api/admin/design', can('design'), async (req, res) => {
   const theme = String(req.body.theme || '');
   if (!THEME_KEYS.includes(theme)) return bad(res, 'Неизвестная тема');
@@ -1455,6 +1475,20 @@ if (process.env.TG_BOT_TOKEN) {
   bot.callbackQuery('ul', async ctx => {
     await ctx.answerCallbackQuery().catch(() => {});
     try { await db.query('delete from tg_links where tg_id=$1', [String(ctx.from.id)]); return openMe(ctx, false); } catch (e) { console.error('tg unlink:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  // /глент (и /glent): включить взрывы на сайте на 24 часа; та же команда — выключить. Только владельцы (TG_ADMINS).
+  // Telegram не подсвечивает кириллические команды как команды, поэтому ловим текст сообщения регуляркой.
+  bot.hears(/^\/(глент|glent)(@\w+)?\s*$/i, async ctx => {
+    if (!isOwner(ctx)) return ctx.reply('Нет доступа');
+    try {
+      if ((await glentUntil()) > Date.now()) {
+        await glentSet(0);
+        return ctx.reply('🔇 Взрывы на сайте ВЫКЛЮЧЕНЫ.\n\nВключить снова: /глент');
+      }
+      const until = Date.now() + GLENT_MS, d = new Date(until + TZ_H * 36e5).toISOString();
+      await glentSet(until);
+      ctx.reply(`💥 Взрывы на сайте ВКЛЮЧЕНЫ на 24 часа (до ${d.slice(8, 10)}.${d.slice(5, 7)} ${d.slice(11, 16)} МСК).\n\nВыключить раньше: /глент ещё раз.`);
+    } catch (e) { console.error('tg glent:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
   bot.on('message:text', async ctx => { // ответ на вопрос админ-панели («Отправьте КОД МОНЕТЫ АКТИВАЦИИ…»); команды сюда не попадают
     const id = String(ctx.from.id), p = pending.get(id);
