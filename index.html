@@ -239,9 +239,9 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
 .lb-who{cursor:pointer}.lb-who:hover .nm{text-decoration:underline}
 .pf-notify{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:0 0 18px}
 .pf-notify-title{font-weight:800;margin-bottom:4px}
-.abuse-layer{position:fixed;inset:0;z-index:-2;pointer-events:none;overflow:hidden;opacity:0;transition:opacity .5s}
+.abuse-layer{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;opacity:0;transition:opacity .5s;mix-blend-mode:screen}
 .abuse-layer.on{opacity:1}
-.abuse-boom{position:absolute;width:150px;height:150px;transform:translate(-50%,-50%);filter:drop-shadow(0 0 24px rgba(255,105,35,.65));animation:aboom 1.35s ease-out both}
+.abuse-boom{position:absolute;width:190px;height:190px;transform:translate(-50%,-50%);filter:drop-shadow(0 0 24px rgba(255,105,35,.65));animation:aboom 1.35s ease-out both}
 .abuse-boom:before{content:"";position:absolute;inset:30px;border-radius:50%;background:radial-gradient(circle,rgba(255,248,210,.95) 0 7%,rgba(255,180,50,.9) 8% 23%,rgba(255,70,35,.72) 24% 42%,transparent 68%);animation:aflash .28s ease-out both}
 .abuse-boom:after{content:"";position:absolute;inset:3px;border:3px solid rgba(255,130,45,.7);border-radius:50%;box-shadow:0 0 30px rgba(255,90,35,.45),inset 0 0 25px rgba(255,180,50,.25);transform:rotate(var(--rot));}
 @keyframes aboom{0%{opacity:0;transform:translate(-50%,-50%) scale(.25)}18%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.35)}}
