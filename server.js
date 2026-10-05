@@ -82,6 +82,7 @@ async function init() {
       reason text, term text, until bigint not null default 0, active boolean not null default true, at bigint);
     create table if not exists tg_links(tg_id text primary key, steam_id text not null, at bigint);
     create table if not exists tg_link_codes(code text primary key, tg_id text not null, at bigint not null);
+    alter table tg_link_codes add column if not exists tg_name text;
     insert into promos(code,coins) values('START100',100),('WELCOME50',50),('NEXTPROJECT',200)
       on conflict do nothing;`);
 }
@@ -148,9 +149,59 @@ app.get('/auth/steam/callback', async (req, res) => {
     if (pr) { name = pr.name ? String(pr.name).slice(0, 64) : null; avatar = okAvatar(pr.avatar) ? pr.avatar : null; }
     await db.query(`insert into users(steam_id,name,avatar) values($1,$2,$3)
       on conflict(steam_id) do update set name=coalesce(excluded.name, users.name), avatar=coalesce(excluded.avatar, users.avatar)`, [id, name, avatar]);
-    res.setHeader('Set-Cookie', `s=${id}.${sign(id)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`);
-    res.redirect('/');
+    const tgl = (req.headers.cookie || '').match(/(?:^|;\s*)tgl=(LK-[0-9A-F]{24})/)?.[1];
+    res.setHeader('Set-Cookie', [`s=${id}.${sign(id)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`].concat(tgl ? ['tgl=; Path=/; Max-Age=0'] : []));
+    res.redirect(tgl ? '/tg/link/' + tgl : '/');
   } catch (e) { res.status(403).send('Не удалось войти через Steam'); }
+});
+
+// --- связка с Telegram-ботом: человек жмёт в боте «Войти через сайт» → открывается эта страница → вход через Steam → подтверждение → аккаунт привязан ---
+let tgNotify = () => {}, tgBotName = ''; // заполняются при запуске бота
+const escH = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const linkPage = (title, text, btns = '') => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escH(title)}</title>
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0e0f14;color:#e8e9ef;font:16px/1.5 system-ui,sans-serif}
+.c{max-width:440px;margin:20px;padding:28px;background:#171922;border:1px solid #2a2d3a;border-radius:16px;text-align:center}h1{font-size:21px;margin:0 0 12px}p{color:#aeb2c2;margin:8px 0}
+.b{display:inline-block;margin:12px 6px 0;padding:11px 20px;border-radius:10px;background:#5b6cff;color:#fff;text-decoration:none;border:0;font:inherit;cursor:pointer}.b.g{background:#2a2d3a}</style></head>
+<body><div class="c"><h1>${escH(title)}</h1>${text}${btns}</div></body></html>`;
+const backBtns = () => (tgBotName ? `<a class="b" href="https://t.me/${escH(tgBotName)}">Вернуться в бота</a>` : '') + '<a class="b g" href="/">На сайт</a>';
+async function tgConsumeLink(token, steamId) { // одноразовый токен -> привязка; возвращает tg_id или null
+  const r = await db.query('delete from tg_link_codes where code=$1 and at>$2 returning tg_id', [token, Date.now() - 9e5]);
+  if (!r.rowCount) return null;
+  const tg = r.rows[0].tg_id;
+  await db.query('delete from tg_links where steam_id=$1', [steamId]);
+  await db.query('insert into tg_links(tg_id,steam_id,at) values($1,$2,$3) on conflict (tg_id) do update set steam_id=excluded.steam_id, at=excluded.at', [tg, steamId, Date.now()]);
+  return tg;
+}
+const LINK_RE = /^LK-[0-9A-F]{24}$/;
+app.get('/tg/link/:token', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const t = String(req.params.token || '').toUpperCase();
+  if (!LINK_RE.test(t)) return res.status(400).send(linkPage('Ссылка недействительна', '<p>Откройте бота и нажмите «Войти через сайт» ещё раз.</p>', backBtns()));
+  try {
+    const u = await getUser(req);
+    if (!u) { // сначала вход через Steam, потом вернёмся сюда
+      res.setHeader('Set-Cookie', `tgl=${t}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=900`);
+      return res.redirect('/auth/steam');
+    }
+    const row = (await db.query('select tg_id, tg_name from tg_link_codes where code=$1 and at>$2', [t, Date.now() - 9e5])).rows[0];
+    if (!row) return res.status(400).send(linkPage('Ссылка устарела', '<p>Она действует 15 минут и работает один раз. Откройте бота и нажмите «Войти через сайт» ещё раз.</p>', backBtns()));
+    res.send(linkPage('Привязать Telegram?',
+      `<p>Telegram: <b>${escH(row.tg_name || row.tg_id)}</b> (ID ${escH(row.tg_id)})</p><p>Аккаунт на сайте: <b>${escH(u.name || u.steam_id)}</b></p>
+<p>После подтверждения этот Telegram сможет тратить монеты, покупать VIP и активировать промокоды на этом аккаунте. Подтверждайте, только если это ваш Telegram.</p>`,
+      `<form method="post" action="/tg/link/${t}" style="display:inline"><button class="b" type="submit">✅ Подтвердить</button></form><a class="b g" href="/">Отмена</a>`));
+  } catch (e) { console.error('tg link page:', e.message); res.status(500).send(linkPage('Ошибка', '<p>Попробуйте позже.</p>', backBtns())); }
+});
+app.post('/tg/link/:token', express.urlencoded({ extended: false }), async (req, res) => { // подтверждение; cookie SameSite=Lax, так что чужой сайт отправить этот POST не может
+  res.setHeader('Cache-Control', 'no-store');
+  const t = String(req.params.token || '').toUpperCase();
+  try {
+    const u = await getUser(req);
+    if (!u || !LINK_RE.test(t)) return res.redirect('/tg/link/' + encodeURIComponent(t));
+    const tg = await tgConsumeLink(t, u.steam_id);
+    if (!tg) return res.status(400).send(linkPage('Ссылка устарела', '<p>Откройте бота и нажмите «Войти через сайт» ещё раз.</p>', backBtns()));
+    tgNotify(tg, `✅ Аккаунт «${u.name || u.steam_id}» привязан к этому Telegram. Теперь им можно управлять отсюда.`);
+    res.send(linkPage('Готово ✅', `<p>Аккаунт <b>${escH(u.name || u.steam_id)}</b> привязан к Telegram.</p><p>Вернитесь в бота — раздел «👤 Мой аккаунт».</p>`, backBtns()));
+  } catch (e) { console.error('tg link confirm:', e.message); res.status(500).send(linkPage('Ошибка', '<p>Попробуйте позже.</p>', backBtns())); }
 });
 app.post('/auth/logout', (req, res) => { res.setHeader('Set-Cookie', 's=; Path=/; Max-Age=0'); res.json({ ok: true }); });
 
@@ -944,6 +995,9 @@ if (process.env.TG_BOT_TOKEN) {
   const cmd = (name, fn) => { H[name] = fn; bot.command(name, fn); };
   const sub = (ctx, match) => Object.create(ctx, { match: { value: match } }); // тот же ctx, но с «аргументами», которые человек прислал текстом
   const pending = new Map(); // tg_id -> { act, at }: какое действие админ-панели ждёт ввода
+  const SITE = (process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
+  tgNotify = (id, text) => bot.api.sendMessage(id, text, { reply_markup: new InlineKeyboard().text('👤 Мой аккаунт', 'me') }).catch(e => console.error('tg notify:', e.message));
+  bot.api.getMe().then(m => { tgBotName = m.username || ''; }).catch(() => {});
   const TG_ADMINS = (process.env.TG_ADMINS || '').split(',').map(s => s.trim()).filter(Boolean);
   const isOwner = ctx => TG_ADMINS.includes(String(ctx.from?.id)); // владельцы: из переменной TG_ADMINS в Render — могут всё
   const isTgAdmin = async ctx => isOwner(ctx) || !!(await db.query('select 1 from tg_admins where tg_id=$1', [String(ctx.from?.id)])).rowCount; // + помощники, получившие доступ по ключу
@@ -993,9 +1047,9 @@ if (process.env.TG_BOT_TOKEN) {
     const m = await bot.api.getChatMember(CHANNEL, id); // бот должен быть админом канала
     return ['creator', 'administrator', 'member'].includes(m.status) || (m.status === 'restricted' && m.is_member);
   };
-  const kb = (panel = true) => { // главное меню: канал, промокод, админ-панель
+  const kb = (panel = true) => { // главное меню: канал, промокод, аккаунт, админ-панель
     const k = new InlineKeyboard().url('📢 Подписаться на канал', CHANNEL_URL).row().text('🎁 Получить промокод', 'claim');
-    return panel ? k.row().text('🛠 Админ панель', 'ap') : k;
+    return panel ? k.row().text('👤 Мой аккаунт', 'me').row().text('🛠 Админ панель', 'ap') : k;
   };
 
   async function claim(ctx) {
@@ -1027,7 +1081,9 @@ if (process.env.TG_BOT_TOKEN) {
           await c.query('insert into tg_claims(tg_id,code,coins,at) values($1,$2,$3,$4) on conflict (tg_id) do update set code=excluded.code, coins=excluded.coins, at=excluded.at', [id, code, coins, Date.now()]);
           await c.query('commit');
           const win = prize.vip ? `🎉 Вам выпал VIP на ${prize.vip} дн.!` : `🎁 Награда: ${coins} монет`;
-          out = [`${win}\nПромокод: <code>${code}</code>\n\nВведите его на сайте в окне промокода (нужен вход через Steam). Код одноразовый.`, { parse_mode: 'HTML' }];
+          const linked = await tgLinked(ctx).catch(() => null);
+          out = [`${win}\nПромокод: <code>${code}</code>\n\n` + (linked ? 'Нажмите кнопку — награда сразу попадёт на ваш аккаунт. Или введите код на сайте. Код одноразовый.' : 'Введите его на сайте в окне промокода (нужен вход через Steam). Код одноразовый. Чтобы активировать прямо в боте, привяжите аккаунт: «👤 Мой аккаунт».'),
+            { parse_mode: 'HTML', ...(linked ? { reply_markup: new InlineKeyboard().text('✅ Активировать на мой аккаунт', 'ac:' + code) } : {}) }];
         }
       }
     } catch (e) { await c.query('rollback').catch(() => {}); console.error('tg claim:', e.message); out = ['❌ Ошибка, попробуйте позже']; }
@@ -1244,15 +1300,7 @@ if (process.env.TG_BOT_TOKEN) {
   cmd('unban', tgRemove('bans'));
   cmd('unmute', tgRemove('mutes'));
   bot.command('admin', ctx => openPanel(ctx, true));
-  cmd('link', async ctx => { // привязка Telegram к Steam-аккаунту на сайте: нужна, чтобы купленный/выданный Админ+ открыл /admin
-    if (ctx.chat?.type !== 'private') return ctx.reply('Напишите мне в личные сообщения');
-    try {
-      const id = String(ctx.from.id), code = 'TG-' + crypto.randomBytes(4).toString('hex').toUpperCase();
-      await db.query('delete from tg_link_codes where tg_id=$1 or at<$2', [id, Date.now() - 9e5]);
-      await db.query('insert into tg_link_codes(code,tg_id,at) values($1,$2,$3)', [code, id, Date.now()]);
-      ctx.reply(`🔗 Код привязки: <code>${code}</code>\nДействует 15 минут.\n\nВведите его на сайте в окне промокода (нужен вход через Steam). После этого, если у вас есть Админ+ (куплен или выдан), в боте откроется «🛠 Админ панель».` + ((await tgLinked(ctx)) ? '\n\nСейчас Telegram уже привязан — новый код перепривяжет его.' : ''), { parse_mode: 'HTML' });
-    } catch (e) { console.error('tg link:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
-  });
+  cmd('link', async ctx => { if (ctx.chat?.type !== 'private') return ctx.reply('Напишите мне в личные сообщения'); return openMe(ctx, true); });
   // --- кнопочное меню: /start → «Получить промокод» и «Админ панель». Действия с вводом (промокод, бан…) спрашивают данные следующим сообщением ---
   const show = async (ctx, text, k) => {
     try { if (ctx.callbackQuery) return await ctx.editMessageText(text, { reply_markup: k }); } catch (e) { if (/not modified/i.test(e.message)) return; }
@@ -1267,11 +1315,12 @@ if (process.env.TG_BOT_TOKEN) {
     mute: ['🔇 Мут', 'ID СРОК [причина]\nID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam\nСРОК: 30m, 2h, 7d или число дней (0 = навсегда)\nнапример: 76561198000000000 1d мат'],
     unmute: ['🔊 Размут', 'ID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam'],
     access: ['🔐 Ключ доступа к боту', 'ключ вида BOT-XXXXXXXXXXXX (его даёт владелец)'],
+    redeem: ['🎟 Ввести промокод', 'пришлите промокод, например NP-A3F9C21B'],
   };
   const CAN = { // кто может начать действие (сами команды всё равно проверяют права ещё раз)
     promo: ctx => isTgAdmin(ctx), vip: ctx => isTgAdmin(ctx), adminkey: async ctx => isOwner(ctx),
     ban: ctx => tgStaff(ctx), unban: ctx => tgStaff(ctx), mute: ctx => tgStaff(ctx), unmute: ctx => tgStaff(ctx),
-    access: async () => true };
+    access: async () => true, redeem: async ctx => !!(await tgLinked(ctx)) };
 
   async function openPanel(ctx, fresh) {
     const st = await tgStaff(ctx).catch(() => null);
@@ -1300,10 +1349,11 @@ if (process.env.TG_BOT_TOKEN) {
     try { await openPanel(ctx, false); } catch (e) { console.error('tg panel:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
   });
   bot.callbackQuery('cx', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id)); await ctx.editMessageText('Отменено').catch(() => {}); });
-  bot.callbackQuery(/^in:(promo|vip|adminkey|ban|unban|mute|unmute|access)$/, async ctx => {
+  bot.callbackQuery(/^in:(promo|vip|adminkey|ban|unban|mute|unmute|access|redeem)$/, async ctx => {
     await ctx.answerCallbackQuery().catch(() => {});
     const act = ctx.match[1];
     try {
+      if (act === 'redeem' && !(await tgLinked(ctx))) return openMe(ctx, false);
       if (!(await CAN[act](ctx))) return ctx.reply('Нет доступа');
       pending.set(String(ctx.from.id), { act, at: Date.now() });
       const [title, hint] = PROMPTS[act];
@@ -1326,6 +1376,86 @@ if (process.env.TG_BOT_TOKEN) {
     if (!isOwner(ctx)) return;
     try { await db.query('delete from tg_admins where tg_id=$1', [ctx.match[1]]); await showHelpers(ctx); } catch (e) { console.error('tg deladmin:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
+  // --- «Мой аккаунт»: привязка к сайту (вход через Steam), профиль, промокоды и покупки прямо в боте. Покупки и промокоды идут через те же запросы сайта (/api/buy, /api/promo): правила, цены и проверки те же ---
+  const siteCall = async (steam, p, body) => {
+    const r = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}${p}`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie: `s=${steam}.${sign(steam)}` }, body: JSON.stringify(body || {}) });
+    const j = await r.json().catch(() => ({}));
+    return { ...j, ok: r.ok && !j.error, error: j.error || (r.ok ? '' : 'Ошибка сайта (' + r.status + ')') };
+  };
+  const fmtUntil = t => !(+t > Date.now()) ? 'нет' : +t >= FOREVER ? 'навсегда' : 'до ' + new Date(+t + TZ_H * 36e5).toISOString().slice(0, 10).split('-').reverse().join('.');
+  const offers = [...DAYS.prem.map((d, i) => ['prem', i, `VIP на ${d} дн.`]), ['plus', 0, 'Админ+ навсегда']];
+  const linkKb = async ctx => { // кнопка-ссылка «Войти через сайт» с одноразовым токеном на 15 минут
+    const k = new InlineKeyboard();
+    if (!SITE) return k;
+    const id = String(ctx.from.id), t = 'LK-' + crypto.randomBytes(12).toString('hex').toUpperCase();
+    const name = [ctx.from.first_name, ctx.from.username && '@' + ctx.from.username].filter(Boolean).join(' ').slice(0, 64);
+    await db.query('delete from tg_link_codes where tg_id=$1 or at<$2', [id, Date.now() - 9e5]);
+    await db.query('insert into tg_link_codes(code,tg_id,at,tg_name) values($1,$2,$3,$4)', [t, id, Date.now(), name]);
+    return k.url('🌐 Войти через сайт', `${SITE}/tg/link/${t}`).row();
+  };
+  async function openMe(ctx, fresh) {
+    const send = (t, k) => fresh ? ctx.reply(t, { reply_markup: k }) : show(ctx, t, k);
+    const steam = await tgLinked(ctx);
+    if (!steam) return send('👤 Мой аккаунт\n\nАккаунт сайта не привязан. Нажмите «Войти через сайт», войдите через Steam и подтвердите — аккаунт свяжется с этим Telegram (если вы на сайте впервые, он создастся сам).\n\nПосле этого прямо в боте можно смотреть баланс, вводить промокоды и покупать VIP.',
+      (await linkKb(ctx)).text('⬅️ Назад', 'home'));
+    const u = (await db.query('select name, coins, prem_until, plus_until, grant_until from users where steam_id=$1', [steam])).rows[0];
+    if (!u) { await db.query('delete from tg_links where tg_id=$1', [String(ctx.from.id)]); return openMe(ctx, fresh); }
+    const k = new InlineKeyboard().text('🎟 Ввести промокод', 'in:redeem').text('🛒 Магазин', 'shop').row();
+    if (SITE) k.url('🌐 Открыть сайт', SITE).row();
+    k.text('🔓 Отвязать', 'ul').text('⬅️ Назад', 'home');
+    return send(`👤 ${u.name || 'Игрок'}\nSteam ID: ${steam}\n\n💰 Монет: ${Math.round(+u.coins * 100) / 100}\n👑 VIP: ${fmtUntil(u.prem_until)}\n🛡 Админ+: ${fmtUntil(Math.max(+u.plus_until, +u.grant_until))}`, k);
+  }
+  H.redeem = async ctx => { // вызывается после «🎟 Ввести промокод» и ввода кода сообщением
+    const steam = await tgLinked(ctx);
+    if (!steam) return ctx.reply('Сначала привяжите аккаунт сайта: «👤 Мой аккаунт»');
+    const code = String(ctx.match || '').trim().toUpperCase().slice(0, 40);
+    if (!code) return ctx.reply('Пришлите промокод текстом');
+    const r = await siteCall(steam, '/api/promo', { code });
+    return ctx.reply(r.ok ? '✅ ' + (r.msg || `Промокод активирован: +${r.coins} монет`) : '❌ ' + r.error);
+  };
+  bot.callbackQuery('me', async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id));
+    try { await openMe(ctx, false); } catch (e) { console.error('tg me:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery('shop', async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    try {
+      const steam = await tgLinked(ctx); if (!steam) return openMe(ctx, false);
+      const u = (await db.query('select coins from users where steam_id=$1', [steam])).rows[0];
+      const k = new InlineKeyboard(); offers.forEach(([key, i, label]) => k.text(`${label} — ${PRICE[key][i]} 💰`, `bk:${key}:${i}`).row()); k.text('⬅️ Назад', 'me');
+      return show(ctx, `🛒 Магазин\nУ вас: ${Math.round(+(u?.coins || 0) * 100) / 100} монет`, k);
+    } catch (e) { console.error('tg shop:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^bk:(prem|plus):(\d)$/, async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    const key = ctx.match[1], i = +ctx.match[2], o = offers.find(x => x[0] === key && x[1] === i);
+    if (!o) return;
+    return show(ctx, `Купить «${o[2]}» за ${PRICE[key][i]} монет?`, new InlineKeyboard().text('✅ Купить', `by:${key}:${i}`).text('Отмена', 'shop'));
+  });
+  bot.callbackQuery(/^by:(prem|plus):(\d)$/, async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    try {
+      const key = ctx.match[1], i = +ctx.match[2], o = offers.find(x => x[0] === key && x[1] === i), steam = await tgLinked(ctx);
+      if (!o || !steam) return openMe(ctx, false);
+      const r = await siteCall(steam, '/api/buy', { key, idx: i });
+      await ctx.editMessageText(r.ok ? `✅ Куплено: ${o[2]}` : '❌ ' + r.error).catch(() => {});
+      return openMe(ctx, true);
+    } catch (e) { console.error('tg buy:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^ac:([A-Z0-9-]{3,40})$/, async ctx => { // «Активировать на мой аккаунт» под выпавшим промокодом
+    await ctx.answerCallbackQuery().catch(() => {});
+    try {
+      const steam = await tgLinked(ctx); if (!steam) return openMe(ctx, true);
+      const r = await siteCall(steam, '/api/promo', { code: ctx.match[1] });
+      await ctx.editMessageReplyMarkup().catch(() => {});
+      return ctx.reply(r.ok ? '✅ ' + (r.msg || `Промокод активирован: +${r.coins} монет`) : '❌ ' + r.error);
+    } catch (e) { console.error('tg activate:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery('ul', async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    try { await db.query('delete from tg_links where tg_id=$1', [String(ctx.from.id)]); return openMe(ctx, false); } catch (e) { console.error('tg unlink:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
   bot.on('message:text', async ctx => { // ответ на вопрос админ-панели («Отправьте КОД МОНЕТЫ АКТИВАЦИИ…»); команды сюда не попадают
     const id = String(ctx.from.id), p = pending.get(id);
     if (!p) return;
@@ -1333,7 +1463,7 @@ if (process.env.TG_BOT_TOKEN) {
     const text = ctx.message.text.trim();
     if (text.startsWith('/')) return;
     if (Date.now() - p.at > 10 * 60000) return ctx.reply('Время ввода вышло — выберите действие в админ-панели ещё раз', { reply_markup: new InlineKeyboard().text('🛠 Админ панель', 'ap') });
-    try { await H[p.act](sub(ctx, text)); await openPanel(ctx, true); }
+    try { await H[p.act](sub(ctx, text)); await (p.act === 'redeem' ? openMe(ctx, true) : openPanel(ctx, true)); }
     catch (e) { console.error('tg input ' + p.act + ':', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
   });
   bot.catch(e => console.error('tg bot error:', e.message));
