@@ -1836,5 +1836,80 @@ function whiteScreen(){
   document.body.appendChild(d);requestAnimationFrame(()=>requestAnimationFrame(()=>{d.style.opacity='1'}));
 }
 </script>
+<script>
+// Взрывы на сайте: включаются командой /глент в Telegram-боте (24 часа). Сайт раз в 20 секунд спрашивает /api/glent.
+(function(){
+  let on=false,cv,cx,W,H,dpr=1,fx=[],raf=0,last=0,nextAt=0,flash=0,pollT=0;
+  const rnd=(a,b)=>a+Math.random()*(b-a);
+  const reduce=MOTION_OFF&&typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function size(){dpr=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=W*dpr;cv.height=H*dpr;cx.setTransform(dpr,0,0,dpr,0,0)}
+  function boom(x,y,s){
+    s=s||rnd(.7,1.6);if(fx.length>16)fx.shift();
+    const p=[],n=Math.floor(48*s);
+    for(let i=0;i<n;i++){const a=rnd(0,6.283),v=rnd(1,9)*s;p.push({x:x,y:y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-rnd(0,2),life:rnd(32,75),max:0,r:rnd(1.2,3.6),h:rnd(12,52)});p[i].max=p[i].life}
+    fx.push({x:x,y:y,s:s,t:0,p:p});
+    if(s>1.1)flash=Math.max(flash,.2);
+  }
+  function frame(now){
+    raf=requestAnimationFrame(frame);
+    const k=Math.min(2.5,(now-(last||now))/16.7||1);last=now;
+    if(now>nextAt){
+      boom(rnd(.05,.95)*W,rnd(.08,.9)*H);
+      if(Math.random()<.25)setTimeout(()=>on&&boom(rnd(.05,.95)*W,rnd(.08,.9)*H,rnd(.6,1.2)),rnd(80,250));
+      nextAt=now+rnd(350,1100);
+    }
+    cx.clearRect(0,0,W,H);
+    if(flash>.005){cx.fillStyle='rgba(255,226,170,'+flash+')';cx.fillRect(0,0,W,H);flash*=Math.pow(.86,k)}
+    cx.globalCompositeOperation='lighter';
+    for(let i=fx.length-1;i>=0;i--){
+      const e=fx[i];e.t+=k;
+      const R=95*e.s,u=Math.min(1,e.t/30),ease=1-Math.pow(1-u,3);
+      if(e.t<42){ // огненный шар
+        const r=R*(.35+.65*ease),a=1-e.t/42,g=cx.createRadialGradient(e.x,e.y,0,e.x,e.y,r);
+        g.addColorStop(0,'rgba(255,255,230,'+a+')');g.addColorStop(.35,'rgba(255,170,40,'+a*.8+')');g.addColorStop(1,'rgba(220,40,0,0)');
+        cx.fillStyle=g;cx.beginPath();cx.arc(e.x,e.y,r,0,6.283);cx.fill();
+      }
+      if(e.t<38){ // ударная волна
+        cx.strokeStyle='rgba(255,210,140,'+(1-e.t/38)*.6+')';cx.lineWidth=Math.max(.5,5*(1-e.t/38));
+        cx.beginPath();cx.arc(e.x,e.y,R*1.9*(1-Math.pow(1-Math.min(1,e.t/38),2)),0,6.283);cx.stroke();
+      }
+      let alive=e.t<42;
+      for(const q of e.p){ // искры
+        if(q.life<=0)continue;alive=true;
+        const px=q.x,py=q.y;q.x+=q.vx*k;q.y+=q.vy*k;q.vy+=.12*k;q.vx*=Math.pow(.97,k);q.vy*=Math.pow(.99,k);q.life-=k;
+        const a=Math.max(0,q.life/q.max);
+        cx.strokeStyle='hsla('+q.h+',100%,'+(55+a*30)+'%,'+a+')';cx.lineWidth=q.r*a+.4;
+        cx.beginPath();cx.moveTo(px,py);cx.lineTo(q.x,q.y);cx.stroke();
+      }
+      if(!alive)fx.splice(i,1);
+    }
+    cx.globalCompositeOperation='source-over';
+  }
+  const tap=e=>boom(e.clientX,e.clientY,rnd(1,1.5));
+  function start(){
+    if(on||reduce)return;on=true;
+    cv=document.createElement('canvas');cv.id='nx-boom';
+    cv.style.cssText='position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2147483000';
+    document.body.appendChild(cv);cx=cv.getContext('2d');size();
+    addEventListener('resize',size);addEventListener('pointerdown',tap,{passive:true});
+    last=0;nextAt=0;raf=requestAnimationFrame(frame);
+  }
+  function stop(){
+    if(!on)return;on=false;cancelAnimationFrame(raf);
+    removeEventListener('resize',size);removeEventListener('pointerdown',tap);
+    cv.remove();fx=[];flash=0;
+  }
+  async function poll(){
+    clearTimeout(pollT);
+    try{
+      const r=await (await fetch('/api/glent',{cache:'no-store'})).json();
+      if(r.on){start();pollT=setTimeout(poll,Math.min(r.left+300,20000))}else stop();
+    }catch(e){}
+  }
+  setInterval(poll,20000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll()});
+  poll();
+})();
+</script>
 </body>
 </html>
