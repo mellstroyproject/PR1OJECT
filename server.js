@@ -827,8 +827,16 @@ app.post('/api/admin/promo', can('promo'), async (req, res) => {
   if (!/^[\p{L}\p{N}_-]{2,32}$/u.test(code)) return bad(res, 'Код: 2–32 символа — буквы (в т.ч. русские), цифры, _ или -, без пробелов');
   if (!(coins > 0 && coins <= 100000)) return bad(res, 'Награда: число от 1 до 100 000');
   const r = await db.query('insert into promos(code,coins,max,by,at) values($1,$2,$3,$4,$5) on conflict do nothing', [code, coins, max, req.u.steam_id, Date.now()]);
-  r.rowCount ? res.json({ ok: true }) : bad(res, 'Такой код уже существует');
+  if (!r.rowCount) return bad(res, 'Такой код уже существует');
+  await tgNotifyStaff(`🎟 Создан новый промокод
+Код: <code>${escH(code)}</code>
+Награда: ${coins} монет
+Активаций: ${max || '∞'}
+Создал: ${escH(req.u.name || req.u.steam_id)}`, { parse_mode: 'HTML' });
+  res.json({ ok: true });
 });
+
+
 app.post('/api/admin/promo-delete', can('promo'), async (req, res) => {
   await db.query('delete from promos where code=$1', [String(req.body.code)]); res.json({ ok: true });
 });
