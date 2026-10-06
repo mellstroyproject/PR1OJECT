@@ -787,6 +787,11 @@ const glentToggle = async want => { // want: true/false — явно, undefined 
   const until = Date.now() + GLENT_MS; await glentSet(until);
   return { on: true, left: GLENT_MS, until };
 };
+// кнопка «Запустить админ абуз» для замов на сайте = та же команда /глент (вкл/выкл взрывы на 24 часа); владелец и замы
+app.post('/api/admin/abuse', fullOnly, async (req, res) => {
+  try { res.json({ ok: true, ...(await glentToggle(typeof req.body.on === 'boolean' ? req.body.on : undefined)) }); }
+  catch (e) { console.error('abuse:', e.message); res.status(500).json({ error: 'Ошибка базы, попробуйте позже' }); }
+});
 app.get('/api/glent', async (req, res) => {
   const left = Math.max(0, (await glentUntil()) - Date.now());
   res.set('Cache-Control', 'no-store').json({ on: left > 0, left });
