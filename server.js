@@ -112,7 +112,7 @@ const level = need => async (req, res, next) => {
   req.u = u; next();
 };
 // --- права доступа: владелец выдаёт любому игроку отдельные права ---
-const PERMS = { ban: 'Банить и мутить', unban: 'Разбанивать и снимать мут', grant: 'Выдавать и снимать Админ+', promo: 'Промокоды', server: 'Серверы', design: 'Дизайн сайта', fun: 'Дополнительные команды' };
+const PERMS = { ban: 'Банить и мутить', unban: 'Разбанивать и снимать мут', grant: 'Выдавать и снимать Админ+', promo: 'Промокоды', server: 'Серверы', design: 'Дизайн сайта' };
 const DEPUTY_PERMS = ['ban', 'unban', 'grant']; // что зам умеет «из коробки»
 const isFull = u => u.steam_id === OWNER || (!!u.deputy && !u.staff); // владелец и назначенные замы — всё одинаково; штатные админы игры (u.staff) — только DEPUTY_PERMS
 const permsOf = u => isFull(u) ? Object.keys(PERMS)
@@ -767,13 +767,6 @@ const glentToggle = async want => { // want: true/false — явно, undefined 
   const until = Date.now() + GLENT_MS; await glentSet(until);
   return { on: true, left: GLENT_MS, until };
 };
-// «Дополнительные команды» в админ-панели сайта: те же смешные команды, что и в Telegram-боте
-app.post('/api/admin/fun', can('fun'), async (req, res) => {
-  try {
-    if (String(req.body.cmd || '') !== 'glent') return bad(res, 'Неизвестная команда');
-    res.json({ ok: true, ...(await glentToggle(typeof req.body.on === 'boolean' ? req.body.on : undefined)) });
-  } catch (e) { console.error('fun:', e.message); res.status(500).json({ error: 'Ошибка базы, попробуйте позже' }); }
-});
 app.get('/api/glent', async (req, res) => {
   const left = Math.max(0, (await glentUntil()) - Date.now());
   res.set('Cache-Control', 'no-store').json({ on: left > 0, left });
@@ -1369,6 +1362,7 @@ if (process.env.TG_BOT_TOKEN) {
     if (own) k.text('📋 Помощники', 'admlist');
     if (adm) k.row();
     if (own) k.text('🔄 Перезагрузить сервер', 'do:restart').row();
+    if (own) k.text('🎭 Дополнительные команды', 'fun').row();
     k.text('⬅️ Назад', 'home');
     return send('🛠 Админ панель' + (st.limited ? '\n\nДругих админов наказывать нельзя.' : ''), k);
   }
@@ -1381,6 +1375,31 @@ if (process.env.TG_BOT_TOKEN) {
   bot.callbackQuery('ap', async ctx => {
     await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id));
     try { await openPanel(ctx, false); } catch (e) { console.error('tg panel:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  // --- «Дополнительные команды» (только владельцы): смешные команды. Новая команда = строка в FUN + состояние в FUN_LEFT + действие в FUN_DO ---
+  const FUN = [{ id: 'glent', cmd: '/глент', title: '💥 Взрывы на сайте', desc: 'взрывы на весь экран, летающие фигурки, переливающийся фон и пляшущие кнопки у всех посетителей сайта. Включается на 24 часа, потом гаснет сама.' }];
+  const FUN_LEFT = { glent: async () => Math.max(0, (await glentUntil()) - Date.now()) }; // сколько ещё действует (мс), 0 = выключена
+  const FUN_DO = { glent: () => glentToggle() };
+  const funScreen = async ctx => {
+    const back = new InlineKeyboard().text('⬅️ Назад', 'ap');
+    if (!isOwner(ctx)) return show(ctx, 'Нет доступа', back);
+    const k = new InlineKeyboard(), lines = [];
+    for (const c of FUN) {
+      const left = await FUN_LEFT[c.id](), on = left > 0, h = Math.floor(left / 36e5), m = Math.floor(left % 36e5 / 6e4);
+      lines.push(`${c.title}  ${c.cmd}\n${c.desc}\nСейчас: ${on ? `включена, осталось ${h ? h + ' ч ' : ''}${m} мин` : 'выключена'}`);
+      k.text(`${on ? '🔇 Выключить' : '▶️ Включить'} ${c.cmd}`, 'fun:' + c.id).row();
+    }
+    return show(ctx, '🎭 Дополнительные команды\n\n' + lines.join('\n\n') + '\n\nТе же команды можно писать в чат: /глент', k.text('⬅️ Назад', 'ap'));
+  };
+  bot.command('fun', async ctx => { try { await funScreen(ctx); } catch (e) { console.error('tg fun:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); } });
+  bot.callbackQuery('fun', async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    try { await funScreen(ctx); } catch (e) { console.error('tg fun:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^fun:(glent)$/, async ctx => {
+    if (!isOwner(ctx)) return ctx.answerCallbackQuery({ text: 'Нет доступа', show_alert: true }).catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => {});
+    try { await FUN_DO[ctx.match[1]](); await funScreen(ctx); } catch (e) { console.error('tg fun do:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
   bot.callbackQuery('cx', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id)); await ctx.editMessageText('Отменено').catch(() => {}); });
   bot.callbackQuery(/^in:(promo|vip|adminkey|ban|unban|mute|unmute|access|redeem)$/, async ctx => {
