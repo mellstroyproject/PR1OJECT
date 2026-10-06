@@ -729,6 +729,16 @@ function applyTheme(name,save){
   if(save!==false){LS.set('theme',name);LS.set('themePick',1)}
   document.querySelectorAll('.theme-btn').forEach(b=>b.classList.toggle('on',b.dataset.t===name));
 }
+// уведомления бота владельцу в Telegram (промокоды и покупка Админ+) — видно только владельцу
+function notifyCard(){
+  const u=st.user;if(!u||!u.isOwner||!u.ntf)return '';
+  const row=(k,t,d)=>`<div class="set-card"><div><div class="set-name">${t}</div><div class="stat">${d}</div></div><button class="${u.ntf[k]?'ok':'join'}" onclick="toggleNtf('${k}',${!u.ntf[k]})">${u.ntf[k]?'Включены — выключить':'Выключены — включить'}</button></div>`;
+  return row('promo','Уведомления: новые промокоды','Бот пришлёт сообщение в Telegram, когда кто-то создаст промокод на сайте.')+row('buy','Уведомления: покупка админки','Бот пришлёт сообщение в Telegram, когда кто-то купит Админ+ на сайте.');
+}
+async function toggleNtf(k,on){
+  try{const r=await api('admin/notify',{kind:k,on});st.user.ntf={promo:r.promo,buy:r.buy};draw()}
+  catch(e){uiAlert(e.message,'Не получилось')}
+}
 function themeCard(){
   const cur=document.documentElement.dataset.theme||'blue';
   return `<div class="set-card col"><div class="set-name">Тема оформления</div><div class="themes">${Object.entries(THEMES).map(([k,[n,g]])=>`<button class="theme-btn${k===cur?' on':''}" data-t="${k}" onclick="applyTheme('${k}')"><i style="background:${g}"></i>${n}</button>`).join('')}</div></div>`;
@@ -787,6 +797,7 @@ function view(){
      <div class="set-card"><div class="set-ava" style="${u.avatar?`background-image:url('${u.avatar}')`:''}">${u.avatar?'':esc((u.name||'?').trim().charAt(0).toUpperCase())}</div>
        <div><div class="set-name">${esc(u.name||'Игрок')}${u.role?`<span class="admin-badge">${u.role}</span>`:''}</div><div class="stat">SteamID: ${esc(u.id)}</div><div class="stat">Баланс: ${(u.coins||0).toFixed(2)}</div></div></div>
      ${themeCard()}
+     ${notifyCard()}
      ${settingsSkins()}
      <div class="set-card"><div><div class="set-name">Аккаунт</div><div class="stat">Выйти из аккаунта на этом устройстве. Вернуться можно в любой момент через Steam.</div></div>
        <button class="out-btn" onclick="logout()">${I('out')}Выйти из аккаунта</button></div>`;
