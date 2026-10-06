@@ -898,7 +898,7 @@ function adminOwnerSections(){
      <input id="pMax" type="number" min="0" placeholder="Лимит активаций (0 = без лимита)" aria-label="Лимит">
      <button class="ok" onclick="createPromo()">Создать</button>${msg('promo','promoMsgA')}</div>
    <table><tr><th>Код</th><th>Награда</th><th>Активаций</th><th></th></tr>${promos.map(p=>`<tr><td>${p.code}</td><td>${+p.admin_days>=0?'Админ+ '+(+p.admin_days?p.admin_days+' дн.':'навсегда'):+p.vip_days?'VIP '+p.vip_days+' дн.':'+'+p.coins}</td><td>${p.used||0}${p.max?' / '+p.max:' / ∞'}</td><td>${p.builtin?'<span class="stat">встроенный</span>':`<button class="join" onclick="editPromo('${p.code}')">Изменить</button> <button class="join del" onclick="deletePromo('${p.code}')">Удалить</button>`}</td></tr>`).join('')}</table>`;
-  return (can('grant')?grantBlock:'')+(st.user.full?gaBlock+vipBlock:'')+(st.user.isOwner?deputyBlock+permsAdmin():'')+(can('promo')?promoBlock:'')+(can('design')?designAdmin():'')+(can('fun')?funAdmin():'');
+  return (can('grant')?grantBlock:'')+(st.user.full?gaBlock+vipBlock:'')+(st.user.isOwner?deputyBlock+permsAdmin():'')+(can('promo')?promoBlock:'')+(can('design')?designAdmin():'');
 }
 function adminAction(verb){
   const t=($('#adminTarget')?.value||'').trim();
@@ -1740,8 +1740,8 @@ async function agReset(){
 <script>
 // ===== Права доступа и дизайн сайта =====
 function can(p){return !!(st.user&&(st.user.isOwner||(st.user.perms||[]).includes(p)))}
-const PERM_LABELS={ban:'Банить и мутить',unban:'Разбанивать и снимать мут',grant:'Выдавать и снимать Админ+',promo:'Промокоды',server:'Серверы',design:'Дизайн сайта',fun:'Дополнительные команды'};
-MID.perms='#permMsg';MID.fun='#funMsg';MID.design='#designMsg';MID.gaedit='#gaeMsg';
+const PERM_LABELS={ban:'Банить и мутить',unban:'Разбанивать и снимать мут',grant:'Выдавать и снимать Админ+',promo:'Промокоды',server:'Серверы',design:'Дизайн сайта'};
+MID.perms='#permMsg';MID.design='#designMsg';MID.gaedit='#gaeMsg';
 function editAdmin(id){
   const a=(SV.admins||[]).find(x=>x.id===id);if(!a)return;
   $('#gaeId').value=a.id;$('#gaeName').value=a.name||'';$('#gaeFlags').value=a.flags||'';$('#gaeImm').value=a.imm;
@@ -1792,27 +1792,6 @@ function designAdmin(){
    <p class="stat" style="margin-bottom:10px">Тема по умолчанию для всех посетителей. Игроки, выбравшие тему в настройках, остаются со своей.${mine?` <a class="lnk" href="#" onclick="resetMyTheme();return false">У вас в этом браузере выбрана личная тема — сбросить, чтобы видеть тему сайта</a>`:''}</p>`;
 }
 
-// --- «Дополнительные команды»: смешные команды (как в Telegram-боте). Новая команда = ещё одна строка в FUN_CMDS и обработчик на сервере (/api/admin/fun) ---
-const FUN_CMDS=[{id:'glent',cmd:'/глент',title:'Взрывы на сайте',desc:'Взрывы на весь экран, летающие фигурки, переливающийся фон и пляшущие кнопки у всех посетителей. Включается на 24 часа, потом гаснет сама. Та же команда есть в Telegram-боте.'}];
-function funLeft(id){const g=window.NX_GLENT;return id==='glent'&&g&&g.on?Math.max(0,g.until-Date.now()):0}
-function funAdmin(){
-  const m=(st.adminMsg||{}).fun;
-  const rows=FUN_CMDS.map(c=>{
-    const left=funLeft(c.id),on=left>0,h=Math.floor(left/36e5),mi=Math.floor(left%36e5/6e4);
-    return `<tr><td><b>${esc(c.cmd)}</b></td><td>${esc(c.title)}<div class="stat">${esc(c.desc)}</div></td>
-     <td class="${on?'ok':''}">${on?'включена, осталось '+(h?h+' ч ':'')+mi+' мин':'выключена'}</td>
-     <td><button class="${on?'join del':'ok'}" onclick="funToggle('${c.id}',${!on})">${on?'Выключить':'Включить'}</button></td></tr>`}).join('');
-  return `<h2 class="sec">Дополнительные команды</h2>
-   <table><tr><th>Команда</th><th>Что делает</th><th>Состояние</th><th></th></tr>${rows}</table>
-   <div id="funMsg" class="promo-msg ${m?(m.ok?'ok':'err'):''}">${m?esc(m.text):''}</div>`;
-}
-async function funToggle(id,on){
-  try{
-    const r=await api('admin/fun',{cmd:id,on});
-    if(id==='glent'){window.NX_GLENT={on:r.on,until:Date.now()+r.left};if(window.nxGlentPoll)window.nxGlentPoll()}
-    adminOk('fun',on?'Команда '+FUN_CMDS.find(c=>c.id===id).cmd+' включена на 24 часа':'Команда '+FUN_CMDS.find(c=>c.id===id).cmd+' выключена');
-  }catch(e){adminMsgNow('#funMsg',e.message)}
-}
 async function setSiteTheme(k){
   try{await api('admin/design',{theme:k});SITE.theme=k;if(!personalTheme())applyTheme(k,false);adminOk('design','Тема сайта: '+THEMES[k][0])}
   catch(e){adminMsgNow('#designMsg',e.message)}
@@ -1963,13 +1942,9 @@ html.nx-party .fx i{opacity:.75!important}
     clearTimeout(pollT);
     try{
       const r=await (await fetch('/api/glent',{cache:'no-store'})).json();
-      const was=window.NX_GLENT&&window.NX_GLENT.on;
-      window.NX_GLENT={on:r.on,until:Date.now()+r.left};
-      if(was!==undefined&&was!==r.on&&typeof st!=='undefined'&&st.page==='admin'&&typeof draw==='function')draw();
       if(r.on){start();pollT=setTimeout(poll,Math.min(r.left+300,20000))}else stop();
     }catch(e){}
   }
-  window.nxGlentPoll=poll;
   setInterval(poll,20000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll()});
   poll();
