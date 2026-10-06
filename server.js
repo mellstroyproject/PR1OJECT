@@ -1587,6 +1587,7 @@ if (process.env.TG_BOT_TOKEN) {
 }
 
 // страницы сайта имеют свои адреса (/shop, /leaders, /profile/<SteamID64> …) — все отдают тот же index.html, дальше работает маршрутизация в браузере
+app.get('/glent.mp3', (req, res) => res.sendFile(path.join(__dirname, 'glent.mp3'), { maxAge: '7d' })); // песня режима /глент (файл glent.mp3 лежит рядом с server.js)
 app.get(['/', '/shop', '/leaders', '/bans', '/rules', '/settings', '/admin', '/skins', '/public', '/profile/:id'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 init().then(() => app.listen(process.env.PORT || 3000, () => console.log('ok')))
   .catch(e => { console.error('DB error:', e.message); process.exit(1); });
