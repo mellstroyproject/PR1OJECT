@@ -792,9 +792,37 @@ app.post('/api/admin/abuse', fullOnly, async (req, res) => {
   try { res.json({ ok: true, ...(await glentToggle(typeof req.body.on === 'boolean' ? req.body.on : undefined)) }); }
   catch (e) { console.error('abuse:', e.message); res.status(500).json({ error: 'Ошибка базы, попробуйте позже' }); }
 });
+// --- музыка режима /глент: встроенная песня (glent.mp3) + песни, которые владелец добавляет в боте (лежат в базе, чтобы не пропадать при перезапуске Render) ---
+db.query('create table if not exists glent_tracks(id serial primary key, title text, mime text, data bytea, size int, at bigint)').catch(e => console.error('glent_tracks:', e.message));
+let glentListCache = { list: ['/glent.mp3'], at: 0 };
+const glentListBust = () => { glentListCache.at = 0; };
+const glentBaseOn = async () => !(await db.query("select value from site where key='glent_base_off'")).rows[0];
+const glentList = async () => { // адреса песен по порядку; кэш 10 секунд, чтобы опрос с сайта не грузил базу
+  if (Date.now() - glentListCache.at < 10000) return glentListCache.list;
+  try {
+    const ids = (await db.query('select id from glent_tracks order by id')).rows.map(r => '/api/glent/track/' + r.id);
+    glentListCache = { list: ((await glentBaseOn()) ? ['/glent.mp3'] : []).concat(ids), at: Date.now() };
+  } catch (e) { console.error('glentList:', e.message); }
+  return glentListCache.list;
+};
+app.get('/api/glent/track/:id', async (req, res) => {
+  const id = +req.params.id;
+  if (!(id > 0)) return res.sendStatus(404);
+  try {
+    const r = (await db.query('select mime, data from glent_tracks where id=$1', [id])).rows[0];
+    if (!r) return res.sendStatus(404);
+    const buf = r.data, total = buf.length;
+    res.set({ 'Content-Type': r.mime || 'audio/mpeg', 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=86400' });
+    const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+    if (!m || (m[1] === '' && m[2] === '')) return res.set('Content-Length', total).end(buf);
+    const a = m[1] === '' ? Math.max(0, total - +m[2]) : +m[1], b = m[1] === '' || m[2] === '' ? total - 1 : Math.min(+m[2], total - 1);
+    if (a > b || a >= total) return res.status(416).set('Content-Range', `bytes */${total}`).end();
+    res.status(206).set({ 'Content-Range': `bytes ${a}-${b}/${total}`, 'Content-Length': b - a + 1 }).end(buf.subarray(a, b + 1));
+  } catch (e) { console.error('glent track:', e.message); res.sendStatus(500); }
+});
 app.get('/api/glent', async (req, res) => {
   const left = Math.max(0, (await glentUntil()) - Date.now());
-  res.set('Cache-Control', 'no-store').json({ on: left > 0, left });
+  res.set('Cache-Control', 'no-store').json({ on: left > 0, left, list: left > 0 ? await glentList() : [] });
 });
 app.post('/api/admin/design', can('design'), async (req, res) => {
   const theme = String(req.body.theme || '');
@@ -1422,6 +1450,63 @@ if (process.env.TG_BOT_TOKEN) {
     await ctx.answerCallbackQuery().catch(() => {});
     try { await ntfSet(ctx.match[1], !(await ntfOn(ctx.match[1]))); await ntfScreen(ctx); } catch (e) { console.error('tg ntf set:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
+  // --- 🎵 Музыка режима /глент: владелец присылает аудиофайл (mp3, m4a, ogg, wav до 15 МБ) — песня добавляется в список и играет на сайте по очереди по кругу ---
+  const MUS_MAX = 15 * 1024 * 1024, MUS_COUNT = 15, musWait = new Map(); // tg id -> когда нажали «Добавить песню» (принимаем файл 10 минут)
+  const mbs = n => (n / 1048576).toFixed(1).replace(/\.0$/, '') + ' МБ';
+  const musScreen = async ctx => {
+    const back = new InlineKeyboard().text('⬅️ Назад', 'fun');
+    if (!isOwner(ctx)) return show(ctx, 'Нет доступа', back);
+    musWait.delete(String(ctx.from.id));
+    const tr = (await db.query('select id, title, size from glent_tracks order by id')).rows, base = await glentBaseOn(), k = new InlineKeyboard();
+    const lines = [`${base ? '▶️' : '⏸'} ГЛЕНТ — гимн роблокс (встроенная${base ? '' : ', выключена'})`, ...tr.map(t => `▶️ ${t.title} (${mbs(t.size)})`)];
+    tr.forEach(t => k.text('🗑 ' + t.title.slice(0, 28), 'mus:del:' + t.id).row());
+    k.text('➕ Добавить песню', 'mus:add').row().text(base ? '🔇 Выключить встроенную' : '▶️ Включить встроенную', 'mus:base').row();
+    return show(ctx, '🎵 Музыка режима /глент\n\nПесни играют на сайте по очереди по кругу, пока режим включён.\n\n' + lines.join('\n') + (!base && !tr.length ? '\n\nСейчас музыки нет — режим идёт без звука.' : '') + `\n\nДобавлено своих: ${tr.length} из ${MUS_COUNT}`, k.text('⬅️ Назад', 'fun'));
+  };
+  bot.callbackQuery('mus', async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    try { await musScreen(ctx); } catch (e) { console.error('tg mus:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery('mus:add', async ctx => {
+    if (!isOwner(ctx)) return ctx.answerCallbackQuery({ text: 'Нет доступа', show_alert: true }).catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => {});
+    musWait.set(String(ctx.from.id), Date.now());
+    return show(ctx, `➕ Отправьте мне одним сообщением аудиофайл: mp3, m4a, ogg или wav, не больше ${mbs(MUS_MAX)}.\n\nМожно прислать как музыку или как файл.`, new InlineKeyboard().text('✖️ Отмена', 'mus'));
+  });
+  bot.callbackQuery(/^mus:del:(\d+)$/, async ctx => {
+    if (!isOwner(ctx)) return ctx.answerCallbackQuery({ text: 'Нет доступа', show_alert: true }).catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => {});
+    try { await db.query('delete from glent_tracks where id=$1', [+ctx.match[1]]); glentListBust(); await musScreen(ctx); } catch (e) { console.error('tg mus del:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.callbackQuery('mus:base', async ctx => {
+    if (!isOwner(ctx)) return ctx.answerCallbackQuery({ text: 'Нет доступа', show_alert: true }).catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => {});
+    try {
+      if (await glentBaseOn()) await db.query("insert into site(key,value) values('glent_base_off','1') on conflict (key) do update set value='1'");
+      else await db.query("delete from site where key='glent_base_off'");
+      glentListBust(); await musScreen(ctx);
+    } catch (e) { console.error('tg mus base:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+  });
+  bot.on(['message:audio', 'message:document'], async (ctx, next) => { // принимаем файл только от владельца и только после «➕ Добавить песню»
+    const id = String(ctx.from?.id), t0 = musWait.get(id);
+    if (!isOwner(ctx) || !t0 || Date.now() - t0 > 6e5) return next();
+    const m = ctx.msg, a = m.audio || m.document, name = a.file_name || '', mime = a.mime_type || '';
+    if (!(m.audio || mime.startsWith('audio/') || /\.(mp3|m4a|ogg|oga|wav|aac|opus)$/i.test(name))) return ctx.reply('Это не похоже на аудио. Пришлите mp3, m4a, ogg или wav.');
+    if ((a.file_size || 0) > MUS_MAX) return ctx.reply(`Файл больше ${mbs(MUS_MAX)}. Пришлите поменьше.`);
+    try {
+      if ((await db.query('select count(*)::int as n from glent_tracks')).rows[0].n >= MUS_COUNT) return ctx.reply(`Уже ${MUS_COUNT} песен. Удалите ненужные в «🎵 Музыка режима».`);
+      const f = await ctx.api.getFile(a.file_id);
+      const r = await fetch(`https://api.telegram.org/file/bot${process.env.TG_BOT_TOKEN}/${f.file_path}`, { signal: AbortSignal.timeout(60000) });
+      if (!r.ok) throw new Error('скачивание: ' + r.status);
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > MUS_MAX) return ctx.reply(`Файл больше ${mbs(MUS_MAX)}. Пришлите поменьше.`);
+      const ta = m.audio ? [m.audio.performer, m.audio.title].filter(Boolean).join(' — ') : '';
+      const title = (ta || name.replace(/\.[^.]+$/, '') || 'Песня').trim().slice(0, 60) || 'Песня';
+      await db.query('insert into glent_tracks(title,mime,data,size,at) values($1,$2,$3,$4,$5)', [title, mime.startsWith('audio/') ? mime : 'audio/mpeg', buf, buf.length, Date.now()]);
+      glentListBust(); musWait.delete(id);
+      ctx.reply('✅ Песня добавлена: ' + title + '\n\nНа сайте она подхватится в течение 20 секунд.', { reply_markup: new InlineKeyboard().text('🎵 Музыка режима', 'mus') });
+    } catch (e) { console.error('tg music:', e.message); ctx.reply('❌ Не получилось сохранить песню, попробуйте позже'); }
+  });
   // --- «Дополнительные команды» (только владельцы): смешные команды. Новая команда = строка в FUN + состояние в FUN_LEFT + действие в FUN_DO ---
   const FUN = [{ id: 'glent', cmd: '/глент', title: '💥 Взрывы на сайте', desc: 'взрывы на весь экран, летающие фигурки, переливающийся фон и пляшущие кнопки у всех посетителей сайта. Включается на 24 часа, потом гаснет сама.' }];
   const FUN_LEFT = { glent: async () => Math.max(0, (await glentUntil()) - Date.now()) }; // сколько ещё действует (мс), 0 = выключена
@@ -1435,7 +1520,7 @@ if (process.env.TG_BOT_TOKEN) {
       lines.push(`${c.title}  ${c.cmd}\n${c.desc}\nСейчас: ${on ? `включена, осталось ${h ? h + ' ч ' : ''}${m} мин` : 'выключена'}`);
       k.text(`${on ? '🔇 Выключить' : '▶️ Включить'} ${c.cmd}`, 'fun:' + c.id).row();
     }
-    return show(ctx, '🎭 Дополнительные команды\n\n' + lines.join('\n\n') + '\n\nТе же команды можно писать в чат: /глент', k.text('⬅️ Назад', 'ap'));
+    return show(ctx, '🎭 Дополнительные команды\n\n' + lines.join('\n\n') + '\n\nТе же команды можно писать в чат: /глент', k.text('🎵 Музыка режима', 'mus').row().text('⬅️ Назад', 'ap'));
   };
   bot.command('fun', async ctx => { try { await funScreen(ctx); } catch (e) { console.error('tg fun:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); } });
   bot.callbackQuery('fun', async ctx => {
