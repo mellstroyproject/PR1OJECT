@@ -751,9 +751,13 @@ app.post('/api/admin/perms', level('owner'), async (req, res) => {
   res.json({ ok: true });
 });
 const THEME_KEYS = ['blue', 'red', 'yellow', 'green', 'rgb'];
-app.get('/api/site', async (req, res) => { // тема сайта по умолчанию — для всех посетителей
-  try { const r = (await db.query("select value from site where key='theme'")).rows[0]; res.json({ theme: r && THEME_KEYS.includes(r.value) ? r.value : 'red' }); }
-  catch (e) { console.error('site:', e.message); res.json({ theme: 'red' }); }
+app.get('/api/site', async (req, res) => { // тема сайта по умолчанию и ссылка на чекер — для всех посетителей
+  try {
+    const rows = (await db.query("select key, value from site where key in ('theme','checker_url')")).rows, m = {};
+    rows.forEach(r => { m[r.key] = r.value; });
+    res.json({ theme: THEME_KEYS.includes(m.theme) ? m.theme : 'red', checkerUrl: m.checker_url || '' });
+  }
+  catch (e) { console.error('site:', e.message); res.json({ theme: 'red', checkerUrl: '' }); }
 });
 // --- взрывы на сайте: включаются/выключаются командой /глент (/glent) в Telegram-боте, сами гаснут через 24 часа ---
 const GLENT_MS = 24 * 36e5;
@@ -825,6 +829,12 @@ app.get('/api/glent', async (req, res) => {
   res.set('Cache-Control', 'no-store').json({ on: left > 0, left, list: left > 0 ? await glentList() : [] });
 });
 app.post('/api/admin/design', can('design'), async (req, res) => {
+  if (req.body.checkerUrl !== undefined) { // ссылка на чекер: пусто = убрать блок из настроек
+    const u = String(req.body.checkerUrl || '').trim();
+    if (u && (u.length > 500 || !/^https?:\/\/[^\s<>"']+$/i.test(u))) return bad(res, 'Ссылка должна начинаться с http:// или https:// и не содержать пробелов');
+    await db.query("insert into site(key,value) values('checker_url',$1) on conflict (key) do update set value=excluded.value", [u]);
+    return res.json({ ok: true });
+  }
   const theme = String(req.body.theme || '');
   if (!THEME_KEYS.includes(theme)) return bad(res, 'Неизвестная тема');
   await db.query("insert into site(key,value) values('theme',$1) on conflict (key) do update set value=excluded.value", [theme]);
