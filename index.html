@@ -1932,7 +1932,7 @@ html.nx-party .fx i{opacity:.75!important}
     cx.globalCompositeOperation='source-over';
   }
   const tap=e=>boom(e.clientX,e.clientY,rnd(1,1.5));
-  let keep=0,au=null,mb=null,muted=false;
+  let keep=0,au=null,mb=null,muted=false,list=[],idx=0,fails=0;
   try{muted=localStorage.getItem('nxMute')==='1'}catch(e){}
   // песня режима /глент: играет по кругу, пока режим включён. Браузеры не разрешают звук без действия посетителя — тогда она запустится при первом клике/тапе/клавише
   function unlock(){removeEventListener('pointerup',unlock,true);removeEventListener('keydown',unlock,true);tryPlay()}
@@ -1941,18 +1941,26 @@ html.nx-party .fx i{opacity:.75!important}
     const p=au.play();
     if(p&&p.catch)p.catch(()=>{addEventListener('pointerup',unlock,true);addEventListener('keydown',unlock,true)});
   }
+  function playAt(i){if(!au||!list.length)return;idx=((i%list.length)+list.length)%list.length;au.src=list[idx];tryPlay()}
+  function syncAudio(){ // список песен мог поменяться (владелец добавил или удалил): подхватываем без перезагрузки
+    if(!on)return;
+    if(!au){if(list.length)audioStart();return}
+    if(!list.length)return audioStop();
+    au.loop=list.length===1;
+  }
   function audioStart(){
-    if(au)return;
-    au=new Audio('/glent.mp3');au.loop=true;au.volume=.6;au.muted=muted;
+    if(au||!list.length)return;
+    au=new Audio();au.volume=.6;au.muted=muted;au.loop=list.length===1;
+    au.onended=()=>playAt(idx+1);au.onerror=()=>{if(++fails<=list.length+1)playAt(idx+1)};au.onplaying=()=>{fails=0};
     mb=document.createElement('button');mb.id='nx-mute';mb.type='button';
     mb.style.cssText='position:fixed;left:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:2147483001;width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.55);color:#fff;font-size:20px;line-height:1;cursor:pointer;animation:none;padding:0';
     const lab=()=>{mb.textContent=muted?'🔇':'🔊';mb.title=mb.ariaLabel=muted?'Включить звук':'Выключить звук'};lab();
     mb.onclick=()=>{muted=!muted;au.muted=muted;lab();try{localStorage.setItem('nxMute',muted?'1':'0')}catch(e){}if(!muted)tryPlay()};
-    document.body.appendChild(mb);tryPlay();
+    document.body.appendChild(mb);playAt(0);
   }
   function audioStop(){
     removeEventListener('pointerup',unlock,true);removeEventListener('keydown',unlock,true);
-    if(au){au.pause();au=null}if(mb){mb.remove();mb=null}
+    if(au){au.onended=au.onerror=au.onplaying=null;au.pause();au=null}if(mb){mb.remove();mb=null}
   }
   document.addEventListener('visibilitychange',()=>{if(!au)return;document.hidden?au.pause():tryPlay()});
   function party(){ // переливающийся фон: включаем живую RGB-тему сайта, кнопки пляшут по CSS-классу
@@ -1989,7 +1997,7 @@ html.nx-party .fx i{opacity:.75!important}
       const was=!!(window.NX_GLENT&&window.NX_GLENT.on);
       window.NX_GLENT={on:r.on,until:Date.now()+r.left}; // состояние для кнопки «админ абуз» в админ-панели
       if(was!==r.on&&typeof st!=='undefined'&&st.page==='admin'&&typeof draw==='function')draw();
-      if(r.on){start();pollT=setTimeout(poll,Math.min(r.left+300,20000))}else stop();
+      if(r.on){list=Array.isArray(r.list)?r.list:['/glent.mp3'];start();syncAudio();pollT=setTimeout(poll,Math.min(r.left+300,20000))}else stop();
     }catch(e){}
   }
   window.nxGlentPoll=poll;
