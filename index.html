@@ -1932,7 +1932,29 @@ html.nx-party .fx i{opacity:.75!important}
     cx.globalCompositeOperation='source-over';
   }
   const tap=e=>boom(e.clientX,e.clientY,rnd(1,1.5));
-  let keep=0;
+  let keep=0,au=null,mb=null,muted=false;
+  try{muted=localStorage.getItem('nxMute')==='1'}catch(e){}
+  // песня режима /глент: играет по кругу, пока режим включён. Браузеры не разрешают звук без действия посетителя — тогда она запустится при первом клике/тапе/клавише
+  function unlock(){removeEventListener('pointerup',unlock,true);removeEventListener('keydown',unlock,true);tryPlay()}
+  function tryPlay(){
+    if(!au||document.hidden)return;
+    const p=au.play();
+    if(p&&p.catch)p.catch(()=>{addEventListener('pointerup',unlock,true);addEventListener('keydown',unlock,true)});
+  }
+  function audioStart(){
+    if(au)return;
+    au=new Audio('/glent.mp3');au.loop=true;au.volume=.6;au.muted=muted;
+    mb=document.createElement('button');mb.id='nx-mute';mb.type='button';
+    mb.style.cssText='position:fixed;left:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:2147483001;width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.55);color:#fff;font-size:20px;line-height:1;cursor:pointer;animation:none;padding:0';
+    const lab=()=>{mb.textContent=muted?'🔇':'🔊';mb.title=mb.ariaLabel=muted?'Включить звук':'Выключить звук'};lab();
+    mb.onclick=()=>{muted=!muted;au.muted=muted;lab();try{localStorage.setItem('nxMute',muted?'1':'0')}catch(e){}if(!muted)tryPlay()};
+    document.body.appendChild(mb);tryPlay();
+  }
+  function audioStop(){
+    removeEventListener('pointerup',unlock,true);removeEventListener('keydown',unlock,true);
+    if(au){au.pause();au=null}if(mb){mb.remove();mb=null}
+  }
+  document.addEventListener('visibilitychange',()=>{if(!au)return;document.hidden?au.pause():tryPlay()});
   function party(){ // переливающийся фон: включаем живую RGB-тему сайта, кнопки пляшут по CSS-классу
     const r=document.documentElement;r.classList.add('nx-party');
     if(r.dataset.theme!=='rgb'&&typeof applyTheme==='function')applyTheme('rgb',false);
@@ -1945,7 +1967,7 @@ html.nx-party .fx i{opacity:.75!important}
     }
   }
   function start(){
-    if(on||reduce)return;on=true;party();keep=setInterval(party,1500); // повторно, если другой код сайта сменил тему
+    if(on||reduce)return;on=true;party();audioStart();keep=setInterval(party,1500); // повторно, если другой код сайта сменил тему
     cv=document.createElement('canvas');cv.id='nx-boom';
     cv.style.cssText='position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2147483000';
     bv=document.createElement('canvas');bv.id='nx-fly';
@@ -1956,7 +1978,7 @@ html.nx-party .fx i{opacity:.75!important}
     last=0;nextAt=0;raf=requestAnimationFrame(frame);
   }
   function stop(){
-    if(!on)return;on=false;clearInterval(keep);unparty();cancelAnimationFrame(raf);
+    if(!on)return;on=false;clearInterval(keep);unparty();audioStop();cancelAnimationFrame(raf);
     removeEventListener('resize',size);removeEventListener('pointerdown',tap);
     cv.remove();bv.remove();fx=[];fl=[];flash=0;
   }
