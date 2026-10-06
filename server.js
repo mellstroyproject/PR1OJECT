@@ -157,6 +157,14 @@ app.get('/auth/steam/callback', async (req, res) => {
 
 // --- связка с Telegram-ботом: человек жмёт в боте «Войти через сайт» → открывается эта страница → вход через Steam → подтверждение → аккаунт привязан ---
 let tgNotify = () => {}, tgBotName = ''; // заполняются при запуске бота
+// --- уведомления владельцу в Telegram: кто-то создал промокод / купил Админ+ на сайте. Выключаются в боте (🔔 Уведомления) и в «Настройках» сайта ---
+let tgOwnerNotify = async () => {}; // заполняется при запуске бота: шлёт сообщение всем владельцам (TG_ADMINS)
+const NTF = { promo: 'ntf_promo', buy: 'ntf_buy' }; // в таблице site значение '0' = выключено, нет записи = включено
+const ntfOn = async kind => { try { const r = (await db.query('select value from site where key=$1', [NTF[kind]])).rows[0]; return !r || r.value !== '0'; } catch (e) { return true; } };
+const ntfGet = async () => ({ promo: await ntfOn('promo'), buy: await ntfOn('buy') });
+const ntfSet = (kind, on) => on ? db.query('delete from site where key=$1', [NTF[kind]])
+  : db.query("insert into site(key,value) values($1,'0') on conflict (key) do update set value='0'", [NTF[kind]]);
+const ownerNotify = (kind, text) => { ntfOn(kind).then(on => on && tgOwnerNotify(text)).catch(e => console.error('ownerNotify:', e.message)); }; // не ждём и не ломаем запрос, если Telegram недоступен
 const escH = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const linkPage = (title, text, btns = '') => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escH(title)}</title>
 <style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0e0f14;color:#e8e9ef;font:16px/1.5 system-ui,sans-serif}
@@ -212,6 +220,7 @@ app.get('/api/me', async (req, res) => {
   await refreshProfiles([u]); // если ника/аватарки нет — подтягиваем из Steam
   const out = pub(u);
   const P = out.perms;
+  if (u.steam_id === OWNER) out.ntf = await ntfGet();
   if (P.length) { // данные админ-панели отдаём только тем, кому они нужны по правам
     const g = {}, d = {}, owner = u.steam_id === OWNER;
     if (P.includes('grant')) { const rows = (await db.query('select * from users where grant_until>0')).rows; await refreshProfiles(rows);
@@ -377,6 +386,7 @@ app.post('/api/buy', level('user'), async (req, res) => {
       return res.status(500).json({ error: `Не удалось выдать ${key === 'plus' ? 'админку' : 'VIP'} в игре, монеты возвращены. Попробуйте позже.` });
     }
   }
+  if (key === 'plus' && req.u.steam_id !== OWNER) ownerNotify('buy', `🛡 Куплена админка на сайте\nИгрок: ${nick} (${req.u.steam_id})\nТариф: ${forever ? 'навсегда' : days + ' дн.'}\nЦена: ${cost} монет`);
   res.json({ ok: true });
 });
 // любой игрок может создать свой промокод: награда за активацию × число активаций списывается с его баланса сразу
@@ -394,6 +404,7 @@ app.post('/api/promo/create', level('user'), async (req, res) => {
     if (!ins.rowCount) { await c.query('rollback'); return bad(res, 'Такой промокод уже существует, придумайте другой'); }
     await c.query('update users set coins=coins-$1 where steam_id=$2', [cost, req.u.steam_id]);
     await c.query('commit');
+    if (req.u.steam_id !== OWNER) ownerNotify('promo', `🎟 Новый промокод на сайте\nКод: ${code}\nСоздал: ${req.u.name || 'Игрок'} (${req.u.steam_id})\nНаграда: ${coins} монет × ${max} активаций\nСписано с его баланса: ${cost}`);
     res.json({ ok: true, code, cost });
   } catch (e) { await c.query('rollback').catch(() => {}); console.error('promo-create:', e.message); res.status(500).json({ error: 'Не удалось создать промокод, попробуйте позже' }); }
   finally { c.release(); }
@@ -760,6 +771,15 @@ const glentSet = async until => {
   else await db.query("delete from site where key='glent'");
   glentCache = { until, at: Date.now() };
 };
+app.post('/api/admin/notify', async (req, res) => { // владелец включает/выключает уведомления бота о промокодах и покупках
+  const u = await getUser(req);
+  if (!u) return res.status(401).json({ error: 'Войдите через Steam' });
+  if (u.steam_id !== OWNER) return res.status(403).json({ error: 'Только владелец' });
+  const kind = String(req.body.kind || '');
+  if (!NTF[kind]) return bad(res, 'Неизвестный тип уведомлений');
+  try { await ntfSet(kind, !!req.body.on); res.json({ ok: true, ...(await ntfGet()) }); }
+  catch (e) { console.error('notify:', e.message); res.status(500).json({ error: 'Ошибка базы, попробуйте позже' }); }
+});
 const glentToggle = async want => { // want: true/false — явно, undefined — переключить
   const cur = (await glentUntil()) > Date.now(), on = typeof want === 'boolean' ? want : !cur;
   if (!on) { await glentSet(0); return { on: false, left: 0, until: 0 }; }
@@ -782,6 +802,7 @@ app.post('/api/admin/promo', can('promo'), async (req, res) => {
   if (!/^[\p{L}\p{N}_-]{2,32}$/u.test(code)) return bad(res, 'Код: 2–32 символа — буквы (в т.ч. русские), цифры, _ или -, без пробелов');
   if (!(coins > 0 && coins <= 100000)) return bad(res, 'Награда: число от 1 до 100 000');
   const r = await db.query('insert into promos(code,coins,max,by,at) values($1,$2,$3,$4,$5) on conflict do nothing', [code, coins, max, req.u.steam_id, Date.now()]);
+  if (r.rowCount && req.u.steam_id !== OWNER) ownerNotify('promo', `🎟 Промокод создан в админ-панели сайта\nКод: ${code}\nСоздал: ${req.u.name || 'Админ'} (${req.u.steam_id})\nНаграда: ${coins} монет, лимит активаций: ${max || 'без лимита'}`);
   r.rowCount ? res.json({ ok: true }) : bad(res, 'Такой код уже существует');
 });
 app.post('/api/admin/promo-delete', can('promo'), async (req, res) => {
@@ -1026,6 +1047,7 @@ if (process.env.TG_BOT_TOKEN) {
   tgNotify = (id, text) => bot.api.sendMessage(id, text, { reply_markup: new InlineKeyboard().text('👤 Мой аккаунт', 'me') }).catch(e => console.error('tg notify:', e.message));
   bot.api.getMe().then(m => { tgBotName = m.username || ''; }).catch(() => {});
   const TG_ADMINS = (process.env.TG_ADMINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  tgOwnerNotify = text => Promise.all(TG_ADMINS.map(id => bot.api.sendMessage(id, text, { reply_markup: new InlineKeyboard().text('🔔 Уведомления', 'ntf') }).catch(e => console.error('tg owner notify:', e.message))));
   const isOwner = ctx => TG_ADMINS.includes(String(ctx.from?.id)); // владельцы: из переменной TG_ADMINS в Render — могут всё
   const isTgAdmin = async ctx => isOwner(ctx) || !!(await db.query('select 1 from tg_admins where tg_id=$1', [String(ctx.from?.id)])).rowCount; // + помощники, получившие доступ по ключу
   const HELPER = { coins: 1000, vipDays: 30, max: 100 }; // лимиты для помощников (у владельцев лимитов нет)
@@ -1363,6 +1385,7 @@ if (process.env.TG_BOT_TOKEN) {
     if (adm) k.row();
     if (own) k.text('🔄 Перезагрузить сервер', 'do:restart').row();
     if (own) k.text('🎭 Дополнительные команды', 'fun').row();
+    if (own) k.text('🔔 Уведомления', 'ntf').row();
     k.text('⬅️ Назад', 'home');
     return send('🛠 Админ панель' + (st.limited ? '\n\nДругих админов наказывать нельзя.' : ''), k);
   }
@@ -1375,6 +1398,24 @@ if (process.env.TG_BOT_TOKEN) {
   bot.callbackQuery('ap', async ctx => {
     await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id));
     try { await openPanel(ctx, false); } catch (e) { console.error('tg panel:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  // --- 🔔 Уведомления владельцу: промокоды и покупки Админ+ на сайте (те же переключатели есть в «Настройках» сайта) ---
+  const NTF_TXT = { promo: '🎟 Новые промокоды на сайте', buy: '🛡 Покупка админки на сайте' };
+  const ntfScreen = async ctx => {
+    const back = new InlineKeyboard().text('⬅️ Назад', 'home');
+    if (!isOwner(ctx)) return show(ctx, 'Нет доступа', back);
+    const st = await ntfGet(), k = new InlineKeyboard();
+    Object.keys(NTF_TXT).forEach(n => k.text(`${st[n] ? '🔕 Выключить' : '🔔 Включить'}: ${NTF_TXT[n].slice(3)}`, 'ntf:' + n).row());
+    return show(ctx, '🔔 Уведомления\n\nБот пишет вам, когда кто-то на сайте создаёт промокод или покупает админку.\n\n' + Object.keys(NTF_TXT).map(n => `${NTF_TXT[n]}: ${st[n] ? 'включены' : 'выключены'}`).join('\n'), k.text('⬅️ Назад', 'home'));
+  };
+  bot.callbackQuery('ntf', async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    try { await ntfScreen(ctx); } catch (e) { console.error('tg ntf:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^ntf:(promo|buy)$/, async ctx => {
+    if (!isOwner(ctx)) return ctx.answerCallbackQuery({ text: 'Нет доступа', show_alert: true }).catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => {});
+    try { await ntfSet(ctx.match[1], !(await ntfOn(ctx.match[1]))); await ntfScreen(ctx); } catch (e) { console.error('tg ntf set:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
   // --- «Дополнительные команды» (только владельцы): смешные команды. Новая команда = строка в FUN + состояние в FUN_LEFT + действие в FUN_DO ---
   const FUN = [{ id: 'glent', cmd: '/глент', title: '💥 Взрывы на сайте', desc: 'взрывы на весь экран, летающие фигурки, переливающийся фон и пляшущие кнопки у всех посетителей сайта. Включается на 24 часа, потом гаснет сама.' }];
@@ -1456,6 +1497,7 @@ if (process.env.TG_BOT_TOKEN) {
     if (!u) { await db.query('delete from tg_links where tg_id=$1', [String(ctx.from.id)]); return openMe(ctx, fresh); }
     const k = new InlineKeyboard().text('🎟 Ввести промокод', 'in:redeem').text('🛒 Магазин', 'shop').row();
     if (SITE) k.url('🌐 Открыть сайт', SITE).row();
+    if (isOwner(ctx)) k.text('🔔 Уведомления', 'ntf').row();
     k.text('🔓 Отвязать', 'ul').text('⬅️ Назад', 'home');
     return send(`👤 ${u.name || 'Игрок'}\nSteam ID: ${steam}\n\n💰 Монет: ${Math.round(+u.coins * 100) / 100}\n👑 VIP: ${fmtUntil(u.prem_until)}\n🛡 Админ+: ${fmtUntil(Math.max(+u.plus_until, +u.grant_until))}`, k);
   }
