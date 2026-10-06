@@ -803,6 +803,7 @@ function view(){
        <button class="out-btn" onclick="logout()">${I('out')}Выйти из аккаунта</button></div>`;
   }
   if(st.page==='admin') return `<h1>Админ-панель<span class="admin-badge">${st.user.role}</span></h1>
+   ${st.user.full?abuseBlock():''}
    <div class="admin-grid">
      <div class="admin-card"><div class="n">${bans.filter(b=>b[3]).length}</div><div class="l">Активных банов</div></div>
      <div class="admin-card"><div class="n">${mutes.filter(m=>m[3]).length}</div><div class="l">Активных мутов</div></div>
@@ -813,6 +814,16 @@ function view(){
    </div>
    ${adminOwnerSections()}
    <p class="stat">Баны и муты сохраняются в базе и видны на странице «Баны». Кик, заморозка и другие действия прямо в игре требуют плагина на игровом сервере.</p>`;
+}
+// кнопка для замов (и владельца): «Запустить админ абуз» = команда /глент (взрывы на сайте на 24 часа, повторное нажатие — выключает)
+function abuseBlock(){
+  const g=window.NX_GLENT,left=g&&g.on?Math.max(0,g.until-Date.now()):0,on=left>0,hh=Math.floor(left/36e5),mm=Math.floor(left%36e5/6e4);
+  return `<div class="admin-tools"><button class="${on?'join del':'danger'}" onclick="abuseToggle(${!on})">${on?'⏹ Остановить админ абуз':'💥 Запустить админ абуз'}</button>
+    <span class="stat">${on?'Идёт у всех посетителей, сама выключится через '+(hh?hh+' ч ':'')+mm+' мин':'Взрывы, летающие фигурки, переливающийся фон и пляшущие кнопки у всех на сайте на 24 часа'}</span></div>`;
+}
+async function abuseToggle(on){
+  try{const r=await api('admin/abuse',{on});window.NX_GLENT={on:r.on,until:Date.now()+r.left};if(window.nxGlentPoll)window.nxGlentPoll();draw()}
+  catch(e){uiAlert(e.message,'Не получилось')}
 }
 function adminMsgNow(id,text){const e=$(id);if(e){e.textContent=text;e.className='promo-msg err'}}
 function adminOk(kind,text){st.adminMsg={[kind]:{ok:true,text}};draw()}
@@ -1953,9 +1964,13 @@ html.nx-party .fx i{opacity:.75!important}
     clearTimeout(pollT);
     try{
       const r=await (await fetch('/api/glent',{cache:'no-store'})).json();
+      const was=!!(window.NX_GLENT&&window.NX_GLENT.on);
+      window.NX_GLENT={on:r.on,until:Date.now()+r.left}; // состояние для кнопки «админ абуз» в админ-панели
+      if(was!==r.on&&typeof st!=='undefined'&&st.page==='admin'&&typeof draw==='function')draw();
       if(r.on){start();pollT=setTimeout(poll,Math.min(r.left+300,20000))}else stop();
     }catch(e){}
   }
+  window.nxGlentPoll=poll;
   setInterval(poll,20000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll()});
   poll();
