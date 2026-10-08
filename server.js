@@ -157,6 +157,7 @@ app.get('/auth/steam/callback', async (req, res) => {
 
 // --- связка с Telegram-ботом: человек жмёт в боте «Войти через сайт» → открывается эта страница → вход через Steam → подтверждение → аккаунт привязан ---
 let tgNotify = () => {}, tgBotName = ''; // заполняются при запуске бота
+let ttStart = null; // вход в лобби крестиков-ноликов по ссылке ?start=tt_КОД
 let bsStart = null; // вход в лобби морского боя по ссылке t.me/бот?start=bs_КОД (заполняется при запуске бота)
 // --- уведомления владельцу в Telegram: кто-то создал промокод / купил Админ+ на сайте. Выключаются в боте (🔔 Уведомления) и в «Настройках» сайта ---
 let tgOwnerNotify = async () => {}; // заполняется при запуске бота: шлёт сообщение всем владельцам (TG_ADMINS)
@@ -1082,6 +1083,9 @@ app.post('/api/skin', level('user'), async (req, res) => {
 let bs = null;
 try { bs = require('./battleship'); bs.site(app, getUser, { siteUrl: process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '', botName: () => tgBotName }); }
 catch (e) { console.error('battleship.js не подключён:', e.message); }
+let tt = null;
+try { tt = require('./tictactoe'); tt.site(app, getUser, { siteUrl: process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '', botName: () => tgBotName }); }
+catch (e) { console.error('tictactoe.js не подключён:', e.message); }
 
 // --- Telegram-бот: промокоды (webhook, работает в этом же сервере) ---
 // админ: /promo — создать код вручную; все остальные: кнопка «Получить промокод» (нужна подписка на канал)
@@ -1146,7 +1150,7 @@ if (process.env.TG_BOT_TOKEN) {
     return ['creator', 'administrator', 'member'].includes(m.status) || (m.status === 'restricted' && m.is_member);
   };
   const kb = (panel = true) => { // главное меню: канал, промокод, аккаунт, админ-панель
-    const k = new InlineKeyboard().url('📢 Подписаться на канал', CHANNEL_URL).row().text('🎁 Получить промокод', 'claim').row().text('⚓ Морской бой', 'bs');
+    const k = new InlineKeyboard().url('📢 Подписаться на канал', CHANNEL_URL).row().text('🎁 Получить промокод', 'claim').row().text('⚓ Морской бой', 'bs').row().text('❌⭕ Крестики-нолики', 'tt');
     return panel ? k.row().text('👤 Мой аккаунт', 'me').row().text('🛠 Админ панель', 'ap') : k;
   };
 
@@ -1190,7 +1194,7 @@ if (process.env.TG_BOT_TOKEN) {
   }
 
   const MENU_TEXT = () => '👋 Привет! Подпишитесь на канал и нажмите «Получить промокод» — получите случайный промокод: от 10 до 1000 монет, а с небольшим шансом — VIP.\n\n' + oddsText();
-  bot.command('start', ctx => { const m = /^bs_([A-Za-z0-9]{6})$/.exec(ctx.match || ''); if (m && bsStart) return bsStart(ctx, m[1].toUpperCase()); return ctx.reply(MENU_TEXT(), { reply_markup: kb() }); });
+  bot.command('start', ctx => { const m = /^bs_([A-Za-z0-9]{6})$/.exec(ctx.match || ''); if (m && bsStart) return bsStart(ctx, m[1].toUpperCase()); const t = /^tt_([A-Za-z0-9]{6})$/.exec(ctx.match || ''); if (t && ttStart) return ttStart(ctx, t[1].toUpperCase()); return ctx.reply(MENU_TEXT(), { reply_markup: kb() }); });
   bot.callbackQuery('claim', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); return claim(ctx); });
   bot.command(['bonus', 'getpromo'], claim);
 
@@ -1669,6 +1673,7 @@ if (process.env.TG_BOT_TOKEN) {
     } catch (e) { console.error('tg glent:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
   if (bs) { try { bsStart = bs.telegram({ bot, InlineKeyboard, show, botName: () => tgBotName, siteUrl: SITE }).start; } catch (e) { console.error('battleship telegram:', e.message); } }
+  if (tt) { try { ttStart = tt.telegram({ bot, InlineKeyboard, show, botName: () => tgBotName, siteUrl: SITE }).start; } catch (e) { console.error('tictactoe telegram:', e.message); } }
   bot.on('message:text', async ctx => { // ответ на вопрос админ-панели («Отправьте КОД МОНЕТЫ АКТИВАЦИИ…»); команды сюда не попадают
     const id = String(ctx.from.id), p = pending.get(id);
     if (!p) return;
