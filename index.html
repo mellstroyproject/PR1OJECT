@@ -217,6 +217,26 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
  opacity:clamp(0,calc(var(--e)*1.7 - .35),1);
  transform:translateY(calc((1 - var(--e))*160px)) scale(calc(.6 + var(--e)*.4)) rotate(calc((var(--q) - .5)*10deg))}
 @media not all{.reveal-bob{animation:none}.scroll-hint span{animation:none}}
+
+.ap{display:grid;grid-template-columns:270px minmax(0,1fr);gap:20px;align-items:start;margin:4px 0 20px}
+.ap-nav{position:sticky;top:16px;display:flex;flex-direction:column;gap:6px;background:var(--panel);border-radius:16px;padding:10px}
+.ap-tab{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px;border-radius:12px;color:var(--mut);background:transparent;border:1px solid transparent;transition:background .15s,color .15s,border-color .15s}
+.ap-tab:hover{background:var(--panel2);color:var(--tx)}
+.ap-tab.on{background:linear-gradient(135deg,rgba(var(--acc-rgb),.24),rgba(var(--acc-rgb),.06));border-color:rgba(var(--acc-rgb),.5);color:var(--tx)}
+.ap-ic{width:38px;height:38px;border-radius:10px;background:var(--panel2);display:grid;place-items:center;flex:none;transition:background .15s,color .15s}
+.ap-tab.on .ap-ic{background:var(--acc);color:var(--on-acc)}
+.ap-ic .ic{width:18px;height:18px}
+.ap-tab b{display:block;font-size:14px;color:inherit}
+.ap-tab small{display:block;font-size:12px;color:var(--mut);margin-top:2px;font-weight:400}
+.ap-body{min-width:0}
+.ap-body>section[hidden]{display:none}
+.ap-body>section>.sec:first-child{margin-top:0}
+.ap-body .admin-tools{border:1px solid var(--line);border-radius:16px;padding:20px}
+.ap-body .admin-tools input,.ap-body .admin-tools select{min-width:0}
+.ap-acts{display:flex;gap:8px;flex-wrap:wrap;width:100%}
+.ap-acts button{padding:10px 18px}
+.ap-acts button.ok{background:var(--acc);color:var(--on-acc)}
+@media(max-width:900px){.ap{grid-template-columns:1fr}.ap-nav{position:static;flex-direction:row;overflow-x:auto;padding:8px}.ap-tab{flex:none;width:auto}.ap-tab small{display:none}}
 </style>
 <style>
 .pf-back{display:inline-flex;gap:6px;align-items:center;background:none;border:0;color:var(--mut);font:inherit;cursor:pointer;padding:6px 0;margin-bottom:10px}.pf-back:hover{color:var(--tx)}
@@ -806,18 +826,24 @@ function view(){
      <div class="set-card"><div><div class="set-name">Аккаунт</div><div class="stat">Выйти из аккаунта на этом устройстве. Вернуться можно в любой момент через Steam.</div></div>
        <button class="out-btn" onclick="logout()">${I('out')}Выйти из аккаунта</button></div>`;
   }
-  if(st.page==='admin') return `<h1>Админ-панель<span class="admin-badge">${st.user.role}</span></h1>
-   ${st.user.full?abuseBlock():''}
-   <div class="admin-grid">
-     <div class="admin-card"><div class="n">${bans.filter(b=>b[3]).length}</div><div class="l">Активных банов</div></div>
-     <div class="admin-card"><div class="n">${mutes.filter(m=>m[3]).length}</div><div class="l">Активных мутов</div></div>
-   </div>
-   <div class="admin-tools"><input id="adminTarget" placeholder="Ник или SteamID игрока" aria-label="Игрок">
-     ${(can('ban')?[['Кикнут','Кикнуть'],['Замьючен','Замьютить'],['Заглушен','Заглушить'],['Заморожен','Заморозить'],['Ослеплён','Ослепить'],['Убит','Убить']]:[['Заглушен','Заглушить'],['Заморожен','Заморозить'],['Ослеплён','Ослепить'],['Убит','Убить']]).map(([v,t])=>`<button onclick="adminAction('${v}')">${t}</button>`).join('')}
-     ${can('ban')?`<button class="danger" onclick="adminAction('Забанен')">Забанить</button>`:''}${can('unban')?`<button onclick="adminAction('Разбанен')">Разбанить</button><button onclick="adminAction('Размьючен')">Снять мут</button>`:''}
-   </div>
-   ${adminOwnerSections()}
-   <p class="stat">Баны и муты сохраняются в базе и видны на странице «Баны». Кик, заморозка и другие действия прямо в игре требуют плагина на игровом сервере.</p>`;
+  if(st.page==='admin'){
+    const tabs=admTabs(),cur=admCur();
+    const acts=(can('ban')?[['Кикнут','Кикнуть'],['Замьючен','Замьютить'],['Заглушен','Заглушить'],['Заморожен','Заморозить'],['Ослеплён','Ослепить'],['Убит','Убить']]:[['Заглушен','Заглушить'],['Заморожен','Заморозить'],['Ослеплён','Ослепить'],['Убит','Убить']]).map(([v,t])=>`<button onclick="adminAction('${v}')">${t}</button>`).join('');
+    const player=`<h2 class="sec">Действия над игроком</h2>
+      <div class="admin-tools"><input id="adminTarget" placeholder="Ник или SteamID игрока" aria-label="Игрок">
+        <div class="ap-acts">${acts}${can('ban')?`<button class="danger" onclick="adminAction('Забанен')">Забанить</button>`:''}${can('unban')?`<button class="ok" onclick="adminAction('Разбанен')">Разбанить</button><button class="ok" onclick="adminAction('Размьючен')">Снять мут</button>`:''}</div></div>`;
+    return `<h1>Админ-панель<span class="admin-badge">${st.user.role}</span></h1>
+    <div class="admin-grid">
+      <div class="admin-card"><div class="n">${bans.filter(b=>b[3]).length}</div><div class="l">Активных банов</div></div>
+      <div class="admin-card"><div class="n">${mutes.filter(m=>m[3]).length}</div><div class="l">Активных мутов</div></div>
+      ${st.user.full?`<div class="admin-card"><div class="n">${(SV.admins||[]).length}</div><div class="l">Админов на сервере</div></div>`:''}
+    </div>
+    <div class="ap">
+      <nav class="ap-nav" aria-label="Разделы админ-панели">${tabs.map(([k,t,d,ic])=>`<button class="ap-tab${k===cur?' on':''}" data-t="${k}" onclick="admTab('${k}')"><span class="ap-ic">${I(ic)}</span><span><b>${t}</b><small>${d}</small></span></button>`).join('')}</nav>
+      <div class="ap-body">${admSec('player',player)}${st.user.full?admSec('abuse',abuseBlock()):''}${adminOwnerSections()}</div>
+    </div>
+    <p class="stat">Баны и муты сохраняются в базе и видны на странице «Баны». Кик, заморозка и другие действия прямо в игре требуют плагина на игровом сервере.</p>`;
+  }
 }
 // кнопка для замов (и владельца): «Запустить админ абуз» = команда /глент (взрывы на сайте на 24 часа, повторное нажатие — выключает)
 function abuseBlock(){
@@ -828,6 +854,28 @@ function abuseBlock(){
 async function abuseToggle(on){
   try{const r=await api('admin/abuse',{on});window.NX_GLENT={on:r.on,until:Date.now()+r.left};if(window.nxGlentPoll)window.nxGlentPoll();draw()}
   catch(e){uiAlert(e.message,'Не получилось')}
+}
+function admTabs(){ // [ключ, название, подпись, иконка] — только то, что доступно этому админу
+  const u=st.user||{};
+  return [
+    ['player','Игрок','Бан, мут, кик и др.','bans',true],
+    ['grant','Выдать админку','Админ+ на срок','shield',can('grant')],
+    ['admins','Админы сервера','Список и правка','user',!!u.full],
+    ['vip','Выдать VIP','Premium на срок','coin',!!u.full],
+    ['promo','Промокоды','Создать и изменить','promo',can('promo')],
+    ['deputy','Заместители','Назначить и снять','leaders',!!u.isOwner],
+    ['perms','Права доступа','Что можно замам','gear',!!u.isOwner],
+    ['design','Дизайн и чекер','Тема сайта','skin',can('design')],
+    ['servers','Серверы','Список серверов','play',can('server')],
+    ['abuse','Админ абуз','Взрывы на сайте','box',!!u.full]
+  ].filter(t=>t[4]).map(t=>t.slice(0,4));
+}
+function admCur(){const t=admTabs();return t.some(x=>x[0]===st.adminTab)?st.adminTab:t[0][0]}
+function admSec(k,h){return `<section data-adm="${k}"${k===admCur()?'':' hidden'}>${h}</section>`}
+function admTab(k){ // переключение без перерисовки — мгновенно, введённые данные не теряются
+  st.adminTab=k;st.adminMsg={};
+  document.querySelectorAll('.ap-tab').forEach(b=>b.classList.toggle('on',b.dataset.t===k));
+  document.querySelectorAll('.ap-body>section').forEach(e=>{e.hidden=e.dataset.adm!==k});
 }
 function adminMsgNow(id,text){const e=$(id);if(e){e.textContent=text;e.className='promo-msg err'}}
 function adminOk(kind,text){st.adminMsg={[kind]:{ok:true,text}};draw()}
@@ -924,7 +972,7 @@ function adminOwnerSections(){
      <input id="pMax" type="number" min="0" placeholder="Лимит активаций (0 = без лимита)" aria-label="Лимит">
      <button class="ok" onclick="createPromo()">Создать</button>${msg('promo','promoMsgA')}</div>
    <table><tr><th>Код</th><th>Награда</th><th>Активаций</th><th></th></tr>${promos.map(p=>`<tr><td>${p.code}</td><td>${+p.admin_days>=0?'Админ+ '+(+p.admin_days?p.admin_days+' дн.':'навсегда'):+p.vip_days?'VIP '+p.vip_days+' дн.':'+'+p.coins}</td><td>${p.used||0}${p.max?' / '+p.max:' / ∞'}</td><td>${p.builtin?'<span class="stat">встроенный</span>':`<button class="join" onclick="editPromo('${p.code}')">Изменить</button> <button class="join del" onclick="deletePromo('${p.code}')">Удалить</button>`}</td></tr>`).join('')}</table>`;
-  return (can('grant')?grantBlock:'')+(st.user.full?gaBlock+vipBlock:'')+(st.user.isOwner?deputyBlock+permsAdmin():'')+(can('promo')?promoBlock:'')+(can('design')?designAdmin():'');
+  return (can('grant')?admSec('grant',grantBlock):'')+(st.user.full?admSec('admins',gaBlock)+admSec('vip',vipBlock):'')+(st.user.isOwner?admSec('deputy',deputyBlock)+admSec('perms',permsAdmin()):'')+(can('promo')?admSec('promo',promoBlock):'')+(can('design')?admSec('design',designAdmin()):'');
 }
 function adminAction(verb){
   const t=($('#adminTarget')?.value||'').trim();
@@ -1611,7 +1659,7 @@ async function loadServers(){
   draw();
 }
 const _aos=adminOwnerSections;
-adminOwnerSections=function(){return _aos()+(can('server')?serversAdmin():'')};
+adminOwnerSections=function(){return _aos()+(can('server')?admSec('servers',serversAdmin()):'')};
 function serversAdmin(){
   return `<h2 class="sec">Серверы</h2>
    <div class="admin-tools"><input id="srvName" placeholder="Название (например: Мираж)" maxlength="60" aria-label="Название сервера"><input id="srvAddr" placeholder="Адрес: 45.95.31.64:27215" maxlength="70" aria-label="Адрес сервера"><button class="ok" onclick="addServer()">Добавить</button></div>
