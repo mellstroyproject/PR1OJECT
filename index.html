@@ -129,7 +129,8 @@ td{transition:background .3s var(--ease)}
 tr:hover td{background:var(--panel2)}
 .side button{transition:background .3s var(--ease),color .25s,transform .3s var(--ease)}
 .side button:hover{transform:translateX(3px);color:var(--tx)}
-.menu button:hover{transform:translateX(3px)}
+.menu button:hover{transform:none}
+.menu,.menu *{animation:none!important;transition:none!important}
 .pop{animation:pop .3s var(--ease);transform-origin:top right}
 #app.enter h1{animation:rise .6s var(--ease) backwards}
 #app.enter :is(tr,.plan,.mode,.admin-card,.admin-tools,.bar,.side,.empty,.stat,.set-card){animation:rise .65s var(--ease) backwards;animation-delay:calc(var(--i,0)*55ms + 70ms)}
@@ -744,6 +745,9 @@ function themeCard(){
   return `<div class="set-card col"><div class="set-name">Тема оформления</div><div class="themes">${Object.entries(THEMES).map(([k,[n,g]])=>`<button class="theme-btn${k===cur?' on':''}" data-t="${k}" onclick="applyTheme('${k}')"><i style="background:${g}"></i>${n}</button>`).join('')}</div></div>`;
 }
 function logout(){st.user=null;st.menu=false;st.promoOpen=false;st.adminMsg={};if(st.page==='settings'||st.page==='admin')st.page='home';draw()}
+function toggleMenu(e){if(e)e.stopPropagation();st.menu=!st.menu;st.promoOpen=false;head()}
+document.addEventListener('click',e=>{if(st.menu&&!(e.target.closest&&e.target.closest('.menu,.ava'))){st.menu=false;head()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&st.menu){st.menu=false;head()}});
 function go(p){st.page=p;st.menu=false;st.adminMsg={};NAV_PUSH=true;try{window.scrollTo(0,0)}catch(e){}draw()}
 
 const servers=[['Мираж (карта меняется)','45.95.31.64:27215']];
@@ -772,11 +776,10 @@ function head(){
    `<div class="promo-wrap"><button class="promo-btn" onclick="togglePromo()">${I('promo')}Промокод</button>`+
    
    `</div>`+
-   (st.user.isAdmin?`<button class="promo-btn gold" onclick="go('admin')">${I('shield')}Админ-панель</button>`:'')+
    `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="uiAlert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
-   `<button class="ava" aria-label="Профиль" style="${st.user.avatar?`background-image:url('${st.user.avatar}')`:''}" onclick="openProfile(st.user.id)">${st.user.avatar?'':esc((st.user.name||'?').trim().charAt(0).toUpperCase())}</button>`+
+   `<button class="ava" aria-label="Меню профиля" aria-haspopup="true" style="${st.user.avatar?`background-image:url('${st.user.avatar}')`:''}" onclick="toggleMenu(event)">${st.user.avatar?'':esc((st.user.name||'?').trim().charAt(0).toUpperCase())}</button>`+
    `<button class="gear${st.page==='settings'?' on':''}" aria-label="Настройки" title="Настройки" onclick="go('settings')">${I('gear')}</button>`+
-   (st.menu?`<div class="menu${menuFresh?' pop':''}">${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти</button></div>`:'')
+   (st.menu?`<div class="menu">${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти</button></div>`:'')
    :`<button class="steam" onclick="steamLogin()">${I('steam')}Войти через Steam</button><a class="demo" href="#" onclick="demoLogin();return false">демо</a>`;
   if(coinsChanged&&!reduce)countTo(from,coins);
 }
