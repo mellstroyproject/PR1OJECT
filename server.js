@@ -1092,6 +1092,19 @@ catch (e) { console.error('tictactoe.js не подключён:', e.message); }
 if (process.env.TG_BOT_TOKEN) {
   const { Bot, webhookCallback, InlineKeyboard } = require('grammy');
   const bot = new Bot(process.env.TG_BOT_TOKEN);
+  // Нажатие кнопки = старое сообщение удаляется, приходит новое (вместо редактирования на месте).
+  // Работает для всех экранов бота, потому что все они меняют сообщение через ctx.editMessageText.
+  bot.use(async (ctx, next) => {
+    if (ctx.callbackQuery?.message) {
+      const old = ctx.callbackQuery.message;
+      ctx.editMessageText = async (text, other) => {
+        const sent = await ctx.api.sendMessage(old.chat.id, text, other); // сначала новое, чтобы при ошибке отправки старый экран не пропал
+        await ctx.api.deleteMessage(old.chat.id, old.message_id).catch(() => {}); // не вышло удалить (старше 48 ч) — не страшно
+        return sent;
+      };
+    }
+    return next();
+  });
   const H = {}; // обработчики команд: их же вызывают кнопки меню (команды тоже продолжают работать)
   const cmd = (name, fn) => { H[name] = fn; bot.command(name, fn); };
   const sub = (ctx, match) => Object.create(ctx, { match: { value: match } }); // тот же ctx, но с «аргументами», которые человек прислал текстом
