@@ -372,6 +372,17 @@ function site(app, getUser, opts) {
     res.json({ online: [...seenNotify].filter(([, t]) => now - t < 30000).map(([uid]) => uid) });
   }));
 
+  app.get('/api/msg/people', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    const rows = (await db.query('select steam_id, name, avatar from users where steam_id <> $1 and name is not null order by name limit 300', [m.id])).rows;
+    const now = Date.now();
+    res.json({ people: rows.map(r => ({
+      uid: r.steam_id, name: r.name, avatar: okAvatar(r.avatar) ? r.avatar : null,
+      online: now - (seenNotify.get(r.steam_id) || 0) < 30000
+    })) });
+  }));
+
   // ---------- push ----------
   app.get('/api/msg/push/key', wrap(async (req, res) => {
     const m = await me(req);
