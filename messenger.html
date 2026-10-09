@@ -147,7 +147,7 @@ button,input,textarea{font:inherit;color:inherit}
 <script>
 const EMOJI = ['👍','❤️','😂','🔥','😮','😢'];
 const S = { me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', write: true, msgs: [], hash: '', reply: null, edit: null, sel: null, panel: '' };
-const V = { room: null, label: '', local: null, pcs: new Map(), pending: new Map(), timer: null, muted: false, peers: [] };
+const V = { room: null, label: '', local: null, pcs: new Map(), pending: new Map(), timer: null, muted: false, peers: [], state: new Map(), iceServers: null };
 const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -356,7 +356,7 @@ function updateMe() {
 
 function participants() {
   if (V.room === S.room) {
-    return [{ uid: S.me.id, name: S.me.name, avatar: S.me.avatar, muted: V.muted, me: true }, ...V.peers];
+    return [{ uid: S.me.id, name: S.me.name, avatar: S.me.avatar, muted: V.muted, me: true }, ...V.peers.map(p => ({ ...p, st: V.state.get(p.uid) }))];
   }
   const ch = S.rooms && S.rooms.channels.find(c => c.room === S.room);
   return ch ? ch.users : [];
@@ -366,7 +366,7 @@ function renderPanel() {
   if (S.kind !== 'voice') return;
   const inThis = V.room === S.room;
   const list = participants();
-  const cards = list.map(p => `<div class="vcard">${avatar(p.avatar, p.name)}<span>${esc(p.name)}${p.me ? ' (вы)' : ''}</span><small>${p.muted ? '🔇 микрофон выключен' : '🎙 в голосовом'}</small></div>`).join('');
+  const cards = list.map(p => `<div class="vcard">${avatar(p.avatar, p.name)}<span>${esc(p.name)}${p.me ? ' (вы)' : ''}</span><small>${p.muted ? '🔇 микрофон выключен' : '🎙 в голосовом'}${p.me ? '' : ' · ' + ({ connected: 'звук на связи', connecting: 'соединение…', new: 'соединение…', checking: 'соединение…', failed: 'нет связи (нужен TURN)', disconnected: 'связь прервана' }[p.st] || 'соединение…')}</small></div>`).join('');
   const html = `<div class="vpanel">
       <h2>🔊 ${esc(S.label)}</h2>
       <div><button class="btn-sm ${inThis ? 'r' : 'g'}" onclick="${inThis ? 'leaveVoice()' : `joinVoice('${S.room}','${esc(S.label)}')`}">${inThis ? 'Отключиться' : 'Подключиться'}</button>
@@ -381,11 +381,12 @@ async function joinVoice(room, label) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Голос работает только по https (защищённое соединение)'); return; }
   if (V.room) await leaveVoice(true);
   let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, latency: { ideal: 0.01 } } }); }
   catch (e) { toast('Нет доступа к микрофону. Разрешите его в настройках браузера.'); return; }
   try { await api('voice/join', { room }); }
   catch (e) { stream.getTracks().forEach(t => t.stop()); toast(e.message); return; }
-  V.room = room; V.label = label; V.local = stream; V.muted = false; V.peers = [];
+  V.room = room; V.label = label; V.local = stream; V.muted = false; V.peers = []; V.state = new Map();
+  try { V.iceServers = (await api('voice/ice')).iceServers; } catch (e) { V.iceServers = null; }
   V.timer = setInterval(voicePoll, 1000);
   S.panel = '';
   voicePoll(); updateMe(); renderSide(); renderPanel();
@@ -397,7 +398,7 @@ async function leaveVoice(silent) {
   clearInterval(V.timer);
   for (const uid of [...V.pcs.keys()]) dropPeer(uid);
   if (V.local) V.local.getTracks().forEach(t => t.stop());
-  V.room = null; V.local = null; V.peers = []; V.muted = false;
+  V.room = null; V.local = null; V.peers = []; V.muted = false; V.state = new Map();
   await api('voice/leave', {}).catch(() => {});
   S.panel = '';
   updateMe(); renderSide(); renderPanel();
@@ -429,12 +430,29 @@ async function voicePoll() {
 }
 
 function makePC(uid) {
-  const pc = new RTCPeerConnection(ICE);
+  const pc = new RTCPeerConnection({ iceServers: V.iceServers || ICE.iceServers });
   V.local.getTracks().forEach(t => pc.addTrack(t, V.local));
+  pc.getSenders().forEach(s => {
+    if (s.track && s.track.kind === 'audio') {
+      const p = s.getParameters();
+      p.encodings = p.encodings && p.encodings.length ? p.encodings : [{}];
+      p.encodings[0].networkPriority = 'high';
+      p.encodings[0].priority = 'high';
+      s.setParameters(p).catch(() => {});
+    }
+  });
+  V.state.set(uid, 'connecting');
   pc.onicecandidate = e => { if (e.candidate) sendSig(uid, 'ice', e.candidate.toJSON()); };
-  pc.ontrack = e => attachAudio(uid, e.streams[0] || new MediaStream([e.track]));
+  pc.ontrack = e => {
+    const r = e.receiver;
+    try { if ('playoutDelayHint' in r) r.playoutDelayHint = 0; } catch (x) {}   // не копить буфер
+    try { if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0; } catch (x) {}
+    attachAudio(uid, e.streams[0] || new MediaStream([e.track]));
+  };
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed') toast('Не удалось соединиться с одним из игроков: сеть блокирует прямой звук.');
+    V.state.set(uid, pc.connectionState);
+    if (pc.connectionState === 'failed') toast('Не удалось соединиться с одним из игроков: сеть блокирует прямой звук. Нужен TURN-сервер.');
+    S.panel = ''; renderPanel();
   };
   V.pcs.set(uid, pc);
   return pc;
@@ -448,6 +466,7 @@ async function sendSig(to, kind, data) {
 async function callPeer(uid) {
   const pc = makePC(uid);
   const offer = await pc.createOffer();
+  offer.sdp = mungeOpus(offer.sdp);
   await pc.setLocalDescription(offer);
   await sendSig(uid, 'offer', pc.localDescription);
 }
@@ -467,6 +486,7 @@ async function handleSignal(s) {
     await pc.setRemoteDescription(s.data);
     await flushIce(uid);
     const answer = await pc.createAnswer();
+    answer.sdp = mungeOpus(answer.sdp);
     await pc.setLocalDescription(answer);
     await sendSig(uid, 'answer', pc.localDescription);
   } else if (s.kind === 'answer') {
@@ -480,16 +500,33 @@ async function handleSignal(s) {
   }
 }
 
+// Opus: пакеты по 10 мс вместо 20 мс — меньше задержка упаковки; моно, как для речи
+function mungeOpus(sdp) {
+  const m = /a=rtpmap:(\d+) opus\/48000[^\r\n]*/i.exec(sdp);
+  if (!m) return sdp;
+  const pt = m[1];
+  const params = 'minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=32000';
+  const fmtp = new RegExp('a=fmtp:' + pt + ' ([^\\r\\n]*)');
+  if (fmtp.test(sdp)) {
+    return sdp.replace(fmtp, (all, cur) => {
+      const kept = cur.split(';').filter(x => x && !/^(minptime|useinbandfec|stereo|sprop-stereo|maxaveragebitrate)=/.test(x));
+      return 'a=fmtp:' + pt + ' ' + kept.concat(params).join(';');
+    });
+  }
+  return sdp.replace(m[0], m[0] + '\r\na=fmtp:' + pt + ' ' + params);
+}
+
 function attachAudio(uid, stream) {
   let a = document.getElementById('a-' + uid);
   if (!a) { a = document.createElement('audio'); a.id = 'a-' + uid; a.autoplay = true; a.playsInline = true; $('vaud').appendChild(a); }
   a.srcObject = stream;
+  a.play().catch(() => toast('Браузер заблокировал звук. Нажмите в окне чата, чтобы включить его.'));
 }
 
 function dropPeer(uid) {
   const pc = V.pcs.get(uid);
   if (pc) { pc.onicecandidate = null; pc.ontrack = null; pc.close(); }
-  V.pcs.delete(uid); V.pending.delete(uid);
+  V.pcs.delete(uid); V.pending.delete(uid); V.state.delete(uid);
   const a = document.getElementById('a-' + uid); if (a) a.remove();
 }
 
