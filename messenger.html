@@ -10,6 +10,19 @@ html,body{margin:0;height:100%;background:#313338;color:#dbdee1;font:15px/1.4 "g
 button,input,textarea{font:inherit;color:inherit}
 [hidden]{display:none!important}
 .app{display:flex;height:100%}
+.rail{width:72px;background:#1e1f22;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px 0;flex:none}
+.srv{width:48px;height:48px;border-radius:50%;background:#313338;display:grid;place-items:center;overflow:hidden;cursor:pointer;border:0;padding:0}
+.srv img{width:100%;height:100%;object-fit:cover;display:block}
+.srv.on{border-radius:16px;background:#5865f2}
+.dot{width:10px;height:10px;border-radius:50%;background:#80848e;margin-left:auto;flex:none;border:2px solid #2b2d31}
+.dot.on{background:#23a55a}
+.mwho{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}
+.mwho b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mwho small{font-size:11px;color:#949ba4;font-weight:400}
+#meBox .ib{width:30px;height:30px;font-size:14px}
+#meBox .ib.red{background:#da373c;color:#fff}
+#meBox .ib:disabled{opacity:.4;cursor:default}
+@media (max-width:700px){.rail{display:none}}
 .side{width:240px;background:#2b2d31;display:flex;flex-direction:column;flex:none;min-height:0}
 .side-head{height:48px;padding:0 16px;display:flex;align-items:center;font-weight:700;border-bottom:1px solid #1f2023;flex:none}
 .side-scroll{flex:1;overflow-y:auto;padding:8px;min-height:0}
@@ -116,6 +129,7 @@ button,input,textarea{font:inherit;color:inherit}
 </head>
 <body>
 <div class="app">
+  <nav class="rail"><button class="srv on" title="NextProject"><img src="/icon-192.png" alt=""></button></nav>
   <aside class="side" id="side">
     <div class="side-head"><span>NextProject</span></div>
     <div class="side-scroll">
@@ -172,7 +186,7 @@ button,input,textarea{font:inherit;color:inherit}
 
 <script>
 const EMOJI = ['👍','❤️','😂','🔥','😮','😢'];
-const S = { me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', write: true, msgs: [], hash: '', reply: null, edit: null, sel: null, panel: '', ring: null, notifyLast: null };
+const S = { online: new Set(), deaf: false, me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', write: true, msgs: [], hash: '', reply: null, edit: null, sel: null, panel: '', ring: null, notifyLast: null };
 const V = { room: null, label: '', local: null, pcs: new Map(), pending: new Map(), timer: null, muted: false, peers: [], state: new Map(), iceServers: null,
   vtx: new Map(), remoteVideo: new Map(), sharer: null, sharerName: '', screenStream: null, screenTrack: null, blank: null };
 const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
@@ -215,6 +229,8 @@ async function init() {
   setInterval(loadRooms, 5000);
   setInterval(loadMsgs, 2500);
   setInterval(notifyPoll, 3000);
+  setInterval(onlinePoll, 10000);
+  onlinePoll();
   notifyPoll();
 }
 
@@ -249,7 +265,7 @@ function renderSide() {
   $('chList').innerHTML = html;
   $('dmList').innerHTML = S.rooms.dms.length ? S.rooms.dms.map(d =>
     `<button class="item ${d.room === S.room ? 'on' : ''}" data-room="${esc(d.room)}" data-label="${esc(d.name)}" data-kind="dm">
-      ${avatar(d.avatar, d.name, 'ava')}<span>${esc(d.name)}</span></button>`).join('')
+      ${avatar(d.avatar, d.name, 'ava')}<span>${esc(d.name)}</span><i class="dot ${S.online.has(d.uid) ? 'on' : ''}"></i></button>`).join('')
     : '<div style="font-size:13px;color:#7d828b;padding:4px 8px">Пока нет личных сообщений</div>';
 }
 
@@ -388,7 +404,12 @@ async function send() {
 }
 
 function updateMe() {
-  $('meBox').innerHTML = avatar(S.me.avatar, S.me.name) + `<span class="mname">${esc(S.me.name)}</span><button class="ib" id="bellBtn" title="Уведомления">🔔</button>`;
+  const mic = V.muted ? '🔇' : '🎙';
+  $('meBox').innerHTML = avatar(S.me.avatar, S.me.name)
+    + `<div class="mwho"><b>${esc(S.me.name)}</b><small>${V.room ? 'В голосовом канале' : 'В сети'}</small></div>`
+    + `<button class="ib" id="micBtn" title="Микрофон" ${V.room ? '' : 'disabled'}>${mic}</button>`
+    + `<button class="ib ${S.deaf ? 'red' : ''}" id="deafBtn" title="Заглушить звук">${S.deaf ? '🔈' : '🎧'}</button>`
+    + `<button class="ib" id="bellBtn" title="Уведомления">🔔</button>`;
 }
 
 /* ---------- звонки и голосовые каналы (WebRTC; сигналы через сервер) ---------- */
@@ -404,6 +425,7 @@ function renderCallBtn() {
 function renderCallBar() {
   const bar = $('callBar');
   renderScreen();
+  updateMe();
   if (!V.room) { bar.hidden = true; return; }
   bar.hidden = false;
   const isDm = V.room.startsWith('dm:');
@@ -552,7 +574,7 @@ function toggleMute() {
   V.muted = !V.muted;
   V.local.getAudioTracks().forEach(t => t.enabled = !V.muted);
   api('voice/mute', { muted: V.muted }).catch(() => {});
-  S.panel = ''; renderCallBar(); renderPanel();
+  S.panel = ''; renderCallBar(); renderPanel(); updateMe();
 }
 
 // Opus: пакеты по 10 мс вместо 20 мс — меньше задержка упаковки; моно, как для речи
@@ -673,6 +695,7 @@ function attachAudio(uid, stream) {
   let a = document.getElementById('a-' + uid);
   if (!a) { a = document.createElement('audio'); a.id = 'a-' + uid; a.autoplay = true; a.playsInline = true; $('vaud').appendChild(a); }
   a.srcObject = stream;
+  a.muted = S.deaf;
   a.play().catch(() => toast('Браузер заблокировал звук. Нажмите в окне чата, чтобы включить его.'));
 }
 
@@ -710,7 +733,19 @@ async function enablePush(silent) {
   } catch (e) { if (!silent) toast('Не удалось включить уведомления: ' + e.message); }
 }
 
-$('meBox').addEventListener('click', e => { if (e.target.closest('#bellBtn')) enablePush(false); });
+$('meBox').addEventListener('click', e => {
+  if (e.target.closest('#bellBtn')) enablePush(false);
+  if (e.target.closest('#micBtn') && V.room) toggleMute();
+  if (e.target.closest('#deafBtn')) {
+    S.deaf = !S.deaf;
+    document.querySelectorAll('#vaud audio').forEach(a => a.muted = S.deaf);
+    updateMe();
+  }
+});
+
+async function onlinePoll() {
+  try { const j = await api('online'); S.online = new Set(j.online); renderSide(); } catch (e) {}
+}
 
 /* ---------- уведомления: личные сообщения, упоминания и звонки ---------- */
 
