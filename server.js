@@ -1431,11 +1431,12 @@ if (process.env.TG_BOT_TOKEN) {
     unmute: ['🔊 Размут', 'ID — SteamID64, STEAM_1:0:123 или ссылка на профиль Steam'],
     access: ['🔐 Ключ доступа к боту', 'ключ вида BOT-XXXXXXXXXXXX (его даёт владелец)'],
     redeem: ['🎟 Ввести промокод', 'пришлите промокод, например NP-A3F9C21B'],
+    topup: ['✏️ Своя сумма пополнения', 'сумму в рублях числом, например 250'],
   };
   const CAN = { // кто может начать действие (сами команды всё равно проверяют права ещё раз)
     promo: ctx => isTgAdmin(ctx), vip: ctx => isTgAdmin(ctx), adminkey: async ctx => isOwner(ctx),
     ban: ctx => tgStaff(ctx), unban: ctx => tgStaff(ctx), mute: ctx => tgStaff(ctx), unmute: ctx => tgStaff(ctx),
-    access: async () => true, redeem: async ctx => !!(await tgLinked(ctx)) };
+    access: async () => true, redeem: async ctx => !!(await tgLinked(ctx)), topup: async ctx => !!(await tgLinked(ctx)) };
 
   async function openPanel(ctx, fresh) {
     const st = await tgStaff(ctx).catch(() => null);
@@ -1566,11 +1567,11 @@ if (process.env.TG_BOT_TOKEN) {
     try { await FUN_DO[ctx.match[1]](); await funScreen(ctx); } catch (e) { console.error('tg fun do:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
   });
   bot.callbackQuery('cx', async ctx => { await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id)); await ctx.editMessageText('Отменено').catch(() => {}); });
-  bot.callbackQuery(/^in:(promo|vip|adminkey|ban|unban|mute|unmute|access|redeem)$/, async ctx => {
+  bot.callbackQuery(/^in:(promo|vip|adminkey|ban|unban|mute|unmute|access|redeem|topup)$/, async ctx => {
     await ctx.answerCallbackQuery().catch(() => {});
     const act = ctx.match[1];
     try {
-      if (act === 'redeem' && !(await tgLinked(ctx))) return openMe(ctx, false);
+      if ((act === 'redeem' || act === 'topup') && !(await tgLinked(ctx))) return openMe(ctx, false);
       if (!(await CAN[act](ctx))) return ctx.reply('Нет доступа');
       pending.set(String(ctx.from.id), { act, at: Date.now() });
       const [title, hint] = PROMPTS[act];
@@ -1618,7 +1619,7 @@ if (process.env.TG_BOT_TOKEN) {
       (await linkKb(ctx)).text('⬅️ Назад', 'home'));
     const u = (await db.query('select name, coins, prem_until, plus_until, grant_until from users where steam_id=$1', [steam])).rows[0];
     if (!u) { await db.query('delete from tg_links where tg_id=$1', [String(ctx.from.id)]); return openMe(ctx, fresh); }
-    const k = new InlineKeyboard().text('🎟 Ввести промокод', 'in:redeem').text('🛒 Магазин', 'shop').row();
+    const k = new InlineKeyboard().text('🎟 Ввести промокод', 'in:redeem').text('🛒 Магазин', 'shop').row().text('💳 Пополнить баланс', 'tp').row();
     if (SITE) k.url('🌐 Открыть сайт', SITE).row();
     if (isOwner(ctx)) k.text('🔔 Уведомления', 'ntf').row();
     k.text('🔓 Отвязать', 'ul').text('⬅️ Назад', 'home');
@@ -1687,6 +1688,103 @@ if (process.env.TG_BOT_TOKEN) {
   });
   if (bs) { try { bsStart = bs.telegram({ bot, InlineKeyboard, show, botName: () => tgBotName, siteUrl: SITE }).start; } catch (e) { console.error('battleship telegram:', e.message); } }
   if (tt) { try { ttStart = tt.telegram({ bot, InlineKeyboard, show, botName: () => tgBotName, siteUrl: SITE }).start; } catch (e) { console.error('tictactoe telegram:', e.message); } }
+  // --- 💳 Пополнение баланса переводом: игрок переводит деньги по реквизитам, присылает чек, владелец сверяет поступление и зачисляет монеты ---
+  const TOPUP_REQ = (process.env.TOPUP_REQUISITES || '').replace(/\\n/g, '\n').trim(); // реквизиты (карта, банк, получатель) — задаются в Render, \n = перенос строки
+  const TOPUP_RATE = +process.env.TOPUP_RATE || 1; // монет за 1 ₽ (цены в магазине в ₽ равны монетам, поэтому 1)
+  const TOPUP_MIN = +process.env.TOPUP_MIN || 10, TOPUP_MAX = +process.env.TOPUP_MAX || 50000;
+  const tpWait = new Map(); // tg_id -> { id, at }: от кого ждём чек
+  db.query(`create table if not exists topups(id serial primary key, tg_id text not null, steam_id text not null, amount numeric not null, coins numeric not null,
+    status text not null default 'new', file_id text, file_type text, at bigint not null, done_by text, done_at bigint)`).catch(e => console.error('topups:', e.message));
+  const rub = n => Math.round(+n * 100) / 100;
+  async function tpScreen(ctx) {
+    const steam = await tgLinked(ctx); if (!steam) return openMe(ctx, false);
+    if (!TOPUP_REQ) return show(ctx, '💳 Пополнение баланса временно недоступно: реквизиты ещё не настроены.', new InlineKeyboard().text('⬅️ Назад', 'me'));
+    const k = new InlineKeyboard();
+    [50, 100, 200, 500, 1000].forEach((a, i) => { k.text(`${a} ₽`, 'tps:' + a); if (i % 3 === 2) k.row(); });
+    k.row().text('✏️ Другая сумма', 'in:topup').row().text('⬅️ Назад', 'me');
+    return show(ctx, `💳 Пополнение баланса переводом\nКурс: 1 ₽ = ${TOPUP_RATE} монет\n\nВыберите сумму (от ${TOPUP_MIN} до ${TOPUP_MAX} ₽).`, k);
+  }
+  async function tpCreate(ctx, amount) {
+    const steam = await tgLinked(ctx); if (!steam) return openMe(ctx, ctx.callbackQuery ? false : true);
+    if (!TOPUP_REQ) return ctx.reply('💳 Пополнение временно недоступно: реквизиты ещё не настроены.');
+    if (!(amount >= TOPUP_MIN && amount <= TOPUP_MAX)) return ctx.reply(`Сумма: от ${TOPUP_MIN} до ${TOPUP_MAX} ₽`);
+    const tg = String(ctx.from.id), coins = rub(amount * TOPUP_RATE);
+    await db.query("update topups set status='cancel' where tg_id=$1 and status='new'", [tg]); // старая неоплаченная заявка закрывается
+    const id = (await db.query('insert into topups(tg_id,steam_id,amount,coins,at) values($1,$2,$3,$4,$5) returning id', [tg, steam, amount, coins, Date.now()])).rows[0].id;
+    return show(ctx, `💳 Заявка #${id}: ${amount} ₽ → ${coins} монет\n\nПереведите ровно ${amount} ₽ по реквизитам:\n\n${TOPUP_REQ}\n\nЕсли банк позволяет, в комментарии к переводу укажите: NP${id}\n\nПосле перевода нажмите «Я оплатил(а)» и пришлите скриншот или чек. Монеты придут после проверки владельцем.`,
+      new InlineKeyboard().text('✅ Я оплатил(а), отправить чек', 'tpp:' + id).row().text('✖️ Отмена', 'tpx:' + id));
+  }
+  H.topup = async ctx => { // «Другая сумма»: сумму прислали текстом
+    const a = Math.floor(+String(ctx.match || '').trim().replace(',', '.'));
+    if (!(a > 0)) return ctx.reply('Пришлите сумму числом, например 250');
+    return tpCreate(ctx, a);
+  };
+  bot.callbackQuery('tp', async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {}); pending.delete(String(ctx.from.id));
+    try { await tpScreen(ctx); } catch (e) { console.error('tg topup:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^tps:(\d{2,5})$/, async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    try { await tpCreate(ctx, +ctx.match[1]); } catch (e) { console.error('tg topup create:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^tpp:(\d+)$/, async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    try {
+      const r = (await db.query("select id from topups where id=$1 and tg_id=$2 and status='new'", [+ctx.match[1], String(ctx.from.id)])).rows[0];
+      if (!r) return ctx.reply('Эта заявка уже не активна — создайте новую: «💳 Пополнить баланс»');
+      tpWait.set(String(ctx.from.id), { id: r.id, at: Date.now() });
+      return ctx.reply(`📎 Пришлите одним сообщением скриншот или чек перевода (фото или PDF) по заявке #${r.id}.`, { reply_markup: new InlineKeyboard().text('✖️ Отмена', 'tpx:' + r.id) });
+    } catch (e) { console.error('tg topup proof:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^tpx:(\d+)$/, async ctx => {
+    await ctx.answerCallbackQuery().catch(() => {});
+    try {
+      tpWait.delete(String(ctx.from.id));
+      await db.query("update topups set status='cancel' where id=$1 and tg_id=$2 and status='new'", [+ctx.match[1], String(ctx.from.id)]);
+      return openMe(ctx, false);
+    } catch (e) { console.error('tg topup cancel:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.on(['message:photo', 'message:document'], async (ctx, next) => { // чек от игрока (только если он нажал «Я оплатил(а)»)
+    const id = String(ctx.from?.id), w = tpWait.get(id);
+    if (!w || Date.now() - w.at > 30 * 60000) return next();
+    const m = ctx.msg;
+    if (m.document && !/^(image\/|application\/pdf)/.test(m.document.mime_type || '')) return ctx.reply('Пришлите фото, скриншот или PDF чека.');
+    const fileId = m.photo ? m.photo[m.photo.length - 1].file_id : m.document.file_id, type = m.photo ? 'photo' : 'document';
+    try {
+      const r = await db.query("update topups set status='review', file_id=$2, file_type=$3 where id=$1 and tg_id=$4 and status='new' returning *", [w.id, fileId, type, id]);
+      tpWait.delete(id);
+      if (!r.rowCount) return ctx.reply('Эта заявка уже не активна — создайте новую: «💳 Пополнить баланс»');
+      const t = r.rows[0], u = (await db.query('select name from users where steam_id=$1', [t.steam_id])).rows[0];
+      const who = [ctx.from.first_name, ctx.from.username && '@' + ctx.from.username].filter(Boolean).join(' ');
+      const cap = `💳 Заявка на пополнение #${t.id}\nСумма: ${rub(t.amount)} ₽ → ${rub(t.coins)} монет\nTelegram: ${who} (${id})\nСайт: ${(u && u.name) || 'Игрок'} (${t.steam_id})\n\nСверьте поступление на вашем счёте (комментарий NP${t.id}) и подтвердите.`;
+      const k = new InlineKeyboard().text('✅ Зачислить', 'tpa:' + t.id).text('❌ Отклонить', 'tpr:' + t.id);
+      let sent = 0;
+      for (const o of TG_ADMINS) {
+        try { await (type === 'photo' ? ctx.api.sendPhoto(o, fileId, { caption: cap, reply_markup: k }) : ctx.api.sendDocument(o, fileId, { caption: cap, reply_markup: k })); sent++; }
+        catch (e) { console.error('tg topup notify:', e.message); }
+      }
+      return ctx.reply(sent ? `✅ Чек по заявке #${t.id} отправлен на проверку. Как только владелец подтвердит перевод, монеты придут на ваш аккаунт, и я напишу сюда.` : `⚠️ Не удалось уведомить владельца. Заявка #${t.id} сохранена — напишите администратору и назовите её номер.`);
+    } catch (e) { console.error('tg topup receipt:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
+  bot.callbackQuery(/^tp([ar]):(\d+)$/, async ctx => { // владелец зачисляет или отклоняет заявку
+    if (!isOwner(ctx)) return ctx.answerCallbackQuery({ text: 'Нет доступа', show_alert: true }).catch(() => {});
+    const ok = ctx.match[1] === 'a', c = await db.connect();
+    try {
+      await c.query('begin');
+      const r = await c.query("update topups set status=$2, done_by=$3, done_at=$4 where id=$1 and status='review' returning *", [+ctx.match[2], ok ? 'ok' : 'no', String(ctx.from.id), Date.now()]);
+      if (!r.rowCount) { await c.query('rollback'); return ctx.answerCallbackQuery({ text: 'Заявка уже обработана', show_alert: true }).catch(() => {}); }
+      const t = r.rows[0];
+      if (ok && !(await c.query('update users set coins=coins+$1 where steam_id=$2', [t.coins, t.steam_id])).rowCount) {
+        await c.query('rollback'); return ctx.answerCallbackQuery({ text: 'Аккаунт игрока на сайте не найден', show_alert: true }).catch(() => {});
+      }
+      await c.query('commit');
+      await ctx.answerCallbackQuery({ text: ok ? 'Зачислено' : 'Отклонено' }).catch(() => {});
+      const msg = ctx.callbackQuery.message;
+      await ctx.api.editMessageCaption(msg.chat.id, msg.message_id, { caption: (msg.caption || `Заявка #${t.id}`) + `\n\n${ok ? '✅ Зачислено' : '❌ Отклонено'} (${ctx.from.first_name || ctx.from.id})`, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+      tgNotify(t.tg_id, ok ? `✅ Пополнение #${t.id} подтверждено: +${rub(t.coins)} монет на ваш аккаунт.` : `❌ Пополнение #${t.id} отклонено: перевод не найден. Если вы платили, напишите администратору и назовите номер заявки.`);
+    } catch (e) { await c.query('rollback').catch(() => {}); console.error('tg topup decide:', e.message); ctx.reply('❌ Ошибка базы, попробуйте позже'); }
+    finally { c.release(); }
+  });
   bot.on('message:text', async ctx => { // ответ на вопрос админ-панели («Отправьте КОД МОНЕТЫ АКТИВАЦИИ…»); команды сюда не попадают
     const id = String(ctx.from.id), p = pending.get(id);
     if (!p) return;
@@ -1694,7 +1792,7 @@ if (process.env.TG_BOT_TOKEN) {
     const text = ctx.message.text.trim();
     if (text.startsWith('/')) return;
     if (Date.now() - p.at > 10 * 60000) return ctx.reply('Время ввода вышло — выберите действие в админ-панели ещё раз', { reply_markup: new InlineKeyboard().text('🛠 Админ панель', 'ap') });
-    try { await H[p.act](sub(ctx, text)); await (p.act === 'redeem' ? openMe(ctx, true) : openPanel(ctx, true)); }
+    try { await H[p.act](sub(ctx, text)); if (p.act !== 'topup') await (p.act === 'redeem' ? openMe(ctx, true) : openPanel(ctx, true)); }
     catch (e) { console.error('tg input ' + p.act + ':', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
   });
   bot.catch(e => console.error('tg bot error:', e.message));
