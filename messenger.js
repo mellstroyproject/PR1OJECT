@@ -39,6 +39,7 @@ function site(app, getUser, opts) {
   const canMod = opts.canModerate || (() => false);
   const clean = (s, max) => String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
   const lastSend = new Map();
+  const rolePing = new Map(); // uid -> время последнего @админы (для обычных игроков — раз в минуту)
 
   // ---------- голос (в памяти сервера) ----------
   // комнаты: 'ch:<id>' — голосовой канал; 'dm:<id1>:<id2>' — звонок в личке
@@ -203,13 +204,19 @@ function site(app, getUser, opts) {
     const rows = (await db.query(`
       select x.id, x.room, x.text, u.name from dc_messages x
       left join users u on u.steam_id = x.uid
-      where x.id > $1 and x.uid <> $2 and (x.room like $3 or x.room like $4 or (x.room = any($5) and strpos(x.text, $6) > 0))
+      where x.id > $1 and x.uid <> $2 and (
+        x.room like $3 or x.room like $4 or
+        (x.room = any($5) and (strpos(x.text, $6) > 0 or strpos(x.text, '@все') > 0 or ($7 and strpos(x.text, '@админы') > 0))))
       order by x.id limit 20`,
-      [after, m.id, `dm:${m.id}:%`, `dm:%:${m.id}`, Object.keys(chanName), '@' + m.name])).rows;
+      [after, m.id, `dm:${m.id}:%`, `dm:%:${m.id}`, Object.keys(chanName), '@' + m.name, m.mod])).rows;
     const items = rows.map(x => {
       const isDm = x.room.startsWith('dm:');
-      return { id: +x.id, kind: isDm ? 'dm' : 'mention', room: x.room, from: x.name || 'Игрок',
+      const base = { id: +x.id, room: x.room, from: x.name || 'Игрок',
         where: isDm ? '' : '#' + (chanName[x.room] || ''), text: x.text.slice(0, 120) };
+      if (isDm) return { ...base, kind: 'dm' };
+      if (x.text.includes('@' + m.name)) return { ...base, kind: 'mention' };
+      if (x.text.includes('@все')) return { ...base, kind: 'role', tag: '@все' };
+      return { ...base, kind: 'role', tag: '@админы' };
     });
     const last = items.length ? items[items.length - 1].id : overall;
     res.json({ last, items, ring });
@@ -224,6 +231,11 @@ function site(app, getUser, opts) {
     if (!await writeOk(room, m)) return fail(res, 403, 'Писать в этот канал нельзя');
     const now = Date.now();
     if (now - (lastSend.get(m.id) || 0) < 800) return fail(res, 429, 'Не так быстро');
+    if (text.includes('@все') && !m.mod) return fail(res, 403, '@все может использовать только администрация');
+    if (text.includes('@админы') && !m.mod) {
+      if (now - (rolePing.get(m.id) || 0) < 60000) return fail(res, 429, '@админы можно звать раз в минуту');
+      rolePing.set(m.id, now);
+    }
     lastSend.set(m.id, now);
     const reply = parseInt(req.body.reply_to) || null;
     await db.query('insert into dc_messages(room, uid, text, reply_to, at) values ($1,$2,$3,$4,$5)', [room, m.id, text, reply, now]);

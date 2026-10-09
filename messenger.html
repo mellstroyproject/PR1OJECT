@@ -65,6 +65,7 @@ button,input,textarea{font:inherit;color:inherit}
 .edited{font-size:11px;color:#949ba4;margin-left:5px}
 .quote{border-left:3px solid #4e5058;padding:1px 0 1px 8px;margin:2px 0 3px;font-size:13px;color:#b5bac1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mention{background:rgba(88,101,242,.35);color:#c9cdfb;border-radius:3px;padding:0 2px}
+.mention.role{background:rgba(250,168,26,.22);color:#fbd27a}
 .rx{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
 .rx button{background:#2b2d31;border:1px solid transparent;border-radius:8px;padding:1px 7px;font-size:13px;cursor:pointer}
 .rx button.mine{border-color:#5865f2;background:rgba(88,101,242,.18)}
@@ -299,7 +300,11 @@ async function loadMsgs() {
   } catch (e) {}
 }
 
-const fmt = t => esc(t).replace(/@([^\s@]{1,32})/g, (all, n) => n === S.me.name ? `<span class="mention">@${n}</span>` : all);
+const fmt = t => esc(t).replace(/@([^\s@]{1,32})/g, (all, n) => {
+  if (n === S.me.name) return `<span class="mention">@${n}</span>`;
+  if (n === 'все' || n === 'админы') return `<span class="mention role">@${n}</span>`;
+  return all;
+});
 
 function render() {
   const box = $('msgs');
@@ -685,7 +690,9 @@ async function notifyPoll() {
     if (S.notifyLast !== null) {
       S.notifyLast = j.last;
       for (const it of j.items) {
-        const title = it.kind === 'dm' ? 'Личное сообщение от ' + it.from : it.from + ' упомянул вас в ' + it.where;
+        const title = it.kind === 'dm' ? 'Личное сообщение от ' + it.from
+          : it.kind === 'role' ? it.from + ' написал ' + it.tag + ' в ' + it.where
+          : it.from + ' упомянул вас в ' + it.where;
         if (inParent) toParent({ type: 'chat-notify', kind: it.kind, title, text: it.text, room: it.room });
         else toast(title + ': ' + it.text);
       }
