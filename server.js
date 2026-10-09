@@ -1817,60 +1817,8 @@ if (process.env.TG_BOT_TOKEN) {
     .then(() => console.log('tg webhook set')).catch(e => console.error('tg webhook:', e.message));
 }
 
-
-// ===== NextProject Community: independent chat using the existing Steam session =====
-async function communitySchema() {
-  await db.query(`
-    create table if not exists community_channels(id serial primary key, name text not null unique, topic text not null default '', created_by text not null, created_at bigint not null);
-    create table if not exists community_messages(id bigserial primary key, channel_id int references community_channels(id) on delete cascade, sender text not null, recipient text, body text not null, created_at bigint not null, deleted boolean not null default false);
-    create index if not exists community_messages_channel_idx on community_messages(channel_id,id desc);
-    create index if not exists community_messages_dm_idx on community_messages(sender,recipient,id desc);
-    create table if not exists community_reactions(message_id bigint references community_messages(id) on delete cascade, steam_id text not null, emoji text not null, created_at bigint not null, primary key(message_id,steam_id,emoji));
-    create table if not exists community_voice_signals(id bigserial primary key, room text not null, sender text not null, recipient text not null, payload jsonb not null, created_at bigint not null);
-    create index if not exists community_voice_signals_recipient_idx on community_voice_signals(recipient,id);
-    create table if not exists community_voice_presence(room text not null, steam_id text not null, updated_at bigint not null, primary key(room,steam_id));
-    create index if not exists community_voice_presence_updated_idx on community_voice_presence(updated_at);
-    insert into community_channels(name,topic,created_by,created_at) values('general','Общий чат NextProject', $1, $2) on conflict(name) do nothing;
-  `,[OWNER,Date.now()]);
-}
-const communityMod = u => u && (u.steam_id === OWNER || !!u.deputy || String(u.perms||'').split(',').includes('ban'));
-const communityUser = u => ({id:u.steam_id,name:u.name||'Игрок',avatar:u.avatar||null,role:u.steam_id===OWNER?'Владелец':u.deputy?'Администратор':communityMod(u)?'Модератор':'Участник'});
-const communityAuth = async (req,res,next) => { try { const u=await getUser(req); if(!u)return res.status(401).json({error:'Войдите через Steam'}); req.u=u; next(); } catch(e){next(e)} };
-app.get('/community', (req,res)=>res.sendFile(path.join(__dirname,'community.html')));
-app.get('/api/community/me', communityAuth, (req,res)=>res.json({user:communityUser(req.u),moderator:communityMod(req.u)}));
-app.get('/api/community/channels', communityAuth, async (req,res)=>{const r=await db.query('select id,name,topic from community_channels order by id');res.json(r.rows)});
-app.post('/api/community/channels', communityAuth, async (req,res)=>{
-  if(!communityMod(req.u))return res.status(403).json({error:'Создавать каналы могут модераторы'});
-  const name=String(req.body.name||'').trim().toLowerCase().replace(/[^a-z0-9а-яё_-]/gi,'-').replace(/-+/g,'-').slice(0,32);
-  const topic=String(req.body.topic||'').trim().slice(0,160); if(!name)return bad(res,'Укажите название канала');
-  try{const r=await db.query('insert into community_channels(name,topic,created_by,created_at) values($1,$2,$3,$4) returning id,name,topic',[name,topic,req.u.steam_id,Date.now()]);res.json(r.rows[0])}catch(e){if(e.code==='23505')return bad(res,'Такой канал уже существует');throw e}
-});
-app.get('/api/community/messages', communityAuth, async(req,res)=>{
-  const channel=Number(req.query.channel), before=Math.max(0,Number(req.query.before)||0), dm=String(req.query.dm||'');
-  let r;
-  if(dm){if(!/^\d{17}$/.test(dm))return bad(res,'Некорректный пользователь');r=await db.query(`select m.id,m.sender,m.recipient,m.body,m.created_at, u.name,u.avatar from community_messages m left join users u on u.steam_id=m.sender where m.channel_id is null and m.deleted=false and ((m.sender=$1 and m.recipient=$2) or (m.sender=$2 and m.recipient=$1)) and ($3=0 or m.id<$3) order by m.id desc limit 80`,[req.u.steam_id,dm,before]);}
-  else {if(!Number.isInteger(channel)||channel<1)return bad(res,'Выберите канал');r=await db.query(`select m.id,m.sender,m.body,m.created_at,u.name,u.avatar, coalesce((select json_agg(json_build_object('emoji',x.emoji,'count',x.n,'mine',x.mine)) from (select emoji,count(*)::int n,bool_or(steam_id=$2) mine from community_reactions where message_id=m.id group by emoji) x),'[]'::json) reactions from community_messages m left join users u on u.steam_id=m.sender where m.channel_id=$1 and m.deleted=false and ($3=0 or m.id<$3) order by m.id desc limit 80`,[channel,req.u.steam_id,before]);}
-  res.json(r.rows.reverse());
-});
-app.post('/api/community/messages', communityAuth, async(req,res)=>{
-  const body=String(req.body.body||'').trim(), dm=String(req.body.dm||''); if(!body)return bad(res,'Сообщение пустое');if(body.length>2000)return bad(res,'Максимум 2000 символов');
-  if(dm){if(!/^\d{17}$/.test(dm)||dm===req.u.steam_id)return bad(res,'Некорректный получатель');const exists=await db.query('select 1 from users where steam_id=$1',[dm]);if(!exists.rowCount)return bad(res,'Пользователь не найден');const r=await db.query('insert into community_messages(channel_id,sender,recipient,body,created_at) values(null,$1,$2,$3,$4) returning id,sender,recipient,body,created_at',[req.u.steam_id,dm,body,Date.now()]);return res.json(r.rows[0]);}
-  const channel=Number(req.body.channel);if(!Number.isInteger(channel)||channel<1)return bad(res,'Выберите канал');const ch=await db.query('select id from community_channels where id=$1',[channel]);if(!ch.rowCount)return bad(res,'Канал не найден');
-  const muted=await db.query("select until from bans where steam_id=$1 and kind='mute' and active=true and (until=0 or until>$2) limit 1",[req.u.steam_id,nowS()]).catch(()=>({rowCount:0}));if(muted.rowCount)return res.status(403).json({error:'Вам запрещено отправлять сообщения'});
-  const r=await db.query('insert into community_messages(channel_id,sender,body,created_at) values($1,$2,$3,$4) returning id,sender,body,created_at',[channel,req.u.steam_id,body,Date.now()]);res.json(r.rows[0]);
-});
-app.post('/api/community/reactions', communityAuth, async(req,res)=>{const id=Number(req.body.message),emoji=String(req.body.emoji||'').trim();if(!Number.isSafeInteger(id)||id<1||!['👍','❤️','😂','🔥','👀','🎉','😮'].includes(emoji))return bad(res,'Некорректная реакция');const m=await db.query('select id from community_messages where id=$1 and channel_id is not null and deleted=false',[id]);if(!m.rowCount)return res.status(404).json({error:'Сообщение не найдено'});const old=await db.query('delete from community_reactions where message_id=$1 and steam_id=$2 and emoji=$3',[id,req.u.steam_id,emoji]);if(!old.rowCount)await db.query('insert into community_reactions(message_id,steam_id,emoji,created_at) values($1,$2,$3,$4) on conflict do nothing',[id,req.u.steam_id,emoji,Date.now()]);res.json({ok:true});});
-app.delete('/api/community/messages/:id', communityAuth, async(req,res)=>{const id=Number(req.params.id);const r=await db.query('select sender from community_messages where id=$1',[id]);if(!r.rowCount)return res.sendStatus(404);if(r.rows[0].sender!==req.u.steam_id&&!communityMod(req.u))return res.status(403).json({error:'Нет прав'});await db.query('update community_messages set deleted=true,body=$2 where id=$1',[id,'Сообщение удалено']);res.json({ok:true});});
-app.get('/api/community/people', communityAuth, async(req,res)=>{const r=await db.query('select steam_id,name,avatar,last_seen from users where name is not null order by last_seen desc nulls last limit 100');res.json(r.rows.map(u=>({...communityUser(u),online:Date.now()-(+u.last_seen||0)<90000})).filter(u=>u.id!==req.u.steam_id));});
-app.get('/api/community/dms', communityAuth, async(req,res)=>{const r=await db.query(`select distinct on (peer) peer,u.name,u.avatar,m.body,m.created_at from (select case when sender=$1 then recipient else sender end peer,body,created_at,id from community_messages where channel_id is null and (sender=$1 or recipient=$1)) m left join users u on u.steam_id=m.peer order by peer,m.id desc limit 50`,[req.u.steam_id]);res.json(r.rows)});
-app.post('/api/community/voice/signal', communityAuth, async(req,res)=>{const room=String(req.body.room||'').slice(0,50),to=String(req.body.to||''),payload=req.body.payload;if(!room||!/^\d{17}$/.test(to)||to===req.u.steam_id||!payload||JSON.stringify(payload).length>20000)return bad(res,'Некорректный сигнал');const peer=await db.query('select 1 from users where steam_id=$1',[to]);if(!peer.rowCount)return bad(res,'Участник не найден');await db.query('insert into community_voice_signals(room,sender,recipient,payload,created_at) values($1,$2,$3,$4,$5)',[room,req.u.steam_id,to,payload,Date.now()]);res.json({ok:true});});
-app.get('/api/community/voice/signals', communityAuth, async(req,res)=>{const room=String(req.query.room||'').slice(0,50);const c=await db.connect();try{await c.query('begin');const r=await c.query('delete from community_voice_signals where recipient=$1 and room=$2 returning id,sender,payload',[req.u.steam_id,room]);await c.query('commit');res.json(r.rows)}catch(e){await c.query('rollback');throw e}finally{c.release()}});
-app.post('/api/community/voice/presence', communityAuth, async(req,res)=>{const room=String(req.body.room||'').trim().slice(0,50);if(!room)return bad(res,'Укажите комнату');await db.query('delete from community_voice_presence where updated_at<$1',[Date.now()-30000]);await db.query('insert into community_voice_presence(room,steam_id,updated_at) values($1,$2,$3) on conflict(room,steam_id) do update set updated_at=excluded.updated_at',[room,req.u.steam_id,Date.now()]);res.json({ok:true})});
-app.delete('/api/community/voice/presence', communityAuth, async(req,res)=>{await db.query('delete from community_voice_presence where room=$1 and steam_id=$2',[String(req.query.room||'').slice(0,50),req.u.steam_id]);res.json({ok:true})});
-app.get('/api/community/voice/people', communityAuth, async(req,res)=>{const room=String(req.query.room||'').slice(0,50);const r=await db.query('select steam_id as id from community_voice_presence where room=$1 and updated_at>$2 and steam_id<>$3',[room,Date.now()-20000,req.u.steam_id]);res.json(r.rows)});
-
 // страницы сайта имеют свои адреса (/shop, /leaders, /profile/<SteamID64> …) — все отдают тот же index.html, дальше работает маршрутизация в браузере
 app.get('/glent.mp3', (req, res) => res.sendFile(path.join(__dirname, 'glent.mp3'), { maxAge: '7d' })); // песня режима /глент (файл glent.mp3 лежит рядом с server.js)
 app.get(['/', '/shop', '/leaders', '/bans', '/rules', '/settings', '/admin', '/skins', '/public', '/battleship', '/profile/:id'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-init().then(communitySchema).then(() => app.listen(process.env.PORT || 3000, () => console.log('ok')))
+init().then(() => app.listen(process.env.PORT || 3000, () => console.log('ok')))
   .catch(e => { console.error('DB error:', e.message); process.exit(1); });
