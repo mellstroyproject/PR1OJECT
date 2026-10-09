@@ -2821,6 +2821,12 @@ header{gap:16px}
     if (d.type === 'chat-notify') plaque(d);
   });
 
+  // переход по push-уведомлению: открыть чат на нужной комнате
+  const chatOpen = room => { go('chat'); if (room) setTimeout(() => send({ type: 'open-room', room }), 300); };
+  if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'open-chat') chatOpen(e.data.room); });
+  const q = new URLSearchParams(location.search);
+  if (q.has('chat')) { history.replaceState(null, '', location.pathname); setTimeout(() => chatOpen(q.get('chat')), 400); }
+
   window.chatVoice = () => { go('chat'); setTimeout(() => send({ type: 'open-voice', name: 'Войс-чат' }), 150); };
   ensure();
 })();

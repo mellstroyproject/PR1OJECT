@@ -204,6 +204,7 @@ async function init() {
   try { S.me = await api('me'); }
   catch (e) { $('login').style.display = 'flex'; return; }
   toParent({ type: 'msg-ready' });
+  if ('Notification' in window && Notification.permission === 'granted') enablePush(true);
   if (S.me.mod) $('addCh').hidden = false;
   updateMe();
   await loadRooms();
@@ -387,7 +388,7 @@ async function send() {
 }
 
 function updateMe() {
-  $('meBox').innerHTML = avatar(S.me.avatar, S.me.name) + `<span class="mname">${esc(S.me.name)}</span>`;
+  $('meBox').innerHTML = avatar(S.me.avatar, S.me.name) + `<span class="mname">${esc(S.me.name)}</span><button class="ib" id="bellBtn" title="Уведомления">🔔</button>`;
 }
 
 /* ---------- звонки и голосовые каналы (WebRTC; сигналы через сервер) ---------- */
@@ -681,6 +682,35 @@ function dropPeer(uid) {
   V.pcs.delete(uid); V.pending.delete(uid); V.state.delete(uid); V.vtx.delete(uid); V.remoteVideo.delete(uid);
   const a = document.getElementById('a-' + uid); if (a) a.remove();
 }
+
+/* ---------- push-уведомления (работают, даже когда сайт закрыт) ---------- */
+
+function b64ToU8(b64) {
+  const s = (b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+
+async function enablePush(silent) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    if (!silent) toast('Уведомления не работают в этом браузере. На iPhone сначала добавьте сайт на домашний экран.');
+    return;
+  }
+  try {
+    if (Notification.permission !== 'granted') {
+      const p = await Notification.requestPermission();
+      if (p !== 'granted') { if (!silent) toast('Уведомления запрещены. Разрешите их в настройках браузера.'); return; }
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const { key } = await api('push/key');
+    if (!key) { if (!silent) toast('Уведомления пока не настроены на сервере'); return; }
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) });
+    await api('push/subscribe', { subscription: sub.toJSON() });
+    if (!silent) toast('Уведомления включены');
+  } catch (e) { if (!silent) toast('Не удалось включить уведомления: ' + e.message); }
+}
+
+$('meBox').addEventListener('click', e => { if (e.target.closest('#bellBtn')) enablePush(false); });
 
 /* ---------- уведомления: личные сообщения, упоминания и звонки ---------- */
 

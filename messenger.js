@@ -1,6 +1,12 @@
 // Чат сайта в стиле Discord (структура как на скриншоте шаблона NextProject). Не связан с Discord.
 // Лежит рядом с server.js. Голос: WebRTC (звук идёт напрямую между игроками), сервер передаёт только сигналы.
 const path = require('path');
+// Push-уведомления: нужен пакет web-push и ключи VAPID в Environment (см. инструкцию)
+let webpush = null;
+try { webpush = require('web-push'); } catch (e) { console.error('web-push не установлен — push-уведомления выключены'); }
+const PUSH_PUBLIC = process.env.VAPID_PUBLIC || '';
+const pushOn = !!(webpush && PUSH_PUBLIC && process.env.VAPID_PRIVATE);
+if (pushOn) webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', PUSH_PUBLIC, process.env.VAPID_PRIVATE);
 
 const EMOJI = ['👍', '❤️', '😂', '🔥', '😮', '😢'];
 const okAvatar = a => typeof a === 'string' && /^https:\/\/[\w.-]+\.(steamstatic\.com|akamaihd\.net)\//i.test(a);
@@ -68,6 +74,44 @@ function site(app, getUser, opts) {
     }
     for (const uid of [...inbox.keys()]) if (vWhere(uid) === null) inbox.delete(uid);
   }
+  // push: не шлём тем, кто сейчас открыл сайт (опрашивает уведомления последние 10 секунд)
+  const seenNotify = new Map();
+  const isOpen = uid => Date.now() - (seenNotify.get(uid) || 0) < 10000;
+
+  async function pushTo(uids, payload) {
+    if (!pushOn || !uids.length) return;
+    const rows = (await db.query('select endpoint, p256dh, auth from dc_push where uid = any($1)', [uids])).rows;
+    const body = JSON.stringify(payload);
+    await Promise.all(rows.map(r => webpush.sendNotification(
+      { endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }, body)
+      .catch(err => {
+        if (err.statusCode === 404 || err.statusCode === 410) db.query('delete from dc_push where endpoint=$1', [r.endpoint]).catch(() => {});
+      })));
+  }
+
+  // кому отправить push о новом сообщении: собеседнику в личке, упомянутым и по ролям
+  async function pushForMessage(room, sender, text) {
+    if (!pushOn) return;
+    const send = new Map();
+    const add = (uid, title) => { if (uid && uid !== sender.id && !isOpen(uid) && !send.has(uid)) send.set(uid, title); };
+    if (room.startsWith('dm:')) {
+      const other = room.split(':').slice(1).find(x => x !== sender.id);
+      add(other, `Личное сообщение от ${sender.name}`);
+    } else {
+      const ch = await chanRow(room);
+      if (!ch || ch.kind !== 'text') return;
+      const subs = (await db.query('select distinct p.uid, u.name, p.mod from dc_push p left join users u on u.steam_id = p.uid')).rows;
+      for (const s of subs) {
+        if (!s.name) continue;
+        if (ch.access === 'staff' && !s.mod) continue;
+        if (text.includes('@' + s.name)) add(s.uid, `${sender.name} упомянул вас в #${ch.name}`);
+        else if (text.includes('@все')) add(s.uid, `${sender.name} написал @все в #${ch.name}`);
+        else if (text.includes('@админы') && s.mod) add(s.uid, `${sender.name} написал @админы в #${ch.name}`);
+      }
+    }
+    for (const [uid, title] of send) await pushTo([uid], { title, body: text.slice(0, 120), room }).catch(() => {});
+  }
+
   const voiceList = room => [...(voice.get(room) || new Map()).values()].map(p => ({ name: p.name, avatar: p.avatar, muted: p.muted }));
 
   const ready = (async () => {
@@ -77,6 +121,9 @@ function site(app, getUser, opts) {
       id serial primary key, room text not null, uid text not null, text text not null,
       reply_to bigint, reactions jsonb not null default '{}', edited boolean not null default false, at bigint not null)`);
     await db.query('create index if not exists dc_messages_room on dc_messages(room, id)');
+    await db.query(`create table if not exists dc_push(
+      endpoint text primary key, uid text not null, p256dh text not null, auth text not null,
+      mod boolean not null default false, at bigint not null)`);
     await db.query("alter table dc_channels add column if not exists kind text not null default 'text'");
     await db.query("alter table dc_channels add column if not exists access text not null default 'all'");
     await db.query('alter table dc_channels add column if not exists category text');
@@ -194,6 +241,7 @@ function site(app, getUser, opts) {
   app.get('/api/msg/notify', wrap(async (req, res) => {
     const m = await me(req);
     if (!m) return fail(res, 401, 'Войдите через Steam');
+    seenNotify.set(m.id, Date.now());
     const overall = +(await db.query('select coalesce(max(id),0) as id from dc_messages')).rows[0].id;
     const r = rings.get(m.id);
     const ring = r && Date.now() - r.at < RING_MS ? { from: r.from, room: r.room, at: r.at } : null;
@@ -239,6 +287,7 @@ function site(app, getUser, opts) {
     lastSend.set(m.id, now);
     const reply = parseInt(req.body.reply_to) || null;
     await db.query('insert into dc_messages(room, uid, text, reply_to, at) values ($1,$2,$3,$4,$5)', [room, m.id, text, reply, now]);
+    pushForMessage(room, m, text).catch(() => {});
     res.json({ ok: true });
   }));
 
@@ -316,6 +365,25 @@ function site(app, getUser, opts) {
     res.json({ users: rows.map(r => ({ uid: r.steam_id, name: r.name, avatar: okAvatar(r.avatar) ? r.avatar : null })) });
   }));
 
+  // ---------- push ----------
+  app.get('/api/msg/push/key', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    res.json({ key: pushOn ? PUSH_PUBLIC : '' });
+  }));
+
+  app.post('/api/msg/push/subscribe', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    if (!pushOn) return fail(res, 503, 'Уведомления не настроены на сервере');
+    const s = req.body.subscription || {};
+    if (!s.endpoint || !s.keys || !s.keys.p256dh || !s.keys.auth) return fail(res, 400, 'Неверная подписка');
+    await db.query(`insert into dc_push(endpoint, uid, p256dh, auth, mod, at) values ($1,$2,$3,$4,$5,$6)
+      on conflict (endpoint) do update set uid=excluded.uid, p256dh=excluded.p256dh, auth=excluded.auth, mod=excluded.mod, at=excluded.at`,
+      [s.endpoint, m.id, s.keys.p256dh, s.keys.auth, m.mod, Date.now()]);
+    res.json({ ok: true });
+  }));
+
   // ---------- голос ----------
   // STUN всегда; TURN — если задан в Environment: TURN_URL (через запятую), TURN_USER, TURN_PASS.
   const iceServers = () => {
@@ -345,7 +413,10 @@ function site(app, getUser, opts) {
     inbox.set(m.id, []);
     rings.delete(m.id);
     // звонок в личке: зовём собеседника, если его ещё нет в этом звонке
-    if (acc.other && !voice.get(room).has(acc.other)) rings.set(acc.other, { from: m.name, fromId: m.id, room, at: Date.now() });
+    if (acc.other && !voice.get(room).has(acc.other)) {
+      rings.set(acc.other, { from: m.name, fromId: m.id, room, at: Date.now() });
+      if (!isOpen(acc.other)) pushTo([acc.other], { title: `Звонок от ${m.name}`, body: 'Нажмите, чтобы ответить', room, call: true }).catch(() => {});
+    }
     res.json({ ok: true });
   }));
 

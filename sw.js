@@ -28,3 +28,25 @@ self.addEventListener('fetch', e => {
     }).catch(() => caches.match(e.request).then(r => r || caches.match('/')))
   );
 });
+
+// push-уведомления: показать даже когда сайт закрыт
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (x) { d = { title: 'NextProject', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'NextProject', {
+    body: d.body || '', tag: d.room || 'nextproject', renotify: true,
+    icon: '/icon-192.png', badge: '/icon-192.png', data: { room: d.room || null }
+  }));
+});
+
+// нажатие на уведомление: открыть сайт в чате на нужной комнате
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const room = (e.notification.data || {}).room || null;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) {
+      if (c.url.startsWith(self.location.origin)) { c.focus(); return c.postMessage({ type: 'open-chat', room }); }
+    }
+    return self.clients.openWindow('/?chat=' + encodeURIComponent(room || ''));
+  }));
+});
