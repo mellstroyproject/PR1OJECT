@@ -1369,7 +1369,7 @@ function chatBuild(){
   document.body.insertAdjacentHTML('beforeend',`
   <div id="chatDock"><button class="chat-pill" onclick="chatToggle(true)">Нужна помощь?</button><button class="chat-fab" onclick="chatToggle()" aria-label="Открыть чат">${CH_ICON}<i class="chat-badge" id="chatBadge"></i></button></div>
   <aside id="chatPanel" class="chat-panel" aria-label="Чат">
-    <div class="chat-head"><span class="chat-title">${CH_ICON}Чат</span><span class="chat-btns"><button onclick="chatMenu()" aria-label="Настройки чата">${I('gear')}</button><button onclick="chatToggle(false)" aria-label="Закрыть чат">✕</button></span>
+    <div class="chat-head"><span class="chat-title">${CH_ICON}Чат</span><span class="chat-btns"><button onclick="location.href='/messenger?voice=%D0%92%D0%BE%D0%B9%D1%81-%D1%87%D0%B0%D1%82'" title="Войс-чат" aria-label="Войс-чат">🎙</button><button onclick="chatMenu()" aria-label="Настройки чата">${I('gear')}</button><button onclick="chatToggle(false)" aria-label="Закрыть чат">✕</button></span>
       <div class="chat-menu" id="chatMenu"><label><span>Звук новых сообщений</span><input type="checkbox" id="chSound" onchange="chatSet('sound',this.checked)"><i></i></label><label><span>Подсказка «Нужна помощь?»</span><input type="checkbox" id="chHint" onchange="chatSet('hint',this.checked)"><i></i></label></div></div>
     <div class="chat-list" id="chatList"></div>
     <div class="chat-foot" id="chatFoot"></div>

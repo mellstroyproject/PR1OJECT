@@ -175,8 +175,10 @@ async function init() {
   if (S.me.mod) $('addCh').hidden = false;
   updateMe();
   await loadRooms();
-  const first = S.rooms.channels.find(c => c.kind === 'text') || S.rooms.channels[0];
-  openRoom(first.room, first.name, first.topic, 'ch', first.write);
+  const wanted = new URLSearchParams(location.search).get('voice');
+  const v = wanted && S.rooms.channels.find(c => c.kind === 'voice' && c.name === wanted);
+  const first = v || S.rooms.channels.find(c => c.kind === 'text') || S.rooms.channels[0];
+  openRoom(first.room, first.name, first.topic, v ? 'voice' : 'ch', first.write);
   setInterval(loadRooms, 5000);
   setInterval(loadMsgs, 2500);
 }
