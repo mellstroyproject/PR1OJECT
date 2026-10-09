@@ -365,6 +365,13 @@ function site(app, getUser, opts) {
     res.json({ users: rows.map(r => ({ uid: r.steam_id, name: r.name, avatar: okAvatar(r.avatar) ? r.avatar : null })) });
   }));
 
+  app.get('/api/msg/online', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    const now = Date.now();
+    res.json({ online: [...seenNotify].filter(([, t]) => now - t < 30000).map(([uid]) => uid) });
+  }));
+
   // ---------- push ----------
   app.get('/api/msg/push/key', wrap(async (req, res) => {
     const m = await me(req);
