@@ -1086,6 +1086,14 @@ catch (e) { console.error('battleship.js не подключён:', e.message); 
 // --- 💬 Чат (Discord-подобный; messenger.js и messenger.html лежат рядом с server.js; не связан с Discord) ---
 try { require('./messenger').site(app, getUser, { db, canModerate: u => permsOf(u).includes('ban') }); }
 catch (e) { console.error('messenger.js не подключён:', e.message); }
+// --- 📱 Установка на домашний экран iPhone (PWA): манифест, иконки, service worker ---
+for (const [url, file, type] of [
+  ['/manifest.webmanifest', 'manifest.webmanifest', 'application/manifest+json'],
+  ['/sw.js', 'sw.js', 'application/javascript'],
+  ['/icon-180.png', 'icon-180.png', 'image/png'],
+  ['/icon-192.png', 'icon-192.png', 'image/png'],
+  ['/icon-512.png', 'icon-512.png', 'image/png']
+]) app.get(url, (req, res) => { res.type(type); res.sendFile(path.join(__dirname, file)); });
 let tt = null;
 try { tt = require('./tictactoe'); tt.site(app, getUser, { siteUrl: process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '', botName: () => tgBotName }); }
 catch (e) { console.error('tictactoe.js не подключён:', e.message); }

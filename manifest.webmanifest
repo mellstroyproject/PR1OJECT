@@ -1,0 +1,15 @@
+{
+  "name": "NextProject",
+  "short_name": "NextProject",
+  "description": "NextProject: сервер CS2, магазин, чат и голосовые каналы",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#101018",
+  "theme_color": "#101018",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
