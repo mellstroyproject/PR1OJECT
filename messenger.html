@@ -8,33 +8,48 @@
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:#313338;color:#dbdee1;font:15px/1.4 "gg sans","Segoe UI",Roboto,Arial,sans-serif}
 button,input,textarea{font:inherit;color:inherit}
+[hidden]{display:none!important}
 .app{display:flex;height:100%}
-.side{width:240px;background:#2b2d31;display:flex;flex-direction:column;flex:none}
-.side-head{height:48px;padding:0 16px;display:flex;align-items:center;font-weight:700;border-bottom:1px solid #1f2023}
-.side-scroll{flex:1;overflow-y:auto;padding:8px}
+.side{width:240px;background:#2b2d31;display:flex;flex-direction:column;flex:none;min-height:0}
+.side-head{height:48px;padding:0 16px;display:flex;align-items:center;justify-content:space-between;font-weight:700;border-bottom:1px solid #1f2023;flex:none}
+.side-scroll{flex:1;overflow-y:auto;padding:8px;min-height:0}
 .sec{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;text-transform:uppercase;color:#949ba4;padding:14px 8px 6px}
 .plus{background:none;border:0;color:#949ba4;font-size:18px;cursor:pointer;line-height:1}
 .plus:hover{color:#dbdee1}
-.item{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:4px;cursor:pointer;color:#949ba4;background:none;border:0;width:100%;text-align:left;overflow:hidden}
+.item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;cursor:pointer;color:#949ba4;background:none;border:0;width:100%;text-align:left;overflow:hidden}
 .item:hover{background:#35373c;color:#dbdee1}
 .item.on{background:#404249;color:#fff}
 .item span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hash{width:20px;text-align:center;flex:none;font-size:17px}
-.me{margin-top:auto;padding:10px 12px;background:#232428;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.hash{width:20px;text-align:center;flex:none;font-size:16px}
+.vusers{padding:0 0 4px 30px}
+.vu{display:flex;align-items:center;gap:8px;padding:3px 4px;font-size:13px;color:#b5bac1}
+.vu span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vu i{font-style:normal;font-size:12px}
 .ava{width:32px;height:32px;border-radius:50%;flex:none;object-fit:cover;display:grid;place-items:center;background:#5865f2;color:#fff;font-size:14px;font-weight:700}
-.item .ava{width:24px;height:24px;font-size:11px}
+.ava.s{width:22px;height:22px;font-size:10px}
+.item .ava{width:22px;height:22px;font-size:10px}
+.me{flex:none;padding:8px 10px;background:#232428;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;min-height:52px}
+.me .mname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vstat{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}
+.vstat b{font-size:13px;color:#23a55a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vstat span{font-size:12px;color:#949ba4;font-weight:400}
+.ib{background:#2b2d31;border:0;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:15px;flex:none}
+.ib:hover{background:#3a3c42}
+.ib.red{background:#da373c;color:#fff}
 .main{flex:1;display:flex;flex-direction:column;min-width:0}
-.top{height:48px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid #1f2023;font-weight:700;min-width:0}
+.top{height:48px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid #1f2023;font-weight:700;min-width:0;flex:none}
+.top .grow{flex:1;min-width:0;display:flex;gap:10px;align-items:center;overflow:hidden}
 .top .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .top small{color:#949ba4;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.top .grow{flex:1;min-width:0;display:flex;gap:10px;align-items:center;overflow:hidden}
 .btn-sm{background:#2b2d31;border:0;border-radius:4px;padding:4px 10px;font-size:13px;cursor:pointer;color:#dbdee1;flex:none}
 .btn-sm:hover{background:#3a3c42}
+.btn-sm.g{background:#23a55a;color:#fff}
+.btn-sm.r{background:#da373c;color:#fff}
 .burger{display:none;background:none;border:0;font-size:22px;cursor:pointer;padding:0 4px 0 0}
-.msgs{flex:1;overflow-y:auto;padding:12px 0}
+.msgs{flex:1;overflow-y:auto;padding:12px 0;min-height:0}
 .m{display:flex;gap:14px;padding:3px 16px;position:relative}
 .m:hover,.m.sel{background:#2e3035}
-.m .ava{width:40px;height:40px;font-size:17px;margin-top:2px}
+.m>.ava{width:40px;height:40px;font-size:17px;margin-top:2px}
 .gap{width:40px;flex:none}
 .mb{min-width:0;flex:1}
 .mh{display:flex;align-items:baseline;gap:8px}
@@ -52,7 +67,7 @@ button,input,textarea{font:inherit;color:inherit}
 .acts button{background:none;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;color:#b5bac1;font-size:14px}
 .acts button:hover{background:#4e5058;color:#fff}
 .empty{padding:24px;color:#949ba4}
-.bar{padding:0 16px 20px}
+.bar{padding:0 16px 20px;flex:none}
 .rbar{background:#2b2d31;border-radius:8px 8px 0 0;padding:7px 12px;font-size:13px;color:#b5bac1;display:none;justify-content:space-between;align-items:center;gap:8px}
 .rbar.on{display:flex}
 .rbar button{background:none;border:0;color:#949ba4;cursor:pointer;font-size:16px}
@@ -61,10 +76,19 @@ button,input,textarea{font:inherit;color:inherit}
 .box textarea{flex:1;background:none;border:0;outline:0;resize:none;max-height:140px;min-height:22px;font-size:15px;padding:0;line-height:22px}
 .box textarea::placeholder{color:#7d828b}
 .send{background:#5865f2;color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;font-weight:600;flex:none}
+.ro{background:#2b2d31;border-radius:8px;padding:12px;text-align:center;color:#949ba4;font-size:14px}
+.vpanel{padding:24px;display:flex;flex-direction:column;gap:14px;max-width:720px}
+.vpanel h2{margin:0;font-size:20px;color:#f2f3f5}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.vcard{background:#2b2d31;border-radius:10px;padding:16px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.vcard .ava{width:64px;height:64px;font-size:24px}
+.vcard span{font-size:14px;color:#f2f3f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.vcard small{color:#949ba4;font-size:12px}
+.vcard.speak{box-shadow:0 0 0 2px #23a55a}
 #login{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:10}
 #login .card{background:#313338;padding:28px;border-radius:10px;text-align:center;max-width:320px}
 #login a{display:inline-block;margin-top:14px;background:#5865f2;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600}
-#toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#111214;color:#fff;padding:10px 16px;border-radius:6px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;max-width:90vw}
+#toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#111214;color:#fff;padding:10px 16px;border-radius:6px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;max-width:90vw;text-align:center}
 #toast.on{opacity:1}
 .scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:4}
 @media (max-width:700px){
@@ -74,17 +98,18 @@ button,input,textarea{font:inherit;color:inherit}
   .burger{display:block}
   .m{gap:10px;padding:3px 10px}
   .gap{width:0}
-  .m .ava{width:34px;height:34px}
+  .m>.ava{width:34px;height:34px}
   .bar{padding:0 8px 12px}
+  .vpanel{padding:14px}
 }
 </style>
 </head>
 <body>
 <div class="app">
   <aside class="side" id="side">
-    <div class="side-head">NextProject · Чат</div>
+    <div class="side-head"><span>NextProject</span></div>
     <div class="side-scroll">
-      <div class="sec"><span>Текстовые каналы</span><button class="plus" id="addCh" title="Новый канал" hidden>+</button></div>
+      <div class="sec"><span>Каналы</span><button class="plus" id="addCh" title="Новый канал" hidden>+</button></div>
       <div id="chList"></div>
       <div class="sec"><span>Личные сообщения</span><button class="plus" id="addDm" title="Написать игроку">+</button></div>
       <div id="dmList"></div>
@@ -97,36 +122,40 @@ button,input,textarea{font:inherit;color:inherit}
     <header class="top">
       <button class="burger" id="burger" aria-label="Меню">☰</button>
       <div class="grow"><span class="t" id="title">…</span><small id="sub"></small></div>
-      <button class="btn-sm" id="delCh" hidden>Удалить канал</button>
+      <button class="btn-sm" id="delCh" hidden>Удалить</button>
     </header>
     <div class="msgs" id="msgs"></div>
-    <div class="bar">
+    <div class="bar" id="bar">
       <div class="rbar" id="rbar"><span id="rtext"></span><button id="rcancel" title="Отмена">✕</button></div>
       <div class="box" id="box">
         <textarea id="inp" rows="1" maxlength="500" placeholder="Написать сообщение…"></textarea>
         <button class="send" id="sendBtn">➤</button>
       </div>
+      <div class="ro" id="ro" hidden>Писать в этот канал могут только администраторы</div>
     </div>
   </section>
 </div>
+<div id="vaud" hidden></div>
 
 <div id="login"><div class="card">
   <div style="font-size:18px;font-weight:700;color:#f2f3f5">Чат доступен после входа</div>
-  <div style="color:#949ba4;margin-top:8px">Войдите через Steam, чтобы читать и писать сообщения.</div>
+  <div style="color:#949ba4;margin-top:8px">Войдите через Steam, чтобы читать, писать и говорить в голосовых каналах.</div>
   <a href="/auth/steam" target="_top">Войти через Steam</a>
 </div></div>
 <div id="toast"></div>
 
 <script>
 const EMOJI = ['👍','❤️','😂','🔥','😮','😢'];
-const S = { me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', msgs: [], hash: '', reply: null, edit: null, sel: null };
+const S = { me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', write: true, msgs: [], hash: '', reply: null, edit: null, sel: null, panel: '' };
+const V = { room: null, label: '', local: null, pcs: new Map(), pending: new Map(), timer: null, muted: false, peers: [] };
+const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const dmRoom = (a, b) => 'dm:' + [a, b].sort().join(':');
 const initial = n => esc((n || '?').trim().charAt(0).toUpperCase() || '?');
-const avatar = (a, name) => a ? `<img class="ava" src="${esc(a)}" alt="">` : `<div class="ava">${initial(name)}</div>`;
+const avatar = (a, name, cls = 'ava') => a ? `<img class="${cls}" src="${esc(a)}" alt="">` : `<div class="${cls}">${initial(name)}</div>`;
 let toastT;
-function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600); }
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 3200); }
 
 async function api(path, body) {
   const r = await fetch('/api/msg/' + path, {
@@ -143,45 +172,75 @@ async function api(path, body) {
 async function init() {
   try { S.me = await api('me'); }
   catch (e) { $('login').style.display = 'flex'; return; }
-  $('meBox').innerHTML = avatar(S.me.avatar, S.me.name) + `<span>${esc(S.me.name)}</span>`;
   if (S.me.mod) $('addCh').hidden = false;
+  updateMe();
   await loadRooms();
-  openRoom(S.rooms.channels[0].room, S.rooms.channels[0].name, S.rooms.channels[0].topic, 'ch');
-  setInterval(loadRooms, 15000);
+  const first = S.rooms.channels.find(c => c.kind === 'text') || S.rooms.channels[0];
+  openRoom(first.room, first.name, first.topic, 'ch', first.write);
+  setInterval(loadRooms, 5000);
   setInterval(loadMsgs, 2500);
 }
 
 async function loadRooms() {
-  try { S.rooms = await api('rooms'); renderSide(); } catch (e) {}
+  try {
+    S.rooms = await api('rooms');
+    renderSide();
+    if (S.kind === 'voice') renderPanel();
+  } catch (e) {}
+}
+
+function chItem(c) {
+  const on = S.room === c.room;
+  const icon = c.kind === 'voice' ? '🔊' : '#';
+  let users = '';
+  if (c.kind === 'voice' && c.users.length) {
+    users = '<div class="vusers">' + c.users.map(u =>
+      `<div class="vu">${avatar(u.avatar, u.name, 'ava s')}<span>${esc(u.name)}</span>${u.muted ? '<i>🔇</i>' : ''}</div>`).join('') + '</div>';
+  }
+  return `<button class="item ${on ? 'on' : ''}" data-room="${esc(c.room)}" data-label="${esc(c.name)}" data-topic="${esc(c.topic)}" data-kind="${c.kind === 'voice' ? 'voice' : 'ch'}" data-write="${c.write ? 1 : 0}">
+    <span class="hash">${icon}</span><span>${esc(c.name)}</span></button>${users}`;
 }
 
 function renderSide() {
-  const cur = S.room;
-  $('chList').innerHTML = S.rooms.channels.map(c =>
-    `<button class="item ${c.room === cur ? 'on' : ''}" data-room="${esc(c.room)}" data-label="${esc(c.name)}" data-topic="${esc(c.topic)}" data-kind="ch">
-      <span class="hash">#</span><span>${esc(c.name)}</span></button>`).join('');
+  const groups = new Map();
+  for (const c of S.rooms.channels) {
+    if (!groups.has(c.category)) groups.set(c.category, []);
+    groups.get(c.category).push(c);
+  }
+  let html = '';
+  for (const [cat, list] of groups) {
+    html += `<div class="sec"><span>${esc(cat)}</span></div>` + list.map(chItem).join('');
+  }
+  $('chList').innerHTML = html;
   $('dmList').innerHTML = S.rooms.dms.length ? S.rooms.dms.map(d =>
-    `<button class="item ${d.room === cur ? 'on' : ''}" data-room="${esc(d.room)}" data-label="${esc(d.name)}" data-topic="" data-kind="dm">
-      ${avatar(d.avatar, d.name)}<span>${esc(d.name)}</span></button>`).join('')
+    `<button class="item ${d.room === S.room ? 'on' : ''}" data-room="${esc(d.room)}" data-label="${esc(d.name)}" data-kind="dm">
+      ${avatar(d.avatar, d.name, 'ava')}<span>${esc(d.name)}</span></button>`).join('')
     : '<div style="font-size:13px;color:#7d828b;padding:4px 8px">Пока нет личных сообщений</div>';
 }
 
-function openRoom(room, label, topic, kind) {
+function closeSide() { $('side').classList.remove('open'); $('scrim').classList.remove('on'); }
+
+function openRoom(room, label, topic, kind, write) {
   S.room = room; S.label = label; S.topic = topic || ''; S.kind = kind;
-  S.msgs = []; S.hash = ''; S.reply = null; S.edit = null; S.sel = null;
-  $('title').textContent = (kind === 'ch' ? '# ' : '') + label;
-  $('sub').textContent = kind === 'ch' ? S.topic : 'Личное сообщение';
-  $('inp').placeholder = kind === 'ch' ? `Написать в #${label}` : `Написать ${label}`;
-  $('delCh').hidden = !(S.me.mod && kind === 'ch');
+  S.write = write !== false; S.msgs = []; S.hash = ''; S.reply = null; S.edit = null; S.sel = null; S.panel = '';
+  $('title').textContent = kind === 'voice' ? '🔊 ' + label : kind === 'dm' ? label : '# ' + label;
+  $('sub').textContent = kind === 'ch' ? S.topic : kind === 'voice' ? 'Голосовой канал' : 'Личное сообщение';
+  $('delCh').hidden = !(S.me.mod && kind !== 'dm');
+  $('msgs').innerHTML = '';
+  const isText = kind !== 'voice';
+  $('bar').hidden = !isText;
+  $('box').hidden = !S.write;
+  $('ro').hidden = S.write;
+  $('inp').placeholder = kind === 'dm' ? `Написать ${label}` : `Написать в #${label}`;
   updateBar();
   renderSide();
-  $('msgs').innerHTML = '';
-  $('side').classList.remove('open'); $('scrim').classList.remove('on');
+  closeSide();
+  if (kind === 'voice') { renderPanel(); return; }
   loadMsgs();
 }
 
 async function loadMsgs() {
-  if (!S.room) return;
+  if (!S.room || S.kind === 'voice') return;
   const room = S.room;
   try {
     const j = await api('messages?room=' + encodeURIComponent(room));
@@ -227,7 +286,7 @@ function render() {
       + '</div>' + acts + '</div>';
     prev = m;
   }
-  box.innerHTML = html || `<div class="empty">${S.kind === 'ch' ? `Это начало канала #${esc(S.label)}. Напишите первым!` : 'Здесь пока пусто.'}</div>`;
+  box.innerHTML = html || `<div class="empty">${S.kind === 'dm' ? 'Здесь пока пусто.' : `Это начало канала #${esc(S.label)}. Напишите первым!`}</div>`;
 }
 
 function pick(id) { S.sel = S.sel === id ? null : id; render(); }
@@ -265,12 +324,11 @@ function updateBar() {
 }
 
 function cancelMode() { S.reply = null; S.edit = null; $('inp').value = ''; autosize(); updateBar(); }
-
 function autosize() { const i = $('inp'); i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight, 140) + 'px'; }
 
 async function send() {
   const inp = $('inp'), text = inp.value.trim();
-  if (!text || !S.room) return;
+  if (!text || !S.room || !S.write) return;
   try {
     if (S.edit) await api('edit', { id: S.edit.id, text });
     else await api('send', { room: S.room, text, reply_to: S.reply ? S.reply.id : null });
@@ -279,6 +337,160 @@ async function send() {
     $('msgs').scrollTop = $('msgs').scrollHeight;
   } catch (e) { toast(e.message); }
 }
+
+function updateMe() {
+  const box = $('meBox');
+  if (V.room) {
+    box.innerHTML = `<div class="vstat"><b>🔊 ${esc(V.label)}</b><span>Голос подключён</span></div>
+      <button class="ib" onclick="toggleMute()" title="Микрофон">${V.muted ? '🔇' : '🎙'}</button>
+      <button class="ib red" onclick="leaveVoice()" title="Отключиться">⏏</button>`;
+  } else {
+    box.innerHTML = avatar(S.me.avatar, S.me.name) + `<span class="mname">${esc(S.me.name)}</span>`;
+  }
+}
+
+/* ---------- голосовые каналы (WebRTC; сигналы через сервер) ---------- */
+
+function participants() {
+  if (V.room === S.room) {
+    return [{ uid: S.me.id, name: S.me.name, avatar: S.me.avatar, muted: V.muted, me: true }, ...V.peers];
+  }
+  const ch = S.rooms && S.rooms.channels.find(c => c.room === S.room);
+  return ch ? ch.users : [];
+}
+
+function renderPanel() {
+  if (S.kind !== 'voice') return;
+  const inThis = V.room === S.room;
+  const list = participants();
+  const cards = list.map(p => `<div class="vcard">${avatar(p.avatar, p.name)}<span>${esc(p.name)}${p.me ? ' (вы)' : ''}</span><small>${p.muted ? '🔇 микрофон выключен' : '🎙 в голосовом'}</small></div>`).join('');
+  const html = `<div class="vpanel">
+      <h2>🔊 ${esc(S.label)}</h2>
+      <div><button class="btn-sm ${inThis ? 'r' : 'g'}" onclick="${inThis ? 'leaveVoice()' : `joinVoice('${S.room}','${esc(S.label)}')`}">${inThis ? 'Отключиться' : 'Подключиться'}</button>
+      ${inThis ? `<button class="btn-sm" onclick="toggleMute()">${V.muted ? 'Включить микрофон' : 'Выключить микрофон'}</button>` : ''}</div>
+      <div class="vgrid">${cards || '<div class="empty" style="padding:0">В канале пока никого нет</div>'}</div>
+    </div>`;
+  if (html !== S.panel) { S.panel = html; $('msgs').innerHTML = html; }
+}
+
+async function joinVoice(room, label) {
+  if (V.room === room) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Голос работает только по https (защищённое соединение)'); return; }
+  if (V.room) await leaveVoice(true);
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch (e) { toast('Нет доступа к микрофону. Разрешите его в настройках браузера.'); return; }
+  try { await api('voice/join', { room }); }
+  catch (e) { stream.getTracks().forEach(t => t.stop()); toast(e.message); return; }
+  V.room = room; V.label = label; V.local = stream; V.muted = false; V.peers = [];
+  V.timer = setInterval(voicePoll, 1000);
+  S.panel = '';
+  voicePoll(); updateMe(); renderSide(); renderPanel();
+  if (S.room !== room) openRoom(room, label, '', 'voice', true);
+}
+
+async function leaveVoice(silent) {
+  if (!V.room) return;
+  clearInterval(V.timer);
+  for (const uid of [...V.pcs.keys()]) dropPeer(uid);
+  if (V.local) V.local.getTracks().forEach(t => t.stop());
+  V.room = null; V.local = null; V.peers = []; V.muted = false;
+  await api('voice/leave', {}).catch(() => {});
+  S.panel = '';
+  updateMe(); renderSide(); renderPanel();
+  if (!silent) renderPanel();
+}
+
+function toggleMute() {
+  if (!V.local) return;
+  V.muted = !V.muted;
+  V.local.getAudioTracks().forEach(t => t.enabled = !V.muted);
+  api('voice/mute', { muted: V.muted }).catch(() => {});
+  updateMe(); S.panel = ''; renderPanel();
+}
+
+async function voicePoll() {
+  if (!V.room) return;
+  const room = V.room;
+  try {
+    const j = await api('voice/poll?room=' + encodeURIComponent(room));
+    if (room !== V.room) return;
+    if (!j.inRoom) { await api('voice/join', { room }).catch(() => {}); return; }
+    V.peers = j.peers;
+    const ids = new Set(j.peers.map(p => p.uid));
+    for (const p of j.peers) if (!V.pcs.has(p.uid) && S.me.id < p.uid) callPeer(p.uid).catch(() => {});
+    for (const uid of [...V.pcs.keys()]) if (!ids.has(uid)) dropPeer(uid);
+    for (const s of j.signals) handleSignal(s).catch(() => {});
+    renderPanel();
+  } catch (e) {}
+}
+
+function makePC(uid) {
+  const pc = new RTCPeerConnection(ICE);
+  V.local.getTracks().forEach(t => pc.addTrack(t, V.local));
+  pc.onicecandidate = e => { if (e.candidate) sendSig(uid, 'ice', e.candidate.toJSON()); };
+  pc.ontrack = e => attachAudio(uid, e.streams[0] || new MediaStream([e.track]));
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed') toast('Не удалось соединиться с одним из игроков: сеть блокирует прямой звук.');
+  };
+  V.pcs.set(uid, pc);
+  return pc;
+}
+
+async function sendSig(to, kind, data) {
+  await api('voice/signal', { to, kind, data: kind === 'ice' ? data : { type: data.type, sdp: data.sdp } });
+}
+
+// тот, у кого ID меньше, звонит первым — так не возникает двойных предложений
+async function callPeer(uid) {
+  const pc = makePC(uid);
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await sendSig(uid, 'offer', pc.localDescription);
+}
+
+async function flushIce(uid) {
+  const pc = V.pcs.get(uid);
+  const q = V.pending.get(uid) || [];
+  V.pending.delete(uid);
+  if (pc) for (const c of q) await pc.addIceCandidate(c).catch(() => {});
+}
+
+async function handleSignal(s) {
+  const uid = s.from;
+  if (s.kind === 'offer') {
+    if (V.pcs.has(uid)) dropPeer(uid);
+    const pc = makePC(uid);
+    await pc.setRemoteDescription(s.data);
+    await flushIce(uid);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await sendSig(uid, 'answer', pc.localDescription);
+  } else if (s.kind === 'answer') {
+    const pc = V.pcs.get(uid); if (!pc) return;
+    await pc.setRemoteDescription(s.data);
+    await flushIce(uid);
+  } else if (s.kind === 'ice') {
+    const pc = V.pcs.get(uid);
+    if (pc && pc.remoteDescription) await pc.addIceCandidate(s.data).catch(() => {});
+    else { if (!V.pending.has(uid)) V.pending.set(uid, []); V.pending.get(uid).push(s.data); }
+  }
+}
+
+function attachAudio(uid, stream) {
+  let a = document.getElementById('a-' + uid);
+  if (!a) { a = document.createElement('audio'); a.id = 'a-' + uid; a.autoplay = true; a.playsInline = true; $('vaud').appendChild(a); }
+  a.srcObject = stream;
+}
+
+function dropPeer(uid) {
+  const pc = V.pcs.get(uid);
+  if (pc) { pc.onicecandidate = null; pc.ontrack = null; pc.close(); }
+  V.pcs.delete(uid); V.pending.delete(uid);
+  const a = document.getElementById('a-' + uid); if (a) a.remove();
+}
+
+/* ---------- клики и кнопки ---------- */
 
 $('inp').addEventListener('input', autosize);
 $('inp').addEventListener('keydown', e => {
@@ -289,26 +501,35 @@ $('sendBtn').onclick = send;
 $('rcancel').onclick = cancelMode;
 
 $('chList').addEventListener('click', e => {
-  const b = e.target.closest('[data-room]'); if (b) openRoom(b.dataset.room, b.dataset.label, b.dataset.topic, b.dataset.kind);
+  const b = e.target.closest('[data-room]'); if (!b) return;
+  if (b.dataset.kind === 'voice') {
+    openRoom(b.dataset.room, b.dataset.label, '', 'voice', true);
+    joinVoice(b.dataset.room, b.dataset.label);
+  } else {
+    openRoom(b.dataset.room, b.dataset.label, b.dataset.topic, 'ch', b.dataset.write === '1');
+  }
 });
 $('dmList').addEventListener('click', e => {
-  const b = e.target.closest('[data-room]'); if (b) openRoom(b.dataset.room, b.dataset.label, '', b.dataset.kind);
+  const b = e.target.closest('[data-room]'); if (b) openRoom(b.dataset.room, b.dataset.label, '', 'dm', true);
 });
 
 $('addCh').onclick = async () => {
-  const name = prompt('Название нового канала:'); if (!name) return;
-  const topic = prompt('Описание канала (необязательно):') || '';
-  try { await api('channel', { name, topic }); await loadRooms(); toast('Канал создан'); }
+  const name = prompt('Название канала:'); if (!name) return;
+  const kind = (prompt('Тип: введите «текст» или «голос»', 'текст') || '').trim().toLowerCase().startsWith('г') ? 'voice' : 'text';
+  const topic = kind === 'text' ? (prompt('Описание канала (необязательно):') || '') : '';
+  try { await api('channel', { name, topic, kind }); await loadRooms(); toast('Канал создан'); }
   catch (e) { toast(e.message); }
 };
 
 $('delCh').onclick = async () => {
   const id = +S.room.slice(3);
-  if (!confirm(`Удалить канал #${S.label} и все его сообщения?`)) return;
+  if (!confirm(`Удалить канал «${S.label}» и все его сообщения?`)) return;
   try {
+    if (V.room === S.room) await leaveVoice(true);
     await api('channel-delete', { id });
     await loadRooms();
-    openRoom(S.rooms.channels[0].room, S.rooms.channels[0].name, S.rooms.channels[0].topic, 'ch');
+    const first = S.rooms.channels.find(c => c.kind === 'text');
+    openRoom(first.room, first.name, first.topic, 'ch', first.write);
   } catch (e) { toast(e.message); }
 };
 
@@ -322,14 +543,15 @@ $('addDm').onclick = async () => {
       const n = prompt(users.map((x, i) => `${i + 1} — ${x.name}`).join('\n') + '\n\nВведите номер:');
       u = users[(+n || 1) - 1]; if (!u) return;
     }
-    const room = dmRoom(S.me.id, u.uid);
     await loadRooms();
-    openRoom(room, u.name, '', 'dm');
+    openRoom(dmRoom(S.me.id, u.uid), u.name, '', 'dm', true);
   } catch (e) { toast(e.message); }
 };
 
 $('burger').onclick = () => { $('side').classList.add('open'); $('scrim').classList.add('on'); };
-$('scrim').onclick = () => { $('side').classList.remove('open'); $('scrim').classList.remove('on'); };
+$('scrim').onclick = closeSide;
+
+window.addEventListener('beforeunload', () => { if (V.room) navigator.sendBeacon && navigator.sendBeacon('/api/voice/leave', new Blob(['{}'], { type: 'application/json' })); });
 
 init();
 </script>

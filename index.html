@@ -2751,7 +2751,7 @@ header{gap:16px}
     document.body.classList.toggle('pg-chat', st.page === 'chat');
     return st.page === 'chat' ? chatPageView() : _v2();
   };
-  window.chatPageView = () => `<div class="chatpg"><iframe src="/messenger" title="Чат" allow="clipboard-write"></iframe></div>`;
+  window.chatPageView = () => `<div class="chatpg"><iframe src="/messenger" title="Чат" allow="clipboard-write; microphone"></iframe></div>`;
 })();
 </script>
 <style>
