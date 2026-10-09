@@ -797,7 +797,7 @@ function head(){
    `<div class="promo-wrap"><button class="promo-btn" onclick="togglePromo()">${I('promo')}Промокод</button>`+
    
    `</div>`+
-   `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="uiAlert('Пополнение баланса пока не подключено — платёжную систему добавим позже.')">+</button></div>`+
+   `<div class="chip bal${coinsChanged?' bump':''}">${I('coin')}<span id="bal">${coins.toFixed(2)}</span><button class="plus" aria-label="Пополнить баланс" onclick="uiAlert('Баланс пополняется в Telegram-боте: «👤 Мой аккаунт» → «💳 Пополнить баланс». Переведите деньги по реквизитам и пришлите чек — после проверки монеты придут на аккаунт.')">+</button></div>`+
    `<button class="ava" aria-label="Меню профиля" aria-haspopup="true" style="${st.user.avatar?`background-image:url('${st.user.avatar}')`:''}" onclick="toggleMenu(event)">${st.user.avatar?'':esc((st.user.name||'?').trim().charAt(0).toUpperCase())}</button>`+
    `<button class="gear${st.page==='settings'?' on':''}" aria-label="Настройки" title="Настройки" onclick="go('settings')">${I('gear')}</button>`+
    (st.menu?`<div class="menu">${st.user.role?`<div class="menu-role">${st.user.role}</div>`:''}${menuItems.map(([t,ic,act])=>`<button onclick="${act||'st.menu=false;head()'}">${I(ic)}${t}</button>`).join('')}<hr><button onclick="logout()">${I('out')}Выйти</button></div>`:'')
