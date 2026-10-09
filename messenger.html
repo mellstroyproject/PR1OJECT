@@ -173,7 +173,7 @@ button,input,textarea{font:inherit;color:inherit}
 const EMOJI = ['👍','❤️','😂','🔥','😮','😢'];
 const S = { me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', write: true, msgs: [], hash: '', reply: null, edit: null, sel: null, panel: '', ring: null, notifyLast: null };
 const V = { room: null, label: '', local: null, pcs: new Map(), pending: new Map(), timer: null, muted: false, peers: [], state: new Map(), iceServers: null,
-  vtx: new Map(), remoteVideo: new Map(), sharer: null, sharerName: '', screenStream: null, screenTrack: null };
+  vtx: new Map(), remoteVideo: new Map(), sharer: null, sharerName: '', screenStream: null, screenTrack: null, blank: null };
 const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
 const RING_MS = 30000;
 const $ = id => document.getElementById(id);
@@ -419,9 +419,18 @@ function renderScreen() {
   box.hidden = false;
   const mine = sharer === S.me.id;
   const stream = mine ? V.screenStream : (V.remoteVideo.get(sharer) || null);
-  if (vid.srcObject !== stream) vid.srcObject = stream;
+  if (vid.srcObject !== stream) { vid.srcObject = stream; if (stream) vid.play().catch(() => {}); }
   $('screenTitle').textContent = mine ? '🖥 Вы показываете' : `🖥 Показывает ${V.sharerName || 'игрок'}`;
   $('screenStop').hidden = !mine;
+}
+
+// заглушка для видеоканала, когда ничего не показываем (чёрный кадр)
+function blankTrack() {
+  if (!V.blank) {
+    const c = document.createElement('canvas'); c.width = 2; c.height = 2;
+    V.blank = c.captureStream(1).getVideoTracks()[0];
+  }
+  return V.blank;
 }
 
 // на компьютере — демонстрация экрана; на телефоне (iPhone/Android) браузер экран не отдаёт — показываем камеру
@@ -462,7 +471,7 @@ async function attachScreen(uid) {
 async function stopShare() {
   if (!V.screenStream) return;
   V.screenStream.getTracks().forEach(t => t.stop());
-  for (const vt of V.vtx.values()) await vt.sender.replaceTrack(null).catch(() => {});
+  for (const vt of V.vtx.values()) await vt.sender.replaceTrack(blankTrack()).catch(() => {});
   const wasMine = V.sharer === S.me.id;
   V.screenStream = null; V.screenTrack = null;
   if (wasMine) { V.sharer = null; V.sharerName = ''; api('voice/share', { on: false }).catch(() => {}); }
@@ -588,7 +597,8 @@ function makePC(uid) {
   });
   const vt = pc.addTransceiver('video', { direction: 'sendrecv' });
   V.vtx.set(uid, vt);
-  if (V.screenTrack) vt.sender.replaceTrack(V.screenTrack).catch(() => {});
+  // видеоканал всегда с дорожкой (заглушка или камера/экран): иначе браузер согласует «только приём» и показ не уйдёт
+  vt.sender.replaceTrack(V.screenTrack || blankTrack()).catch(() => {});
   V.state.set(uid, 'connecting');
   pc.onicecandidate = e => { if (e.candidate) sendSig(uid, 'ice', e.candidate.toJSON()); };
   pc.ontrack = e => {
