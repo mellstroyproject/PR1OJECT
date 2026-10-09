@@ -10,6 +10,20 @@ html,body{margin:0;height:100%;background:#313338;color:#dbdee1;font:15px/1.4 "g
 button,input,textarea{font:inherit;color:inherit}
 [hidden]{display:none!important}
 .app{display:flex;height:100%}
+.ava.big{width:96px;height:96px;font-size:36px;border:6px solid #2b2d31}
+.dot.big{width:22px;height:22px;border-width:4px;margin:0;position:absolute;right:2px;bottom:2px}
+.prof{display:none;width:300px;background:#2b2d31;flex:none;flex-direction:column;overflow-y:auto;min-height:0}
+@media (min-width:1100px){.prof.dm{display:flex}}
+.pbanner{height:100px;background:linear-gradient(135deg,#5865f2,#eb459e);flex:none}
+.pbody{padding:0 16px 16px;display:flex;flex-direction:column;gap:10px}
+.pav{position:relative;width:96px;height:96px;margin:-48px 0 0 0}
+.pname{font-size:20px;font-weight:700;color:#f2f3f5;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pstat{font-size:13px;color:#949ba4}
+.psec{background:#232428;border-radius:8px;padding:10px}
+.plabel{font-size:11px;font-weight:700;text-transform:uppercase;color:#949ba4}
+.pval{font-size:13px;color:#dbdee1;margin-top:3px}
+.pbtn{background:#23a55a;color:#fff;border:0;border-radius:6px;padding:9px;font-weight:600;cursor:pointer}
+.pbtn:hover{background:#1f9150}
 .rail{width:72px;background:#1e1f22;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px 0;flex:none}
 .srv{width:48px;height:48px;border-radius:50%;background:#313338;display:grid;place-items:center;overflow:hidden;cursor:pointer;border:0;padding:0}
 .srv img{width:100%;height:100%;object-fit:cover;display:block}
@@ -174,6 +188,7 @@ button,input,textarea{font:inherit;color:inherit}
       <div class="ro" id="ro" hidden>Писать в этот канал могут только администраторы</div>
     </div>
   </section>
+  <aside class="prof" id="prof"></aside>
 </div>
 <div id="vaud" hidden></div>
 
@@ -274,20 +289,43 @@ function closeSide() { $('side').classList.remove('open'); $('scrim').classList.
 function openRoom(room, label, topic, kind, write) {
   S.room = room; S.label = label; S.topic = topic || ''; S.kind = kind;
   S.write = write !== false; S.msgs = []; S.hash = ''; S.reply = null; S.edit = null; S.sel = null; S.panel = '';
-  $('title').textContent = kind === 'voice' ? '🔊 ' + label : kind === 'dm' ? label : '# ' + label;
+  const dmObj = kind === 'dm' && S.rooms && S.rooms.dms.find(x => x.room === room);
+  $('title').innerHTML = kind === 'voice' ? esc('🔊 ' + label)
+    : kind === 'dm' ? `${avatar(dmObj && dmObj.avatar, label, 'ava s')} ${esc(label)}`
+    : esc('# ' + label);
   $('sub').textContent = kind === 'ch' ? S.topic : kind === 'voice' ? 'Голосовой канал' : 'Личное сообщение';
   $('delCh').hidden = !(S.me && S.me.mod && kind !== 'dm');
   $('msgs').innerHTML = '';
   $('bar').hidden = kind === 'voice';
   $('box').hidden = !S.write;
   $('ro').hidden = S.write;
-  $('inp').placeholder = kind === 'dm' ? `Написать ${label}` : `Написать в #${label}`;
+  $('inp').placeholder = kind === 'dm' ? `Написать @${label}` : `Написать в #${label}`;
   updateBar();
   renderSide();
   renderCallBtn();
+  renderProfile();
   closeSide();
   if (kind === 'voice') { renderPanel(); return; }
   loadMsgs();
+}
+
+function renderProfile() {
+  const p = $('prof');
+  const isDm = S.kind === 'dm';
+  p.classList.toggle('dm', isDm);
+  if (!isDm) { p.innerHTML = ''; return; }
+  const d = (S.rooms && S.rooms.dms.find(x => x.room === S.room)) || { name: S.label, avatar: null, uid: null };
+  const on = !!d.uid && S.online.has(d.uid);
+  const since = S.msgs.length ? new Date(S.msgs[0].at).toLocaleDateString('ru', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+  p.innerHTML = `<div class="pbanner"></div>
+    <div class="pbody">
+      <div class="pav">${avatar(d.avatar, d.name, 'ava big')}<i class="dot big ${on ? 'on' : ''}"></i></div>
+      <div class="pname">${esc(d.name)}</div>
+      <div class="pstat">${on ? 'В сети' : 'Не в сети'}</div>
+      <div class="psec"><div class="plabel">Личная переписка</div><div class="pval">Начало: ${esc(since)}</div></div>
+      <button class="pbtn" id="pCall">📞 Позвонить</button>
+    </div>`;
+  $('pCall').onclick = () => joinVoice(S.room, S.label);
 }
 
 function openByRoom(room) {
@@ -744,7 +782,7 @@ $('meBox').addEventListener('click', e => {
 });
 
 async function onlinePoll() {
-  try { const j = await api('online'); S.online = new Set(j.online); renderSide(); } catch (e) {}
+  try { const j = await api('online'); S.online = new Set(j.online); renderSide(); if (S.kind === 'dm') renderProfile(); } catch (e) {}
 }
 
 /* ---------- уведомления: личные сообщения, упоминания и звонки ---------- */
