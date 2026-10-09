@@ -1694,7 +1694,7 @@ if (process.env.TG_BOT_TOKEN) {
   const TOPUP_MIN = +process.env.TOPUP_MIN || 10, TOPUP_MAX = +process.env.TOPUP_MAX || 50000;
   const tpWait = new Map(); // tg_id -> { id, at }: от кого ждём чек
   db.query(`create table if not exists topups(id serial primary key, tg_id text not null, steam_id text not null, amount numeric not null, coins numeric not null,
-    status text not null default 'new', file_id text, file_type text, at bigint not null, done_by text, done_at bigint)`).catch(e => console.error('topups:', e.message));
+    status text not null default 'new', file_id text, file_type text, at bigint not null, done_by text, done_at bigint)`).then(() => db.query('alter table topups add column if not exists file_uid text')).catch(e => console.error('topups:', e.message));
   const rub = n => Math.round(+n * 100) / 100;
   async function tpScreen(ctx) {
     const steam = await tgLinked(ctx); if (!steam) return openMe(ctx, false);
@@ -1749,14 +1749,19 @@ if (process.env.TG_BOT_TOKEN) {
     if (!w || Date.now() - w.at > 30 * 60000) return next();
     const m = ctx.msg;
     if (m.document && !/^(image\/|application\/pdf)/.test(m.document.mime_type || '')) return ctx.reply('Пришлите фото, скриншот или PDF чека.');
-    const fileId = m.photo ? m.photo[m.photo.length - 1].file_id : m.document.file_id, type = m.photo ? 'photo' : 'document';
+    const fo = m.photo ? m.photo[m.photo.length - 1] : m.document, fileId = fo.file_id, uid = fo.file_unique_id, type = m.photo ? 'photo' : 'document';
     try {
-      const r = await db.query("update topups set status='review', file_id=$2, file_type=$3 where id=$1 and tg_id=$4 and status='new' returning *", [w.id, fileId, type, id]);
+      // защита: один и тот же чек второй раз не принимаем; лимит на чеки в очереди и на отказы за сутки
+      if ((await db.query("select 1 from topups where file_uid=$1 limit 1", [uid])).rowCount) return ctx.reply('⚠️ Этот чек уже был отправлен ранее. Пришлите чек именно по этой заявке.');
+      const lim = (await db.query("select count(*) filter (where status='review') rv, count(*) filter (where status='no' and done_at>$2) bad from topups where tg_id=$1", [id, Date.now() - 864e5])).rows[0];
+      if (+lim.rv >= 3) return ctx.reply('⏳ У вас уже есть несколько чеков на проверке. Дождитесь ответа владельца.');
+      if (+lim.bad >= 3) return ctx.reply('🚫 Слишком много отклонённых заявок за сутки. Напишите администратору.');
+      const r = await db.query("update topups set status='review', file_id=$2, file_type=$3, file_uid=$5 where id=$1 and tg_id=$4 and status='new' returning *", [w.id, fileId, type, id, uid]);
       tpWait.delete(id);
       if (!r.rowCount) return ctx.reply('Эта заявка уже не активна — создайте новую: «💳 Пополнить баланс»');
       const t = r.rows[0], u = (await db.query('select name from users where steam_id=$1', [t.steam_id])).rows[0];
       const who = [ctx.from.first_name, ctx.from.username && '@' + ctx.from.username].filter(Boolean).join(' ');
-      const cap = `💳 Заявка на пополнение #${t.id}\nСумма: ${rub(t.amount)} ₽ → ${rub(t.coins)} монет\nTelegram: ${who} (${id})\nСайт: ${(u && u.name) || 'Игрок'} (${t.steam_id})\n\nСверьте поступление на вашем счёте (комментарий NP${t.id}) и подтвердите.`;
+      const cap = `💳 Заявка на пополнение #${t.id}\nСумма: ${rub(t.amount)} ₽ → ${rub(t.coins)} монет\nTelegram: ${who} (${id})\nСайт: ${(u && u.name) || 'Игрок'} (${t.steam_id})\n\nСверьте поступление на вашем счёте (комментарий NP${t.id}) и подтвердите.\n⚠️ Чек можно подделать — ориентируйтесь только на реальное поступление в банке на сумму ${rub(t.amount)} ₽.`;
       const k = new InlineKeyboard().text('✅ Зачислить', 'tpa:' + t.id).text('❌ Отклонить', 'tpr:' + t.id);
       let sent = 0;
       for (const o of TG_ADMINS) {
@@ -1766,12 +1771,20 @@ if (process.env.TG_BOT_TOKEN) {
       return ctx.reply(sent ? `✅ Чек по заявке #${t.id} отправлен на проверку. Как только владелец подтвердит перевод, монеты придут на ваш аккаунт, и я напишу сюда.` : `⚠️ Не удалось уведомить владельца. Заявка #${t.id} сохранена — напишите администратору и назовите её номер.`);
     } catch (e) { console.error('tg topup receipt:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
   });
-  bot.callbackQuery(/^tp([ar]):(\d+)$/, async ctx => { // владелец зачисляет или отклоняет заявку
+  bot.callbackQuery(/^tp([arybB]):(\d+)$/, async ctx => { // владелец: «Зачислить» → второе подтверждение «Деньги пришли» → зачисление
     if (!isOwner(ctx)) return ctx.answerCallbackQuery({ text: 'Нет доступа', show_alert: true }).catch(() => {});
-    const ok = ctx.match[1] === 'a', c = await db.connect();
+    const op = ctx.match[1], tid = +ctx.match[2];
+    if (op === 'a' || op === 'b') { // шаг 1/назад: меняем только кнопки
+      const t = (await db.query("select amount from topups where id=$1 and status='review'", [tid])).rows[0];
+      if (!t) return ctx.answerCallbackQuery({ text: 'Заявка уже обработана', show_alert: true }).catch(() => {});
+      await ctx.answerCallbackQuery(op === 'a' ? { text: `Проверьте банк: на карту должно прийти ровно ${rub(t.amount)} ₽ с комментарием NP${tid}. Только тогда жмите «Деньги пришли».`, show_alert: true } : {}).catch(() => {});
+      const kb = op === 'a' ? new InlineKeyboard().text(`💰 Деньги пришли: ${rub(t.amount)} ₽`, 'tpy:' + tid).row().text('◀ Назад', 'tpb:' + tid) : new InlineKeyboard().text('✅ Зачислить', 'tpa:' + tid).text('❌ Отклонить', 'tpr:' + tid);
+      return ctx.editMessageReplyMarkup({ reply_markup: kb }).catch(() => {});
+    }
+    const ok = op === 'y', c = await db.connect();
     try {
       await c.query('begin');
-      const r = await c.query("update topups set status=$2, done_by=$3, done_at=$4 where id=$1 and status='review' returning *", [+ctx.match[2], ok ? 'ok' : 'no', String(ctx.from.id), Date.now()]);
+      const r = await c.query("update topups set status=$2, done_by=$3, done_at=$4 where id=$1 and status='review' returning *", [tid, ok ? 'ok' : 'no', String(ctx.from.id), Date.now()]);
       if (!r.rowCount) { await c.query('rollback'); return ctx.answerCallbackQuery({ text: 'Заявка уже обработана', show_alert: true }).catch(() => {}); }
       const t = r.rows[0];
       if (ok && !(await c.query('update users set coins=coins+$1 where steam_id=$2', [t.coins, t.steam_id])).rowCount) {
