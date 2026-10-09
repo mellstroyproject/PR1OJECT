@@ -1369,7 +1369,7 @@ function chatBuild(){
   document.body.insertAdjacentHTML('beforeend',`
   <div id="chatDock"><button class="chat-pill" onclick="chatToggle(true)">Нужна помощь?</button><button class="chat-fab" onclick="chatToggle()" aria-label="Открыть чат">${CH_ICON}<i class="chat-badge" id="chatBadge"></i></button></div>
   <aside id="chatPanel" class="chat-panel" aria-label="Чат">
-    <div class="chat-head"><span class="chat-title">${CH_ICON}Чат</span><span class="chat-btns"><button onclick="location.href='/messenger?voice=%D0%92%D0%BE%D0%B9%D1%81-%D1%87%D0%B0%D1%82'" title="Войс-чат" aria-label="Войс-чат">🎙</button><button onclick="chatMenu()" aria-label="Настройки чата">${I('gear')}</button><button onclick="chatToggle(false)" aria-label="Закрыть чат">✕</button></span>
+    <div class="chat-head"><span class="chat-title">${CH_ICON}Чат</span><span class="chat-btns"><button onclick="chatVoice()" title="Войс-чат" aria-label="Войс-чат">🎙</button><button onclick="chatMenu()" aria-label="Настройки чата">${I('gear')}</button><button onclick="chatToggle(false)" aria-label="Закрыть чат">✕</button></span>
       <div class="chat-menu" id="chatMenu"><label><span>Звук новых сообщений</span><input type="checkbox" id="chSound" onchange="chatSet('sound',this.checked)"><i></i></label><label><span>Подсказка «Нужна помощь?»</span><input type="checkbox" id="chHint" onchange="chatSet('hint',this.checked)"><i></i></label></div></div>
     <div class="chat-list" id="chatList"></div>
     <div class="chat-foot" id="chatFoot"></div>
@@ -2744,20 +2744,93 @@ header{gap:16px}
 })();
 </script>
 <script>
-// ===== 💬 Чат в стиле Discord (страница /messenger, встроена в сайт) =====
+// ===== 💬 Чат: один постоянный мессенджер на весь сайт =====
+// iframe живёт всё время, поэтому голос не сбрасывается при переходах по сайту.
+// Сбрасывается только перезагрузка страницы (F5).
 (function(){
+  let frame = null, ready = false, pendingCmd = null;
+  const ensure = () => {
+    if (frame) return frame;
+    frame = document.createElement('iframe');
+    frame.id = 'msgFrame'; frame.src = '/messenger'; frame.title = 'Чат';
+    frame.setAttribute('allow', 'clipboard-write; microphone; autoplay');
+    frame.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;border:0;border-radius:16px;background:#313338;z-index:60;display:none';
+    document.body.appendChild(frame);
+    return frame;
+  };
+  const send = cmd => {
+    const f = ensure();
+    if (ready && f.contentWindow) f.contentWindow.postMessage(cmd, location.origin);
+    else pendingCmd = cmd;
+  };
+  // iframe ставим поверх места, где нарисован чат; на остальных страницах прячем (но не выгружаем)
+  const place = () => {
+    const f = ensure();
+    const slot = document.getElementById('chatSlot');
+    if (!slot || st.page !== 'chat') { f.style.display = 'none'; return; }
+    const r = slot.getBoundingClientRect();
+    f.style.display = 'block';
+    f.style.left = r.left + 'px'; f.style.top = r.top + 'px';
+    f.style.width = r.width + 'px'; f.style.height = r.height + 'px';
+  };
   const _v2 = view;
   view = function(){
     document.body.classList.toggle('pg-chat', st.page === 'chat');
-    return st.page === 'chat' ? chatPageView() : _v2();
+    const out = st.page === 'chat' ? '<div class="chatpg"><div id="chatSlot"></div></div>' : _v2();
+    setTimeout(place, 0);
+    return out;
   };
-  window.chatPageView = () => `<div class="chatpg"><iframe src="/messenger" title="Чат" allow="clipboard-write; microphone"></iframe></div>`;
+  addEventListener('resize', place);
+  addEventListener('scroll', place, true);
+
+  // плашки: личные сообщения, упоминания и входящие звонки
+  const toasts = document.createElement('div');
+  toasts.id = 'chatToasts';
+  document.body.appendChild(toasts);
+  const plaque = d => {
+    if (st.page === 'chat') return;   // на странице чата и так всё видно
+    const el = document.createElement('div');
+    el.className = 'chat-plaque' + (d.kind === 'call' ? ' call' : '');
+    const b = document.createElement('b'); b.textContent = d.title;
+    const t = document.createElement('span'); t.textContent = d.text || '';
+    const row = document.createElement('div'); row.className = 'cp-btns';
+    const open = document.createElement('button'); open.textContent = d.kind === 'call' ? 'Открыть звонок' : 'Открыть';
+    const x = document.createElement('button'); x.textContent = '✕';
+    el.append(b, t, row); row.append(open, x);
+    const close = () => el.remove();
+    open.onclick = () => { close(); go('chat'); setTimeout(() => send({ type: 'open-room', room: d.room }), 150); };
+    x.onclick = close;
+    toasts.appendChild(el);
+    setTimeout(close, d.ttl || 8000);
+  };
+
+  addEventListener('message', e => {
+    if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow) return;
+    const d = e.data || {};
+    if (d.type === 'msg-ready') {
+      ready = true;
+      if (pendingCmd) { frame.contentWindow.postMessage(pendingCmd, location.origin); pendingCmd = null; }
+    }
+    if (d.type === 'chat-notify') plaque(d);
+  });
+
+  window.chatVoice = () => { go('chat'); setTimeout(() => send({ type: 'open-voice', name: 'Войс-чат' }), 150); };
+  ensure();
 })();
 </script>
 <style>
 .chatpg{margin:0 -4px}
-.chatpg iframe{width:100%;height:calc(100vh - 150px);min-height:540px;border:0;border-radius:16px;background:#313338;display:block}
+.chatpg #chatSlot{width:100%;height:calc(100vh - 150px);min-height:540px}
 body.pg-chat #chatDock{display:none!important}
+#chatToasts{position:fixed;top:84px;right:16px;z-index:200;display:flex;flex-direction:column;gap:10px;max-width:340px;pointer-events:none}
+.chat-plaque{pointer-events:auto;background:rgba(22,22,30,.96);border:1px solid var(--line,#2a2a38);border-radius:14px;padding:12px 14px;color:var(--tx,#eee);box-shadow:0 14px 36px -12px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:4px;animation:cpIn .25s ease-out}
+.chat-plaque.call{border-color:#23a55a}
+.chat-plaque b{font-size:14px}
+.chat-plaque span{font-size:13px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-plaque .cp-btns{display:flex;gap:8px;margin-top:6px}
+.chat-plaque button{border:0;border-radius:8px;padding:5px 10px;font-weight:700;font-size:12px;cursor:pointer;background:#5865f2;color:#fff}
+.chat-plaque button+button{background:#2b2d31;color:#dbdee1}
+@keyframes cpIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 </style>
 </body>
 </html>

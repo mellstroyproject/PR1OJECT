@@ -11,7 +11,7 @@ button,input,textarea{font:inherit;color:inherit}
 [hidden]{display:none!important}
 .app{display:flex;height:100%}
 .side{width:240px;background:#2b2d31;display:flex;flex-direction:column;flex:none;min-height:0}
-.side-head{height:48px;padding:0 16px;display:flex;align-items:center;justify-content:space-between;font-weight:700;border-bottom:1px solid #1f2023;flex:none}
+.side-head{height:48px;padding:0 16px;display:flex;align-items:center;font-weight:700;border-bottom:1px solid #1f2023;flex:none}
 .side-scroll{flex:1;overflow-y:auto;padding:8px;min-height:0}
 .sec{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;text-transform:uppercase;color:#949ba4;padding:14px 8px 6px}
 .plus{background:none;border:0;color:#949ba4;font-size:18px;cursor:pointer;line-height:1}
@@ -30,9 +30,6 @@ button,input,textarea{font:inherit;color:inherit}
 .item .ava{width:22px;height:22px;font-size:10px}
 .me{flex:none;padding:8px 10px;background:#232428;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;min-height:52px}
 .me .mname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.vstat{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}
-.vstat b{font-size:13px;color:#23a55a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.vstat span{font-size:12px;color:#949ba4;font-weight:400}
 .ib{background:#2b2d31;border:0;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:15px;flex:none}
 .ib:hover{background:#3a3c42}
 .ib.red{background:#da373c;color:#fff}
@@ -43,9 +40,18 @@ button,input,textarea{font:inherit;color:inherit}
 .top small{color:#949ba4;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btn-sm{background:#2b2d31;border:0;border-radius:4px;padding:4px 10px;font-size:13px;cursor:pointer;color:#dbdee1;flex:none}
 .btn-sm:hover{background:#3a3c42}
+.btn-sm:disabled{opacity:.6;cursor:default}
 .btn-sm.g{background:#23a55a;color:#fff}
 .btn-sm.r{background:#da373c;color:#fff}
 .burger{display:none;background:none;border:0;font-size:22px;cursor:pointer;padding:0 4px 0 0}
+.ringbar{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(35,165,90,.16);border-bottom:1px solid #1f2023;padding:8px 16px;font-weight:600}
+.ringbar .rb-btns{display:flex;gap:6px}
+.callbar{flex:none;display:flex;gap:10px;align-items:center;background:#232428;padding:8px 16px;border-bottom:1px solid #1f2023}
+.cb-info{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}
+.cb-info b{color:#23a55a;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cb-info span{font-size:12px;color:#949ba4}
+.cb-av{display:flex;padding-left:6px}
+.cb-av .ava{width:26px;height:26px;font-size:11px;margin-left:-6px;border:2px solid #232428}
 .msgs{flex:1;overflow-y:auto;padding:12px 0;min-height:0}
 .m{display:flex;gap:14px;padding:3px 16px;position:relative}
 .m:hover,.m.sel{background:#2e3035}
@@ -84,7 +90,10 @@ button,input,textarea{font:inherit;color:inherit}
 .vcard .ava{width:64px;height:64px;font-size:24px}
 .vcard span{font-size:14px;color:#f2f3f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 .vcard small{color:#949ba4;font-size:12px}
-.vcard.speak{box-shadow:0 0 0 2px #23a55a}
+.ib.on{background:#23a55a;color:#fff}
+.screenbox{flex:none;background:#000;border-bottom:1px solid #1f2023}
+.sb-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 12px;color:#dbdee1;font-size:13px;background:#232428;font-weight:600}
+#screenVid{width:100%;max-height:52vh;display:block;background:#000;object-fit:contain}
 #login{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:10}
 #login .card{background:#313338;padding:28px;border-radius:10px;text-align:center;max-width:320px}
 #login a{display:inline-block;margin-top:14px;background:#5865f2;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600}
@@ -122,8 +131,24 @@ button,input,textarea{font:inherit;color:inherit}
     <header class="top">
       <button class="burger" id="burger" aria-label="Меню">☰</button>
       <div class="grow"><span class="t" id="title">…</span><small id="sub"></small></div>
+      <button class="btn-sm g" id="callBtn" hidden>📞 Позвонить</button>
       <button class="btn-sm" id="delCh" hidden>Удалить</button>
     </header>
+    <div class="ringbar" id="ringBar" hidden>
+      <span id="ringText"></span>
+      <span class="rb-btns"><button class="btn-sm g" id="ringAccept">Принять</button><button class="btn-sm r" id="ringDecline">Отклонить</button></span>
+    </div>
+    <div class="callbar" id="callBar" hidden>
+      <div class="cb-info"><b id="cbTitle"></b><span id="cbSub"></span></div>
+      <div class="cb-av" id="cbAv"></div>
+      <button class="ib" id="cbShare" title="Показать экран">🖥</button>
+      <button class="ib" id="cbMute" title="Микрофон">🎙</button>
+      <button class="ib red" id="cbLeave" title="Отключиться">⏏</button>
+    </div>
+    <div class="screenbox" id="screenBox" hidden>
+      <div class="sb-head"><span id="screenTitle"></span><button class="btn-sm r" id="screenStop" hidden>Остановить</button></div>
+      <video id="screenVid" autoplay playsinline muted></video>
+    </div>
     <div class="msgs" id="msgs"></div>
     <div class="bar" id="bar">
       <div class="rbar" id="rbar"><span id="rtext"></span><button id="rcancel" title="Отмена">✕</button></div>
@@ -139,26 +164,30 @@ button,input,textarea{font:inherit;color:inherit}
 
 <div id="login"><div class="card">
   <div style="font-size:18px;font-weight:700;color:#f2f3f5">Чат доступен после входа</div>
-  <div style="color:#949ba4;margin-top:8px">Войдите через Steam, чтобы читать, писать и говорить в голосовых каналах.</div>
+  <div style="color:#949ba4;margin-top:8px">Войдите через Steam, чтобы читать, писать и звонить.</div>
   <a href="/auth/steam" target="_top">Войти через Steam</a>
 </div></div>
 <div id="toast"></div>
 
 <script>
 const EMOJI = ['👍','❤️','😂','🔥','😮','😢'];
-const S = { me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', write: true, msgs: [], hash: '', reply: null, edit: null, sel: null, panel: '' };
-const V = { room: null, label: '', local: null, pcs: new Map(), pending: new Map(), timer: null, muted: false, peers: [], state: new Map(), iceServers: null };
+const S = { me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', write: true, msgs: [], hash: '', reply: null, edit: null, sel: null, panel: '', ring: null, notifyLast: null };
+const V = { room: null, label: '', local: null, pcs: new Map(), pending: new Map(), timer: null, muted: false, peers: [], state: new Map(), iceServers: null,
+  vtx: new Map(), remoteVideo: new Map(), sharer: null, sharerName: '', screenStream: null, screenTrack: null };
 const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
+const RING_MS = 30000;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const dmRoom = (a, b) => 'dm:' + [a, b].sort().join(':');
 const initial = n => esc((n || '?').trim().charAt(0).toUpperCase() || '?');
 const avatar = (a, name, cls = 'ava') => a ? `<img class="${cls}" src="${esc(a)}" alt="">` : `<div class="${cls}">${initial(name)}</div>`;
+const inParent = window.parent && window.parent !== window;
+const toParent = msg => { if (inParent) window.parent.postMessage(msg, location.origin); };
 let toastT;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 3200); }
 
 async function api(path, body) {
-  const base = path.startsWith('voice/') ? '/api/' : '/api/msg/'; // голосовые маршруты: /api/voice/...
+  const base = path.startsWith('voice/') ? '/api/' : '/api/msg/';
   const r = await fetch(base + path, {
     method: body ? 'POST' : 'GET',
     headers: body ? { 'Content-Type': 'application/json' } : {},
@@ -173,6 +202,7 @@ async function api(path, body) {
 async function init() {
   try { S.me = await api('me'); }
   catch (e) { $('login').style.display = 'flex'; return; }
+  toParent({ type: 'msg-ready' });
   if (S.me.mod) $('addCh').hidden = false;
   updateMe();
   await loadRooms();
@@ -182,6 +212,8 @@ async function init() {
   openRoom(first.room, first.name, first.topic, v ? 'voice' : 'ch', first.write);
   setInterval(loadRooms, 5000);
   setInterval(loadMsgs, 2500);
+  setInterval(notifyPoll, 3000);
+  notifyPoll();
 }
 
 async function loadRooms() {
@@ -211,9 +243,7 @@ function renderSide() {
     groups.get(c.category).push(c);
   }
   let html = '';
-  for (const [cat, list] of groups) {
-    html += `<div class="sec"><span>${esc(cat)}</span></div>` + list.map(chItem).join('');
-  }
+  for (const [cat, list] of groups) html += `<div class="sec"><span>${esc(cat)}</span></div>` + list.map(chItem).join('');
   $('chList').innerHTML = html;
   $('dmList').innerHTML = S.rooms.dms.length ? S.rooms.dms.map(d =>
     `<button class="item ${d.room === S.room ? 'on' : ''}" data-room="${esc(d.room)}" data-label="${esc(d.name)}" data-kind="dm">
@@ -228,18 +258,28 @@ function openRoom(room, label, topic, kind, write) {
   S.write = write !== false; S.msgs = []; S.hash = ''; S.reply = null; S.edit = null; S.sel = null; S.panel = '';
   $('title').textContent = kind === 'voice' ? '🔊 ' + label : kind === 'dm' ? label : '# ' + label;
   $('sub').textContent = kind === 'ch' ? S.topic : kind === 'voice' ? 'Голосовой канал' : 'Личное сообщение';
-  $('delCh').hidden = !(S.me.mod && kind !== 'dm');
+  $('delCh').hidden = !(S.me && S.me.mod && kind !== 'dm');
   $('msgs').innerHTML = '';
-  const isText = kind !== 'voice';
-  $('bar').hidden = !isText;
+  $('bar').hidden = kind === 'voice';
   $('box').hidden = !S.write;
   $('ro').hidden = S.write;
   $('inp').placeholder = kind === 'dm' ? `Написать ${label}` : `Написать в #${label}`;
   updateBar();
   renderSide();
+  renderCallBtn();
   closeSide();
   if (kind === 'voice') { renderPanel(); return; }
   loadMsgs();
+}
+
+function openByRoom(room) {
+  if (room.startsWith('dm:')) {
+    const d = S.rooms && S.rooms.dms.find(x => x.room === room);
+    openRoom(room, d ? d.name : 'Личное сообщение', '', 'dm', true);
+    return;
+  }
+  const c = S.rooms && S.rooms.channels.find(x => x.room === room);
+  if (c) openRoom(c.room, c.name, c.topic, c.kind === 'voice' ? 'voice' : 'ch', c.write);
 }
 
 async function loadMsgs() {
@@ -342,17 +382,94 @@ async function send() {
 }
 
 function updateMe() {
-  const box = $('meBox');
-  if (V.room) {
-    box.innerHTML = `<div class="vstat"><b>🔊 ${esc(V.label)}</b><span>Голос подключён</span></div>
-      <button class="ib" onclick="toggleMute()" title="Микрофон">${V.muted ? '🔇' : '🎙'}</button>
-      <button class="ib red" onclick="leaveVoice()" title="Отключиться">⏏</button>`;
-  } else {
-    box.innerHTML = avatar(S.me.avatar, S.me.name) + `<span class="mname">${esc(S.me.name)}</span>`;
-  }
+  $('meBox').innerHTML = avatar(S.me.avatar, S.me.name) + `<span class="mname">${esc(S.me.name)}</span>`;
 }
 
-/* ---------- голосовые каналы (WebRTC; сигналы через сервер) ---------- */
+/* ---------- звонки и голосовые каналы (WebRTC; сигналы через сервер) ---------- */
+
+function renderCallBtn() {
+  const b = $('callBtn');
+  b.hidden = S.kind !== 'dm';
+  const inThis = V.room === S.room;
+  b.textContent = inThis ? 'В звонке' : '📞 Позвонить';
+  b.disabled = inThis;
+}
+
+function renderCallBar() {
+  const bar = $('callBar');
+  renderScreen();
+  if (!V.room) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const isDm = V.room.startsWith('dm:');
+  const parts = [{ uid: S.me.id, name: S.me.name, avatar: S.me.avatar }, ...V.peers];
+  $('cbTitle').textContent = '🔊 ' + V.label;
+  $('cbSub').textContent = V.peers.length ? `в звонке: ${parts.length}` : (isDm ? 'Звоним… ждём собеседника' : 'вы одни в канале');
+  $('cbAv').innerHTML = parts.map(p => avatar(p.avatar, p.name)).join('');
+  $('cbMute').textContent = V.muted ? '🔇' : '🎙';
+  $('cbMute').title = V.muted ? 'Включить микрофон' : 'Выключить микрофон';
+  $('cbShare').classList.toggle('on', !!V.screenStream);
+  $('cbShare').title = V.screenStream ? 'Остановить показ экрана' : 'Показать экран';
+}
+
+// показ экрана: видеоканал у каждого соединения уже есть, поэтому переподключать ничего не нужно
+function renderScreen() {
+  const box = $('screenBox'), vid = $('screenVid');
+  const sharer = V.room ? V.sharer : null;
+  if (!sharer) { box.hidden = true; if (vid.srcObject) vid.srcObject = null; return; }
+  box.hidden = false;
+  const mine = sharer === S.me.id;
+  const stream = mine ? V.screenStream : (V.remoteVideo.get(sharer) || null);
+  if (vid.srcObject !== stream) vid.srcObject = stream;
+  $('screenTitle').textContent = mine ? '🖥 Вы показываете экран' : `🖥 Экран показывает ${V.sharerName || 'игрок'}`;
+  $('screenStop').hidden = !mine;
+}
+
+async function startShare() {
+  if (!V.room) return toast('Сначала подключитесь к звонку');
+  if (V.sharer && V.sharer !== S.me.id) return toast(`Экран уже показывает ${V.sharerName}`);
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return toast('Браузер не поддерживает показ экрана');
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: 30, max: 30 }, width: { max: 1920 }, height: { max: 1080 } }, audio: false
+    });
+  } catch (e) { return; }   // отменили выбор окна
+  try { await api('voice/share', { on: true }); }
+  catch (e) { stream.getTracks().forEach(t => t.stop()); return toast(e.message); }
+  const track = stream.getVideoTracks()[0];
+  V.screenStream = stream; V.screenTrack = track;
+  track.onended = () => stopShare();
+  for (const uid of V.vtx.keys()) await attachScreen(uid);
+  V.sharer = S.me.id; V.sharerName = S.me.name;
+  renderCallBar();
+}
+
+async function attachScreen(uid) {
+  const vt = V.vtx.get(uid); if (!vt) return;
+  await vt.sender.replaceTrack(V.screenTrack).catch(() => {});
+  const p = vt.sender.getParameters();
+  p.encodings = p.encodings && p.encodings.length ? p.encodings : [{}];
+  p.encodings[0].maxBitrate = 2500000;          // до 2.5 Мбит/с на соединение
+  p.degradationPreference = 'maintain-framerate';
+  vt.sender.setParameters(p).catch(() => {});
+}
+
+async function stopShare() {
+  if (!V.screenStream) return;
+  V.screenStream.getTracks().forEach(t => t.stop());
+  for (const vt of V.vtx.values()) await vt.sender.replaceTrack(null).catch(() => {});
+  const wasMine = V.sharer === S.me.id;
+  V.screenStream = null; V.screenTrack = null;
+  if (wasMine) { V.sharer = null; V.sharerName = ''; api('voice/share', { on: false }).catch(() => {}); }
+  renderCallBar();
+}
+
+function renderRing() {
+  const r = S.ring;
+  const show = !!r && Date.now() - r.at < RING_MS && V.room !== r.room;
+  $('ringBar').hidden = !show;
+  if (show) $('ringText').textContent = `📞 Звонок от ${r.from}`;
+}
 
 function participants() {
   if (V.room === S.room) {
@@ -362,23 +479,25 @@ function participants() {
   return ch ? ch.users : [];
 }
 
+const STATE_TEXT = { connected: 'звук на связи', connecting: 'соединение…', new: 'соединение…', checking: 'соединение…', failed: 'нет связи (нужен TURN)', disconnected: 'связь прервана' };
+
+// панель голосового канала (сам канал открыт в списке)
 function renderPanel() {
   if (S.kind !== 'voice') return;
   const inThis = V.room === S.room;
   const list = participants();
-  const cards = list.map(p => `<div class="vcard">${avatar(p.avatar, p.name)}<span>${esc(p.name)}${p.me ? ' (вы)' : ''}</span><small>${p.muted ? '🔇 микрофон выключен' : '🎙 в голосовом'}${p.me ? '' : ' · ' + ({ connected: 'звук на связи', connecting: 'соединение…', new: 'соединение…', checking: 'соединение…', failed: 'нет связи (нужен TURN)', disconnected: 'связь прервана' }[p.st] || 'соединение…')}</small></div>`).join('');
+  const cards = list.map(p => `<div class="vcard">${avatar(p.avatar, p.name)}<span>${esc(p.name)}${p.me ? ' (вы)' : ''}</span><small>${p.muted ? '🔇 микрофон выключен' : '🎙 в голосовом'}${p.me ? '' : ' · ' + (STATE_TEXT[p.st] || 'соединение…')}</small></div>`).join('');
   const html = `<div class="vpanel">
       <h2>🔊 ${esc(S.label)}</h2>
-      <div><button class="btn-sm ${inThis ? 'r' : 'g'}" onclick="${inThis ? 'leaveVoice()' : `joinVoice('${S.room}','${esc(S.label)}')`}">${inThis ? 'Отключиться' : 'Подключиться'}</button>
-      ${inThis ? `<button class="btn-sm" onclick="toggleMute()">${V.muted ? 'Включить микрофон' : 'Выключить микрофон'}</button>` : ''}</div>
+      <div><button class="btn-sm ${inThis ? 'r' : 'g'}" onclick="${inThis ? 'leaveVoice()' : `joinVoice('${S.room}','${esc(S.label)}')`}">${inThis ? 'Отключиться' : 'Подключиться'}</button></div>
       <div class="vgrid">${cards || '<div class="empty" style="padding:0">В канале пока никого нет</div>'}</div>
     </div>`;
   if (html !== S.panel) { S.panel = html; $('msgs').innerHTML = html; }
 }
 
 async function joinVoice(room, label) {
-  if (V.room === room) return;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Голос работает только по https (защищённое соединение)'); return; }
+  if (V.room === room) { renderCallBar(); renderCallBtn(); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Звонки работают только по https (защищённое соединение)'); return; }
   if (V.room) await leaveVoice(true);
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1, latency: { ideal: 0.01 } } }); }
@@ -388,21 +507,24 @@ async function joinVoice(room, label) {
   V.room = room; V.label = label; V.local = stream; V.muted = false; V.peers = []; V.state = new Map();
   try { V.iceServers = (await api('voice/ice')).iceServers; } catch (e) { V.iceServers = null; }
   V.timer = setInterval(voicePoll, 1000);
+  if (S.ring && S.ring.room === room) S.ring = null;
+  if (room.startsWith('ch:') && S.room !== room) openRoom(room, label, '', 'voice', true);
   S.panel = '';
-  voicePoll(); updateMe(); renderSide(); renderPanel();
-  if (S.room !== room) openRoom(room, label, '', 'voice', true);
+  voicePoll();
+  renderCallBar(); renderCallBtn(); renderRing(); renderSide(); renderPanel();
 }
 
-async function leaveVoice(silent) {
+async function leaveVoice() {
   if (!V.room) return;
+  if (V.screenStream) await stopShare();
   clearInterval(V.timer);
   for (const uid of [...V.pcs.keys()]) dropPeer(uid);
   if (V.local) V.local.getTracks().forEach(t => t.stop());
   V.room = null; V.local = null; V.peers = []; V.muted = false; V.state = new Map();
+  V.vtx = new Map(); V.remoteVideo = new Map(); V.sharer = null; V.sharerName = '';
   await api('voice/leave', {}).catch(() => {});
   S.panel = '';
-  updateMe(); renderSide(); renderPanel();
-  if (!silent) renderPanel();
+  renderCallBar(); renderCallBtn(); renderRing(); renderSide(); renderPanel();
 }
 
 function toggleMute() {
@@ -410,7 +532,23 @@ function toggleMute() {
   V.muted = !V.muted;
   V.local.getAudioTracks().forEach(t => t.enabled = !V.muted);
   api('voice/mute', { muted: V.muted }).catch(() => {});
-  updateMe(); S.panel = ''; renderPanel();
+  S.panel = ''; renderCallBar(); renderPanel();
+}
+
+// Opus: пакеты по 10 мс вместо 20 мс — меньше задержка упаковки; моно, как для речи
+function mungeOpus(sdp) {
+  const m = /a=rtpmap:(\d+) opus\/48000[^\r\n]*/i.exec(sdp);
+  if (!m) return sdp;
+  const pt = m[1];
+  const params = 'minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=32000';
+  const fmtp = new RegExp('a=fmtp:' + pt + ' ([^\\r\\n]*)');
+  if (fmtp.test(sdp)) {
+    return sdp.replace(fmtp, (all, cur) => {
+      const kept = cur.split(';').filter(x => x && !/^(minptime|useinbandfec|stereo|sprop-stereo|maxaveragebitrate)=/.test(x));
+      return 'a=fmtp:' + pt + ' ' + kept.concat(params).join(';');
+    });
+  }
+  return sdp.replace(m[0], m[0] + '\r\na=fmtp:' + pt + ' ' + params);
 }
 
 async function voicePoll() {
@@ -421,11 +559,13 @@ async function voicePoll() {
     if (room !== V.room) return;
     if (!j.inRoom) { await api('voice/join', { room }).catch(() => {}); return; }
     V.peers = j.peers;
+    if (V.screenStream && j.sharer !== S.me.id) await stopShare();
+    V.sharer = j.sharer || null; V.sharerName = j.sharerName || '';
     const ids = new Set(j.peers.map(p => p.uid));
     for (const p of j.peers) if (!V.pcs.has(p.uid) && S.me.id < p.uid) callPeer(p.uid).catch(() => {});
     for (const uid of [...V.pcs.keys()]) if (!ids.has(uid)) dropPeer(uid);
     for (const s of j.signals) handleSignal(s).catch(() => {});
-    renderPanel();
+    S.panel = ''; renderCallBar(); renderPanel();
   } catch (e) {}
 }
 
@@ -441,18 +581,26 @@ function makePC(uid) {
       s.setParameters(p).catch(() => {});
     }
   });
+  const vt = pc.addTransceiver('video', { direction: 'sendrecv' });
+  V.vtx.set(uid, vt);
+  if (V.screenTrack) vt.sender.replaceTrack(V.screenTrack).catch(() => {});
   V.state.set(uid, 'connecting');
   pc.onicecandidate = e => { if (e.candidate) sendSig(uid, 'ice', e.candidate.toJSON()); };
   pc.ontrack = e => {
+    if (e.track.kind === 'video') {
+      V.remoteVideo.set(uid, e.streams[0] || new MediaStream([e.track]));
+      renderScreen();
+      return;
+    }
     const r = e.receiver;
-    try { if ('playoutDelayHint' in r) r.playoutDelayHint = 0; } catch (x) {}   // не копить буфер
+    try { if ('playoutDelayHint' in r) r.playoutDelayHint = 0; } catch (x) {}
     try { if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0; } catch (x) {}
     attachAudio(uid, e.streams[0] || new MediaStream([e.track]));
   };
   pc.onconnectionstatechange = () => {
     V.state.set(uid, pc.connectionState);
     if (pc.connectionState === 'failed') toast('Не удалось соединиться с одним из игроков: сеть блокирует прямой звук. Нужен TURN-сервер.');
-    S.panel = ''; renderPanel();
+    S.panel = ''; renderCallBar(); renderPanel();
   };
   V.pcs.set(uid, pc);
   return pc;
@@ -500,22 +648,6 @@ async function handleSignal(s) {
   }
 }
 
-// Opus: пакеты по 10 мс вместо 20 мс — меньше задержка упаковки; моно, как для речи
-function mungeOpus(sdp) {
-  const m = /a=rtpmap:(\d+) opus\/48000[^\r\n]*/i.exec(sdp);
-  if (!m) return sdp;
-  const pt = m[1];
-  const params = 'minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=32000';
-  const fmtp = new RegExp('a=fmtp:' + pt + ' ([^\\r\\n]*)');
-  if (fmtp.test(sdp)) {
-    return sdp.replace(fmtp, (all, cur) => {
-      const kept = cur.split(';').filter(x => x && !/^(minptime|useinbandfec|stereo|sprop-stereo|maxaveragebitrate)=/.test(x));
-      return 'a=fmtp:' + pt + ' ' + kept.concat(params).join(';');
-    });
-  }
-  return sdp.replace(m[0], m[0] + '\r\na=fmtp:' + pt + ' ' + params);
-}
-
 function attachAudio(uid, stream) {
   let a = document.getElementById('a-' + uid);
   if (!a) { a = document.createElement('audio'); a.id = 'a-' + uid; a.autoplay = true; a.playsInline = true; $('vaud').appendChild(a); }
@@ -526,11 +658,34 @@ function attachAudio(uid, stream) {
 function dropPeer(uid) {
   const pc = V.pcs.get(uid);
   if (pc) { pc.onicecandidate = null; pc.ontrack = null; pc.close(); }
-  V.pcs.delete(uid); V.pending.delete(uid); V.state.delete(uid);
+  V.pcs.delete(uid); V.pending.delete(uid); V.state.delete(uid); V.vtx.delete(uid); V.remoteVideo.delete(uid);
   const a = document.getElementById('a-' + uid); if (a) a.remove();
 }
 
-/* ---------- клики и кнопки ---------- */
+/* ---------- уведомления: личные сообщения, упоминания и звонки ---------- */
+
+async function notifyPoll() {
+  try {
+    const j = await api('notify' + (S.notifyLast === null ? '' : '?after=' + S.notifyLast));
+    if (S.notifyLast !== null) {
+      S.notifyLast = j.last;
+      for (const it of j.items) {
+        const title = it.kind === 'dm' ? 'Личное сообщение от ' + it.from : it.from + ' упомянул вас в ' + it.where;
+        if (inParent) toParent({ type: 'chat-notify', kind: it.kind, title, text: it.text, room: it.room });
+        else toast(title + ': ' + it.text);
+      }
+    } else {
+      S.notifyLast = j.last;
+    }
+    if (j.ring && (!S.ring || S.ring.at !== j.ring.at)) {
+      S.ring = j.ring;
+      toParent({ type: 'chat-notify', kind: 'call', title: 'Звонок от ' + j.ring.from, text: 'Нажмите, чтобы открыть звонок', room: j.ring.room, ttl: RING_MS });
+    }
+    renderRing();
+  } catch (e) {}
+}
+
+/* ---------- кнопки и события ---------- */
 
 $('inp').addEventListener('input', autosize);
 $('inp').addEventListener('keydown', e => {
@@ -544,7 +699,6 @@ $('chList').addEventListener('click', e => {
   const b = e.target.closest('[data-room]'); if (!b) return;
   if (b.dataset.kind === 'voice') {
     openRoom(b.dataset.room, b.dataset.label, '', 'voice', true);
-    joinVoice(b.dataset.room, b.dataset.label);
   } else {
     openRoom(b.dataset.room, b.dataset.label, b.dataset.topic, 'ch', b.dataset.write === '1');
   }
@@ -552,6 +706,14 @@ $('chList').addEventListener('click', e => {
 $('dmList').addEventListener('click', e => {
   const b = e.target.closest('[data-room]'); if (b) openRoom(b.dataset.room, b.dataset.label, '', 'dm', true);
 });
+
+$('callBtn').onclick = () => { if (S.kind === 'dm') joinVoice(S.room, S.label); };
+$('cbShare').onclick = () => (V.screenStream ? stopShare() : startShare());
+$('screenStop').onclick = stopShare;
+$('cbMute').onclick = toggleMute;
+$('cbLeave').onclick = leaveVoice;
+$('ringAccept').onclick = () => { const r = S.ring; if (!r) return; S.ring = null; renderRing(); joinVoice(r.room, r.from); };
+$('ringDecline').onclick = () => { S.ring = null; renderRing(); api('voice/decline', {}).catch(() => {}); };
 
 $('addCh').onclick = async () => {
   const name = prompt('Название канала:'); if (!name) return;
@@ -565,7 +727,7 @@ $('delCh').onclick = async () => {
   const id = +S.room.slice(3);
   if (!confirm(`Удалить канал «${S.label}» и все его сообщения?`)) return;
   try {
-    if (V.room === S.room) await leaveVoice(true);
+    if (V.room === S.room) await leaveVoice();
     await api('channel-delete', { id });
     await loadRooms();
     const first = S.rooms.channels.find(c => c.kind === 'text');
@@ -591,7 +753,20 @@ $('addDm').onclick = async () => {
 $('burger').onclick = () => { $('side').classList.add('open'); $('scrim').classList.add('on'); };
 $('scrim').onclick = closeSide;
 
-window.addEventListener('beforeunload', () => { if (V.room) navigator.sendBeacon && navigator.sendBeacon('/api/voice/leave', new Blob(['{}'], { type: 'application/json' })); });
+// команды от сайта: открыть комнату, открыть голосовой канал
+window.addEventListener('message', e => {
+  if (e.origin !== location.origin || !S.rooms) return;
+  const d = e.data || {};
+  if (d.type === 'open-room' && d.room) openByRoom(d.room);
+  if (d.type === 'open-voice') {
+    const c = S.rooms.channels.find(x => x.kind === 'voice' && x.name === d.name);
+    if (c) openRoom(c.room, c.name, '', 'voice', true);
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  if (V.room && navigator.sendBeacon) navigator.sendBeacon('/api/voice/leave', new Blob(['{}'], { type: 'application/json' }));
+});
 
 init();
 </script>

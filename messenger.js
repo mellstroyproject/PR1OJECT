@@ -1,10 +1,11 @@
 // Чат сайта в стиле Discord (структура как на скриншоте шаблона NextProject). Не связан с Discord.
-// Лежит рядом с server.js. Голос: WebRTC (звук идёт напрямую между игроками), сервер только передаёт сигналы.
+// Лежит рядом с server.js. Голос: WebRTC (звук идёт напрямую между игроками), сервер передаёт только сигналы.
 const path = require('path');
 
 const EMOJI = ['👍', '❤️', '😂', '🔥', '😮', '😢'];
 const okAvatar = a => typeof a === 'string' && /^https:\/\/[\w.-]+\.(steamstatic\.com|akamaihd\.net)\//i.test(a);
 const dmRoom = (a, b) => 'dm:' + [a, b].sort().join(':');
+const RING_MS = 30000; // входящий звонок показываем 30 секунд
 
 // Каналы: [название, тип, доступ, описание]
 // доступ: all — всем; readonly — читают все, пишут только сотрудники; staff — видят и пишут только сотрудники
@@ -39,26 +40,34 @@ function site(app, getUser, opts) {
   const clean = (s, max) => String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
   const lastSend = new Map();
 
-  // ---------- голосовые комнаты (в памяти сервера) ----------
-  const voice = new Map();  // channelId -> Map(uid -> {name, avatar, muted, seen})
-  const inbox = new Map();  // uid -> [{from, kind, data}] — сигналы WebRTC ждут, пока игрок их заберёт
-  const TTL = 12000;        // игрок пропал из канала, если не опрашивал сервер 12 секунд
+  // ---------- голос (в памяти сервера) ----------
+  // комнаты: 'ch:<id>' — голосовой канал; 'dm:<id1>:<id2>' — звонок в личке
+  const voice = new Map();  // room -> Map(uid -> {name, avatar, muted, seen})
+  const inbox = new Map();  // uid -> [{from, kind, data}] — сигналы WebRTC, ждут опроса
+  const rings = new Map();  // uid -> {from, fromId, room, at} — входящие звонки в личке
+  const sharers = new Map(); // room -> uid того, кто показывает экран (один на комнату)
+  const TTL = 12000;        // игрок пропал из звонка, если не опрашивал сервер 12 секунд
 
-  const vWhere = uid => { for (const [cid, peers] of voice) if (peers.has(uid)) return cid; return null; };
+  const vWhere = uid => { for (const [room, peers] of voice) if (peers.has(uid)) return room; return null; };
   function vLeave(uid) {
-    const cid = vWhere(uid);
-    if (cid !== null) { voice.get(cid).delete(uid); if (!voice.get(cid).size) voice.delete(cid); }
+    const room = vWhere(uid);
+    if (room !== null) {
+      voice.get(room).delete(uid);
+      if (sharers.get(room) === uid) sharers.delete(room);
+      if (!voice.get(room).size) voice.delete(room);
+    }
     inbox.delete(uid);
   }
   function vTidy() {
     const now = Date.now();
-    for (const [cid, peers] of voice) {
+    for (const [room, peers] of voice) {
       for (const [uid, p] of peers) if (now - p.seen > TTL) { peers.delete(uid); inbox.delete(uid); }
-      if (!peers.size) voice.delete(cid);
+      if (!peers.size) { voice.delete(room); sharers.delete(room); }
+      else if (sharers.has(room) && !peers.has(sharers.get(room))) sharers.delete(room);
     }
     for (const uid of [...inbox.keys()]) if (vWhere(uid) === null) inbox.delete(uid);
   }
-  const voiceList = cid => [...(voice.get(cid) || new Map()).values()].map(p => ({ name: p.name, avatar: p.avatar, muted: p.muted }));
+  const voiceList = room => [...(voice.get(room) || new Map()).values()].map(p => ({ name: p.name, avatar: p.avatar, muted: p.muted }));
 
   const ready = (async () => {
     await db.query(`create table if not exists dc_channels(
@@ -103,7 +112,6 @@ function site(app, getUser, opts) {
   const canSee = (ch, m) => ch.access !== 'staff' || m.mod;
   const canWrite = (ch, m) => (ch.access === 'staff' || ch.access === 'readonly') ? m.mod : true;
 
-  // можно ли читать комнату (текстовый канал или личка)
   async function roomOk(room, m) {
     if (room.startsWith('ch:')) { const ch = await chanRow(room); return !!ch && ch.kind === 'text' && canSee(ch, m); }
     const d = /^dm:(\d{17}):(\d{17})$/.exec(room);
@@ -113,6 +121,19 @@ function site(app, getUser, opts) {
     if (!await roomOk(room, m)) return false;
     if (!room.startsWith('ch:')) return true;
     return canWrite(await chanRow(room), m);
+  }
+
+  // доступ к голосовой комнате: канал или личный звонок; other — собеседник в личке
+  async function voiceAccess(room, m) {
+    if (room.startsWith('ch:')) {
+      const ch = await chanRow(room);
+      return ch && ch.kind === 'voice' && canSee(ch, m) ? { label: ch.name } : null;
+    }
+    const d = /^dm:(\d{17}):(\d{17})$/.exec(room);
+    if (!d || (d[1] !== m.id && d[2] !== m.id)) return null;
+    const other = d[1] === m.id ? d[2] : d[1];
+    const row = (await db.query('select name from users where steam_id=$1', [other])).rows[0] || {};
+    return { label: row.name || 'Игрок', other };
   }
 
   app.get('/messenger', (req, res) => res.sendFile(path.join(__dirname, 'messenger.html')));
@@ -132,7 +153,7 @@ function site(app, getUser, opts) {
       room: 'ch:' + c.id, name: c.name, topic: c.topic, kind: c.kind,
       category: c.category || 'Прочее',
       write: c.kind === 'text' && canWrite(c, m),
-      users: c.kind === 'voice' ? voiceList(c.id) : []
+      users: c.kind === 'voice' ? voiceList('ch:' + c.id) : []
     }));
     const rooms = (await db.query(
       "select distinct room from dc_messages where room like 'dm:%' and (room like $1 or room like $2)",
@@ -166,6 +187,32 @@ function site(app, getUser, opts) {
         reply: r.reply_to ? { id: +r.reply_to, name: r.reply_name || 'Игрок', text: (r.reply_text || 'Сообщение удалено').slice(0, 120) } : null
       }))
     });
+  }));
+
+  // уведомления: новые личные сообщения, упоминания (@ник) и входящие звонки
+  app.get('/api/msg/notify', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    const overall = +(await db.query('select coalesce(max(id),0) as id from dc_messages')).rows[0].id;
+    const r = rings.get(m.id);
+    const ring = r && Date.now() - r.at < RING_MS ? { from: r.from, room: r.room, at: r.at } : null;
+    if (req.query.after === undefined) return res.json({ last: overall, items: [], ring });
+    const after = parseInt(req.query.after) || 0;
+    const chans = (await db.query("select id, name, access from dc_channels where kind='text'")).rows.filter(c => canSee(c, m));
+    const chanName = Object.fromEntries(chans.map(c => ['ch:' + c.id, c.name]));
+    const rows = (await db.query(`
+      select x.id, x.room, x.text, u.name from dc_messages x
+      left join users u on u.steam_id = x.uid
+      where x.id > $1 and x.uid <> $2 and (x.room like $3 or x.room like $4 or (x.room = any($5) and strpos(x.text, $6) > 0))
+      order by x.id limit 20`,
+      [after, m.id, `dm:${m.id}:%`, `dm:%:${m.id}`, Object.keys(chanName), '@' + m.name])).rows;
+    const items = rows.map(x => {
+      const isDm = x.room.startsWith('dm:');
+      return { id: +x.id, kind: isDm ? 'dm' : 'mention', room: x.room, from: x.name || 'Игрок',
+        where: isDm ? '' : '#' + (chanName[x.room] || ''), text: x.text.slice(0, 120) };
+    });
+    const last = items.length ? items[items.length - 1].id : overall;
+    res.json({ last, items, ring });
   }));
 
   app.post('/api/msg/send', wrap(async (req, res) => {
@@ -242,7 +289,7 @@ function site(app, getUser, opts) {
     const id = parseInt(req.body.id) || 0;
     await db.query('delete from dc_messages where room=$1', ['ch:' + id]);
     await db.query('delete from dc_channels where id=$1', [id]);
-    voice.delete(id);
+    voice.delete('ch:' + id);
     res.json({ ok: true });
   }));
 
@@ -258,16 +305,42 @@ function site(app, getUser, opts) {
   }));
 
   // ---------- голос ----------
+  // STUN всегда; TURN — если задан в Environment: TURN_URL (через запятую), TURN_USER, TURN_PASS.
+  const iceServers = () => {
+    const list = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+    if (process.env.TURN_URL) list.push({
+      urls: process.env.TURN_URL.split(',').map(s => s.trim()).filter(Boolean),
+      username: process.env.TURN_USER || '', credential: process.env.TURN_PASS || ''
+    });
+    return list;
+  };
+  app.get('/api/voice/ice', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    res.json({ iceServers: iceServers() });
+  }));
+
   app.post('/api/voice/join', wrap(async (req, res) => {
     const m = await me(req);
     if (!m) return fail(res, 401, 'Войдите через Steam');
-    const ch = await chanRow(String(req.body.room || ''));
-    if (!ch || ch.kind !== 'voice' || !canSee(ch, m)) return fail(res, 403, 'Нет доступа к этому голосовому каналу');
+    const room = String(req.body.room || '');
+    const acc = await voiceAccess(room, m);
+    if (!acc) return fail(res, 403, 'Нет доступа к этому звонку');
     vTidy();
     vLeave(m.id);
-    if (!voice.has(ch.id)) voice.set(ch.id, new Map());
-    voice.get(ch.id).set(m.id, { name: m.name, avatar: m.avatar, muted: false, seen: Date.now() });
+    if (!voice.has(room)) voice.set(room, new Map());
+    voice.get(room).set(m.id, { name: m.name, avatar: m.avatar, muted: false, seen: Date.now() });
     inbox.set(m.id, []);
+    rings.delete(m.id);
+    // звонок в личке: зовём собеседника, если его ещё нет в этом звонке
+    if (acc.other && !voice.get(room).has(acc.other)) rings.set(acc.other, { from: m.name, fromId: m.id, room, at: Date.now() });
+    res.json({ ok: true });
+  }));
+
+  app.post('/api/voice/decline', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    rings.delete(m.id);
     res.json({ ok: true });
   }));
 
@@ -281,8 +354,8 @@ function site(app, getUser, opts) {
   app.post('/api/voice/mute', wrap(async (req, res) => {
     const m = await me(req);
     if (!m) return fail(res, 401, 'Войдите через Steam');
-    const cid = vWhere(m.id);
-    if (cid !== null) voice.get(cid).get(m.id).muted = !!req.body.muted;
+    const room = vWhere(m.id);
+    if (room !== null) voice.get(room).get(m.id).muted = !!req.body.muted;
     res.json({ ok: true });
   }));
 
@@ -290,16 +363,35 @@ function site(app, getUser, opts) {
     const m = await me(req);
     if (!m) return fail(res, 401, 'Войдите через Steam');
     vTidy();
-    const ch = await chanRow(String(req.query.room || ''));
-    const cid = vWhere(m.id);
-    if (!ch || cid !== ch.id) return res.json({ inRoom: false, peers: [], signals: [] });
-    const peers = voice.get(cid);
+    const room = String(req.query.room || '');
+    const acc = await voiceAccess(room, m);
+    if (!acc || vWhere(m.id) !== room) return res.json({ inRoom: false, peers: [], signals: [] });
+    const peers = voice.get(room);
     peers.get(m.id).seen = Date.now();
     const list = [...peers].filter(([uid]) => uid !== m.id)
       .map(([uid, p]) => ({ uid, name: p.name, avatar: p.avatar, muted: p.muted }));
     const signals = inbox.get(m.id) || [];
     inbox.set(m.id, []);
-    res.json({ inRoom: true, peers: list, signals });
+    const sh = sharers.get(room) || null;
+    const sp = sh ? peers.get(sh) : null;
+    res.json({ inRoom: true, peers: list, signals, sharer: sp ? sh : null, sharerName: sp ? sp.name : '' });
+  }));
+
+  // демонстрация экрана: один игрок на комнату
+  app.post('/api/voice/share', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    const room = vWhere(m.id);
+    if (room === null) return fail(res, 403, 'Сначала подключитесь к звонку');
+    if (req.body.on) {
+      const cur = sharers.get(room);
+      if (cur && cur !== m.id) {
+        const p = voice.get(room).get(cur);
+        return fail(res, 409, `Экран уже показывает ${p ? p.name : 'другой игрок'}`);
+      }
+      sharers.set(room, m.id);
+    } else if (sharers.get(room) === m.id) sharers.delete(room);
+    res.json({ ok: true });
   }));
 
   app.post('/api/voice/signal', wrap(async (req, res) => {
@@ -308,8 +400,8 @@ function site(app, getUser, opts) {
     const to = String(req.body.to || '');
     const kind = String(req.body.kind || '');
     if (!['offer', 'answer', 'ice'].includes(kind)) return fail(res, 400, 'Неверный сигнал');
-    const cid = vWhere(m.id);
-    if (cid === null || !voice.get(cid).has(to)) return fail(res, 403, 'Собеседник не в канале');
+    const room = vWhere(m.id);
+    if (room === null || !voice.get(room).has(to)) return fail(res, 403, 'Собеседник не в звонке');
     if (JSON.stringify(req.body.data || {}).length > 20000) return fail(res, 413, 'Слишком большой сигнал');
     const q = inbox.get(to) || [];
     if (q.length < 300) q.push({ from: m.id, kind, data: req.body.data });
