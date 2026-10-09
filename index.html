@@ -596,6 +596,7 @@ function applyRole(u){
 }
 
 const ICONS={
+chat:'<path d="M4 5h16v11H9l-5 4V5z"/>',
  play:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>',
  shop:'<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.6 12.2a1 1 0 0 0 1 .8h9.2a1 1 0 0 0 1-.8L21 8H6"/>',
  leaders:'<path d="M6 20v-9M12 20V4M18 20v-6"/>',
@@ -614,10 +615,10 @@ const ICONS={
  steam:'<circle cx="15.5" cy="8.5" r="4.5"/><circle cx="8" cy="16" r="3" fill="currentColor"/><path d="M8.5 15.5l4.5-4"/>'
 };
 const I=n=>`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
-const PAGES=[['home','Играть','play'],['shop','Магазин','shop'],['leaders','Лидеры','leaders'],['bans','Баны','bans'],['rules','Правила','rules']];
+const PAGES=[['home','Играть','play'],['shop','Магазин','shop'],['leaders','Лидеры','leaders'],['bans','Баны','bans'],['rules','Правила','rules'],['chat','Чат','chat']];
 
 // ===== Адреса страниц: /shop, /leaders, /bans, /rules, /profile/<SteamID64> … =====
-const ROUTES={home:'/',shop:'/shop',leaders:'/leaders',bans:'/bans',rules:'/rules',settings:'/settings',admin:'/admin',skins:'/skins',battleship:'/battleship',public:'/public'};
+const ROUTES={home:'/',shop:'/shop',leaders:'/leaders',bans:'/bans',rules:'/rules',settings:'/settings',admin:'/admin',skins:'/skins',battleship:'/battleship',chat:'/chat',public:'/public'};
 const ROUTE_PAGE=Object.fromEntries(Object.entries(ROUTES).map(([k,v])=>[v,k]));
 const PF={id:null,data:null,err:'',busy:false};
 let AUTH_READY=false,NAV_PUSH=false,WANT_PAGE='home',WANT_PROFILE=null;
@@ -625,7 +626,7 @@ const curPath=()=>location.pathname.replace(/(.)\/+$/,'$1');
 function pageFromPath(){const p=curPath(),m=p.match(/^\/profile\/(\d{17})$/);return m?{page:'profile',id:m[1]}:{page:ROUTE_PAGE[p]||'home',id:null}}
 const SITE_NAME='NextProject'; // название сайта во вкладке браузера
 function setTitle(){
-  const t={shop:'Магазин',leaders:'Лидеры',bans:'Баны',rules:'Правила',settings:'Настройки',admin:'Админ-панель',skins:'Скины',battleship:'Морской бой'}[st.page];
+  const t={shop:'Магазин',leaders:'Лидеры',bans:'Баны',rules:'Правила',settings:'Настройки',admin:'Админ-панель',skins:'Скины',battleship:'Морской бой',chat:'Чат'}[st.page];
   const n=st.page==='profile'?(PF.data&&PF.data.name?PF.data.name+' — профиль':'Профиль игрока'):t;
   document.title=n?n+' · '+SITE_NAME:SITE_NAME;
 }
@@ -2742,5 +2743,21 @@ header{gap:16px}
   requestAnimationFrame(after);
 })();
 </script>
+<script>
+// ===== 💬 Чат в стиле Discord (страница /messenger, встроена в сайт) =====
+(function(){
+  const _v2 = view;
+  view = function(){
+    document.body.classList.toggle('pg-chat', st.page === 'chat');
+    return st.page === 'chat' ? chatPageView() : _v2();
+  };
+  window.chatPageView = () => `<div class="chatpg"><iframe src="/messenger" title="Чат" allow="clipboard-write"></iframe></div>`;
+})();
+</script>
+<style>
+.chatpg{margin:0 -4px}
+.chatpg iframe{width:100%;height:calc(100vh - 150px);min-height:540px;border:0;border-radius:16px;background:#313338;display:block}
+body.pg-chat #chatDock{display:none!important}
+</style>
 </body>
 </html>

@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Чат · NextProject</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#313338;color:#dbdee1;font:15px/1.4 "gg sans","Segoe UI",Roboto,Arial,sans-serif}
+button,input,textarea{font:inherit;color:inherit}
+.app{display:flex;height:100%}
+.side{width:240px;background:#2b2d31;display:flex;flex-direction:column;flex:none}
+.side-head{height:48px;padding:0 16px;display:flex;align-items:center;font-weight:700;border-bottom:1px solid #1f2023}
+.side-scroll{flex:1;overflow-y:auto;padding:8px}
+.sec{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;text-transform:uppercase;color:#949ba4;padding:14px 8px 6px}
+.plus{background:none;border:0;color:#949ba4;font-size:18px;cursor:pointer;line-height:1}
+.plus:hover{color:#dbdee1}
+.item{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:4px;cursor:pointer;color:#949ba4;background:none;border:0;width:100%;text-align:left;overflow:hidden}
+.item:hover{background:#35373c;color:#dbdee1}
+.item.on{background:#404249;color:#fff}
+.item span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hash{width:20px;text-align:center;flex:none;font-size:17px}
+.me{margin-top:auto;padding:10px 12px;background:#232428;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.ava{width:32px;height:32px;border-radius:50%;flex:none;object-fit:cover;display:grid;place-items:center;background:#5865f2;color:#fff;font-size:14px;font-weight:700}
+.item .ava{width:24px;height:24px;font-size:11px}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:48px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid #1f2023;font-weight:700;min-width:0}
+.top .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top small{color:#949ba4;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top .grow{flex:1;min-width:0;display:flex;gap:10px;align-items:center;overflow:hidden}
+.btn-sm{background:#2b2d31;border:0;border-radius:4px;padding:4px 10px;font-size:13px;cursor:pointer;color:#dbdee1;flex:none}
+.btn-sm:hover{background:#3a3c42}
+.burger{display:none;background:none;border:0;font-size:22px;cursor:pointer;padding:0 4px 0 0}
+.msgs{flex:1;overflow-y:auto;padding:12px 0}
+.m{display:flex;gap:14px;padding:3px 16px;position:relative}
+.m:hover,.m.sel{background:#2e3035}
+.m .ava{width:40px;height:40px;font-size:17px;margin-top:2px}
+.gap{width:40px;flex:none}
+.mb{min-width:0;flex:1}
+.mh{display:flex;align-items:baseline;gap:8px}
+.mn{font-weight:600;color:#f2f3f5}
+.mt{font-size:12px;color:#949ba4}
+.mtext{white-space:pre-wrap;word-break:break-word}
+.edited{font-size:11px;color:#949ba4;margin-left:5px}
+.quote{border-left:3px solid #4e5058;padding:1px 0 1px 8px;margin:2px 0 3px;font-size:13px;color:#b5bac1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mention{background:rgba(88,101,242,.35);color:#c9cdfb;border-radius:3px;padding:0 2px}
+.rx{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.rx button{background:#2b2d31;border:1px solid transparent;border-radius:8px;padding:1px 7px;font-size:13px;cursor:pointer}
+.rx button.mine{border-color:#5865f2;background:rgba(88,101,242,.18)}
+.acts{position:absolute;right:16px;top:-14px;display:none;background:#383a40;border-radius:6px;padding:2px;gap:1px;box-shadow:0 2px 6px rgba(0,0,0,.3);flex-wrap:wrap;max-width:calc(100% - 32px);justify-content:flex-end;z-index:2}
+.m:hover .acts,.m.sel .acts{display:flex}
+.acts button{background:none;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;color:#b5bac1;font-size:14px}
+.acts button:hover{background:#4e5058;color:#fff}
+.empty{padding:24px;color:#949ba4}
+.bar{padding:0 16px 20px}
+.rbar{background:#2b2d31;border-radius:8px 8px 0 0;padding:7px 12px;font-size:13px;color:#b5bac1;display:none;justify-content:space-between;align-items:center;gap:8px}
+.rbar.on{display:flex}
+.rbar button{background:none;border:0;color:#949ba4;cursor:pointer;font-size:16px}
+.box{background:#383a40;border-radius:8px;display:flex;align-items:flex-end;padding:10px 12px;gap:10px}
+.box.r{border-radius:0 0 8px 8px}
+.box textarea{flex:1;background:none;border:0;outline:0;resize:none;max-height:140px;min-height:22px;font-size:15px;padding:0;line-height:22px}
+.box textarea::placeholder{color:#7d828b}
+.send{background:#5865f2;color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;font-weight:600;flex:none}
+#login{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:10}
+#login .card{background:#313338;padding:28px;border-radius:10px;text-align:center;max-width:320px}
+#login a{display:inline-block;margin-top:14px;background:#5865f2;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600}
+#toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#111214;color:#fff;padding:10px 16px;border-radius:6px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20;max-width:90vw}
+#toast.on{opacity:1}
+.scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:4}
+@media (max-width:700px){
+  .side{position:fixed;left:0;top:0;bottom:0;z-index:5;transform:translateX(-100%);transition:transform .2s}
+  .side.open{transform:none}
+  .scrim.on{display:block}
+  .burger{display:block}
+  .m{gap:10px;padding:3px 10px}
+  .gap{width:0}
+  .m .ava{width:34px;height:34px}
+  .bar{padding:0 8px 12px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side">
+    <div class="side-head">NextProject · Чат</div>
+    <div class="side-scroll">
+      <div class="sec"><span>Текстовые каналы</span><button class="plus" id="addCh" title="Новый канал" hidden>+</button></div>
+      <div id="chList"></div>
+      <div class="sec"><span>Личные сообщения</span><button class="plus" id="addDm" title="Написать игроку">+</button></div>
+      <div id="dmList"></div>
+    </div>
+    <div class="me" id="meBox"></div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <section class="main">
+    <header class="top">
+      <button class="burger" id="burger" aria-label="Меню">☰</button>
+      <div class="grow"><span class="t" id="title">…</span><small id="sub"></small></div>
+      <button class="btn-sm" id="delCh" hidden>Удалить канал</button>
+    </header>
+    <div class="msgs" id="msgs"></div>
+    <div class="bar">
+      <div class="rbar" id="rbar"><span id="rtext"></span><button id="rcancel" title="Отмена">✕</button></div>
+      <div class="box" id="box">
+        <textarea id="inp" rows="1" maxlength="500" placeholder="Написать сообщение…"></textarea>
+        <button class="send" id="sendBtn">➤</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="login"><div class="card">
+  <div style="font-size:18px;font-weight:700;color:#f2f3f5">Чат доступен после входа</div>
+  <div style="color:#949ba4;margin-top:8px">Войдите через Steam, чтобы читать и писать сообщения.</div>
+  <a href="/auth/steam" target="_top">Войти через Steam</a>
+</div></div>
+<div id="toast"></div>
+
+<script>
+const EMOJI = ['👍','❤️','😂','🔥','😮','😢'];
+const S = { me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', msgs: [], hash: '', reply: null, edit: null, sel: null };
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const dmRoom = (a, b) => 'dm:' + [a, b].sort().join(':');
+const initial = n => esc((n || '?').trim().charAt(0).toUpperCase() || '?');
+const avatar = (a, name) => a ? `<img class="ava" src="${esc(a)}" alt="">` : `<div class="ava">${initial(name)}</div>`;
+let toastT;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600); }
+
+async function api(path, body) {
+  const r = await fetch('/api/msg/' + path, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+    credentials: 'same-origin'
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || 'Ошибка'); e.status = r.status; throw e; }
+  return j;
+}
+
+async function init() {
+  try { S.me = await api('me'); }
+  catch (e) { $('login').style.display = 'flex'; return; }
+  $('meBox').innerHTML = avatar(S.me.avatar, S.me.name) + `<span>${esc(S.me.name)}</span>`;
+  if (S.me.mod) $('addCh').hidden = false;
+  await loadRooms();
+  openRoom(S.rooms.channels[0].room, S.rooms.channels[0].name, S.rooms.channels[0].topic, 'ch');
+  setInterval(loadRooms, 15000);
+  setInterval(loadMsgs, 2500);
+}
+
+async function loadRooms() {
+  try { S.rooms = await api('rooms'); renderSide(); } catch (e) {}
+}
+
+function renderSide() {
+  const cur = S.room;
+  $('chList').innerHTML = S.rooms.channels.map(c =>
+    `<button class="item ${c.room === cur ? 'on' : ''}" data-room="${esc(c.room)}" data-label="${esc(c.name)}" data-topic="${esc(c.topic)}" data-kind="ch">
+      <span class="hash">#</span><span>${esc(c.name)}</span></button>`).join('');
+  $('dmList').innerHTML = S.rooms.dms.length ? S.rooms.dms.map(d =>
+    `<button class="item ${d.room === cur ? 'on' : ''}" data-room="${esc(d.room)}" data-label="${esc(d.name)}" data-topic="" data-kind="dm">
+      ${avatar(d.avatar, d.name)}<span>${esc(d.name)}</span></button>`).join('')
+    : '<div style="font-size:13px;color:#7d828b;padding:4px 8px">Пока нет личных сообщений</div>';
+}
+
+function openRoom(room, label, topic, kind) {
+  S.room = room; S.label = label; S.topic = topic || ''; S.kind = kind;
+  S.msgs = []; S.hash = ''; S.reply = null; S.edit = null; S.sel = null;
+  $('title').textContent = (kind === 'ch' ? '# ' : '') + label;
+  $('sub').textContent = kind === 'ch' ? S.topic : 'Личное сообщение';
+  $('inp').placeholder = kind === 'ch' ? `Написать в #${label}` : `Написать ${label}`;
+  $('delCh').hidden = !(S.me.mod && kind === 'ch');
+  updateBar();
+  renderSide();
+  $('msgs').innerHTML = '';
+  $('side').classList.remove('open'); $('scrim').classList.remove('on');
+  loadMsgs();
+}
+
+async function loadMsgs() {
+  if (!S.room) return;
+  const room = S.room;
+  try {
+    const j = await api('messages?room=' + encodeURIComponent(room));
+    if (room !== S.room) return;
+    const h = JSON.stringify(j.msgs);
+    if (h === S.hash) return;
+    const box = $('msgs');
+    const first = !S.hash;
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 150;
+    S.hash = h; S.msgs = j.msgs;
+    render();
+    if (first || nearBottom) box.scrollTop = box.scrollHeight;
+  } catch (e) {}
+}
+
+const fmt = t => esc(t).replace(/@([^\s@]{1,32})/g, (all, n) => n === S.me.name ? `<span class="mention">@${n}</span>` : all);
+
+function render() {
+  const box = $('msgs');
+  let prev = null, html = '';
+  for (const m of S.msgs) {
+    const mine = m.uid === S.me.id;
+    const time = new Date(m.at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const grouped = prev && prev.uid === m.uid && m.at - prev.at < 5 * 60 * 1000 && !m.reply;
+    const rx = Object.keys(m.reactions || {});
+    const reacts = rx.length ? '<div class="rx">' + rx.map(e => {
+      const us = m.reactions[e];
+      return `<button class="${us.includes(S.me.id) ? 'mine' : ''}" onclick="react(${m.id},'${e}',event)">${e} ${us.length}</button>`;
+    }).join('') + '</div>' : '';
+    let acts = '<div class="acts">';
+    for (const e of EMOJI) acts += `<button onclick="react(${m.id},'${e}',event)">${e}</button>`;
+    acts += `<button title="Ответить" onclick="startReply(${m.id},event)">↩</button>`;
+    if (mine) acts += `<button title="Редактировать" onclick="startEdit(${m.id},event)">✎</button>`;
+    if (mine || S.me.mod) acts += `<button title="Удалить" onclick="delMsg(${m.id},event)">🗑</button>`;
+    acts += '</div>';
+    html += `<div class="m ${S.sel === m.id ? 'sel' : ''}" onclick="pick(${m.id})">`
+      + (grouped ? '<div class="gap"></div>' : avatar(m.avatar, m.name))
+      + '<div class="mb">'
+      + (grouped ? '' : `<div class="mh"><span class="mn" ${mine ? 'style="color:#8ea1ff"' : ''}>${esc(m.name)}</span><span class="mt">${time}</span></div>`)
+      + (m.reply ? `<div class="quote">↩ ${esc(m.reply.name)}: ${esc(m.reply.text)}</div>` : '')
+      + `<div class="mtext">${fmt(m.text)}${m.edited ? '<span class="edited">(изм.)</span>' : ''}</div>`
+      + reacts
+      + '</div>' + acts + '</div>';
+    prev = m;
+  }
+  box.innerHTML = html || `<div class="empty">${S.kind === 'ch' ? `Это начало канала #${esc(S.label)}. Напишите первым!` : 'Здесь пока пусто.'}</div>`;
+}
+
+function pick(id) { S.sel = S.sel === id ? null : id; render(); }
+
+async function react(id, emoji, ev) {
+  if (ev) ev.stopPropagation();
+  try { await api('react', { id, emoji }); await loadMsgs(); } catch (e) { toast(e.message); }
+}
+
+function startReply(id, ev) {
+  if (ev) ev.stopPropagation();
+  S.reply = S.msgs.find(m => m.id === id) || null; S.edit = null;
+  updateBar(); $('inp').focus();
+}
+
+function startEdit(id, ev) {
+  if (ev) ev.stopPropagation();
+  const m = S.msgs.find(x => x.id === id); if (!m) return;
+  S.edit = m; S.reply = null;
+  $('inp').value = m.text; autosize(); updateBar(); $('inp').focus();
+}
+
+async function delMsg(id, ev) {
+  if (ev) ev.stopPropagation();
+  if (!confirm('Удалить сообщение?')) return;
+  try { await api('delete', { id }); await loadMsgs(); } catch (e) { toast(e.message); }
+}
+
+function updateBar() {
+  const bar = $('rbar'), box = $('box');
+  if (S.edit) { bar.classList.add('on'); $('rtext').textContent = 'Редактирование сообщения'; box.classList.add('r'); }
+  else if (S.reply) { bar.classList.add('on'); $('rtext').textContent = 'Ответ: ' + S.reply.name; box.classList.add('r'); }
+  else { bar.classList.remove('on'); box.classList.remove('r'); }
+  $('sendBtn').textContent = S.edit ? '✓' : '➤';
+}
+
+function cancelMode() { S.reply = null; S.edit = null; $('inp').value = ''; autosize(); updateBar(); }
+
+function autosize() { const i = $('inp'); i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight, 140) + 'px'; }
+
+async function send() {
+  const inp = $('inp'), text = inp.value.trim();
+  if (!text || !S.room) return;
+  try {
+    if (S.edit) await api('edit', { id: S.edit.id, text });
+    else await api('send', { room: S.room, text, reply_to: S.reply ? S.reply.id : null });
+    inp.value = ''; S.reply = null; S.edit = null; autosize(); updateBar();
+    await loadMsgs();
+    $('msgs').scrollTop = $('msgs').scrollHeight;
+  } catch (e) { toast(e.message); }
+}
+
+$('inp').addEventListener('input', autosize);
+$('inp').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+  if (e.key === 'Escape') cancelMode();
+});
+$('sendBtn').onclick = send;
+$('rcancel').onclick = cancelMode;
+
+$('chList').addEventListener('click', e => {
+  const b = e.target.closest('[data-room]'); if (b) openRoom(b.dataset.room, b.dataset.label, b.dataset.topic, b.dataset.kind);
+});
+$('dmList').addEventListener('click', e => {
+  const b = e.target.closest('[data-room]'); if (b) openRoom(b.dataset.room, b.dataset.label, '', b.dataset.kind);
+});
+
+$('addCh').onclick = async () => {
+  const name = prompt('Название нового канала:'); if (!name) return;
+  const topic = prompt('Описание канала (необязательно):') || '';
+  try { await api('channel', { name, topic }); await loadRooms(); toast('Канал создан'); }
+  catch (e) { toast(e.message); }
+};
+
+$('delCh').onclick = async () => {
+  const id = +S.room.slice(3);
+  if (!confirm(`Удалить канал #${S.label} и все его сообщения?`)) return;
+  try {
+    await api('channel-delete', { id });
+    await loadRooms();
+    openRoom(S.rooms.channels[0].room, S.rooms.channels[0].name, S.rooms.channels[0].topic, 'ch');
+  } catch (e) { toast(e.message); }
+};
+
+$('addDm').onclick = async () => {
+  const q = prompt('Ник игрока, которому хотите написать:'); if (!q || q.trim().length < 2) return;
+  try {
+    const { users } = await api('users?q=' + encodeURIComponent(q.trim()));
+    if (!users.length) return toast('Игрок не найден (он должен был хотя бы раз войти на сайт)');
+    let u = users[0];
+    if (users.length > 1) {
+      const n = prompt(users.map((x, i) => `${i + 1} — ${x.name}`).join('\n') + '\n\nВведите номер:');
+      u = users[(+n || 1) - 1]; if (!u) return;
+    }
+    const room = dmRoom(S.me.id, u.uid);
+    await loadRooms();
+    openRoom(room, u.name, '', 'dm');
+  } catch (e) { toast(e.message); }
+};
+
+$('burger').onclick = () => { $('side').classList.add('open'); $('scrim').classList.add('on'); };
+$('scrim').onclick = () => { $('side').classList.remove('open'); $('scrim').classList.remove('on'); };
+
+init();
+</script>
+</body>
+</html>

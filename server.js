@@ -1083,6 +1083,9 @@ app.post('/api/skin', level('user'), async (req, res) => {
 let bs = null;
 try { bs = require('./battleship'); bs.site(app, getUser, { siteUrl: process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '', botName: () => tgBotName }); }
 catch (e) { console.error('battleship.js не подключён:', e.message); }
+// --- 💬 Чат (Discord-подобный; messenger.js и messenger.html лежат рядом с server.js; не связан с Discord) ---
+try { require('./messenger').site(app, getUser, { db, canModerate: u => permsOf(u).includes('ban') }); }
+catch (e) { console.error('messenger.js не подключён:', e.message); }
 let tt = null;
 try { tt = require('./tictactoe'); tt.site(app, getUser, { siteUrl: process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '', botName: () => tgBotName }); }
 catch (e) { console.error('tictactoe.js не подключён:', e.message); }
@@ -1819,6 +1822,6 @@ if (process.env.TG_BOT_TOKEN) {
 
 // страницы сайта имеют свои адреса (/shop, /leaders, /profile/<SteamID64> …) — все отдают тот же index.html, дальше работает маршрутизация в браузере
 app.get('/glent.mp3', (req, res) => res.sendFile(path.join(__dirname, 'glent.mp3'), { maxAge: '7d' })); // песня режима /глент (файл glent.mp3 лежит рядом с server.js)
-app.get(['/', '/shop', '/leaders', '/bans', '/rules', '/settings', '/admin', '/skins', '/public', '/battleship', '/profile/:id'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get(['/', '/shop', '/leaders', '/bans', '/rules', '/settings', '/admin', '/skins', '/public', '/battleship', '/chat', '/profile/:id'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 init().then(() => app.listen(process.env.PORT || 3000, () => console.log('ok')))
   .catch(e => { console.error('DB error:', e.message); process.exit(1); });
