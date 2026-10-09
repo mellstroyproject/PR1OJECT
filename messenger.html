@@ -408,7 +408,7 @@ function renderCallBar() {
   $('cbMute').textContent = V.muted ? '🔇' : '🎙';
   $('cbMute').title = V.muted ? 'Включить микрофон' : 'Выключить микрофон';
   $('cbShare').classList.toggle('on', !!V.screenStream);
-  $('cbShare').title = V.screenStream ? 'Остановить показ экрана' : 'Показать экран';
+  $('cbShare').title = V.screenStream ? 'Остановить показ' : (canScreen() ? 'Показать экран' : 'Включить камеру');
 }
 
 // показ экрана: видеоканал у каждого соединения уже есть, поэтому переподключать ничего не нужно
@@ -420,20 +420,25 @@ function renderScreen() {
   const mine = sharer === S.me.id;
   const stream = mine ? V.screenStream : (V.remoteVideo.get(sharer) || null);
   if (vid.srcObject !== stream) vid.srcObject = stream;
-  $('screenTitle').textContent = mine ? '🖥 Вы показываете экран' : `🖥 Экран показывает ${V.sharerName || 'игрок'}`;
+  $('screenTitle').textContent = mine ? '🖥 Вы показываете' : `🖥 Показывает ${V.sharerName || 'игрок'}`;
   $('screenStop').hidden = !mine;
 }
+
+// на компьютере — демонстрация экрана; на телефоне (iPhone/Android) браузер экран не отдаёт — показываем камеру
+const canScreen = () => !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
 
 async function startShare() {
   if (!V.room) return toast('Сначала подключитесь к звонку');
   if (V.sharer && V.sharer !== S.me.id) return toast(`Экран уже показывает ${V.sharerName}`);
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) return toast('Браузер не поддерживает показ экрана');
+  if (!navigator.mediaDevices) return toast('Браузер не поддерживает видео');
   let stream;
   try {
-    stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 30, max: 30 }, width: { max: 1920 }, height: { max: 1080 } }, audio: false
-    });
-  } catch (e) { return; }   // отменили выбор окна
+    stream = canScreen()
+      ? await navigator.mediaDevices.getDisplayMedia({
+          video: { frameRate: { ideal: 30, max: 30 }, width: { max: 1920 }, height: { max: 1080 } }, audio: false })
+      : await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', frameRate: { ideal: 30, max: 30 }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+  } catch (e) { return; }   // отменили выбор или не дали доступ к камере
   try { await api('voice/share', { on: true }); }
   catch (e) { stream.getTracks().forEach(t => t.stop()); return toast(e.message); }
   const track = stream.getVideoTracks()[0];
