@@ -1901,5 +1901,20 @@ if (process.env.TG_BOT_TOKEN) {
 // страницы сайта имеют свои адреса (/shop, /leaders, /profile/<SteamID64> …) — все отдают тот же index.html, дальше работает маршрутизация в браузере
 app.get('/glent.mp3', (req, res) => res.sendFile(path.join(__dirname, 'glent.mp3'), { maxAge: '7d' })); // песня режима /глент (файл glent.mp3 лежит рядом с server.js)
 app.get(['/', '/shop', '/leaders', '/bans', '/rules', '/settings', '/admin', '/skins', '/public', '/battleship', '/chat', '/profile/:id'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+// --- 🚨 Жалобы игроков из игры (таблица np_reports). Доступ — право «Банить и мутить» ---
+app.get('/reports', (req, res) => res.sendFile(path.join(__dirname, 'reports.html')));
+app.get('/api/reports', can('ban'), async (req, res) => {
+  try {
+    const rows = await gq('select id, reporter, reporter_name, target, reason, server, created_ms from np_reports order by id desc limit 300');
+    res.json({ reports: rows.map(r => ({ ...r, created_ms: +r.created_ms })) });
+  } catch (e) { res.status(500).json({ error: 'База игры недоступна: ' + (e.code || e.message) }); }
+});
+app.post('/api/reports/delete', can('ban'), async (req, res) => {
+  const id = parseInt(req.body.id) || 0;
+  if (!id) return bad(res, 'Нет id жалобы');
+  try { await gq('delete from np_reports where id=?', [id]); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: 'База игры недоступна: ' + (e.code || e.message) }); }
+});
 init().then(() => app.listen(process.env.PORT || 3000, () => console.log('ok')))
   .catch(e => { console.error('DB error:', e.message); process.exit(1); });
