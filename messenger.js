@@ -52,7 +52,8 @@ function site(app, getUser, opts) {
   const voice = new Map();  // room -> Map(uid -> {name, avatar, muted, seen})
   const inbox = new Map();  // uid -> [{from, kind, data}] — сигналы WebRTC, ждут опроса
   const rings = new Map();  // uid -> {from, fromId, room, at} — входящие звонки в личке
-  const sharers = new Map(); // room -> uid того, кто показывает экран (один на комнату)
+  const sharers = new Map();
+  const watches = new Map(); // room -> общее видео (ссылка, играет ли, позиция, когда обновили) // room -> uid того, кто показывает экран (один на комнату)
   const TTL = 12000;        // игрок пропал из звонка, если не опрашивал сервер 12 секунд
 
   const vWhere = uid => { for (const [room, peers] of voice) if (peers.has(uid)) return room; return null; };
@@ -69,7 +70,7 @@ function site(app, getUser, opts) {
     const now = Date.now();
     for (const [room, peers] of voice) {
       for (const [uid, p] of peers) if (now - p.seen > TTL) { peers.delete(uid); inbox.delete(uid); }
-      if (!peers.size) { voice.delete(room); sharers.delete(room); }
+      if (!peers.size) { voice.delete(room); sharers.delete(room); watches.delete(room); }
       else if (sharers.has(room) && !peers.has(sharers.get(room))) sharers.delete(room);
     }
     for (const uid of [...inbox.keys()]) if (vWhere(uid) === null) inbox.delete(uid);
@@ -505,7 +506,41 @@ function site(app, getUser, opts) {
     inbox.set(m.id, []);
     const sh = sharers.get(room) || null;
     const sp = sh ? peers.get(sh) : null;
-    res.json({ inRoom: true, peers: list, signals, sharer: sp ? sh : null, sharerName: sp ? sp.name : '' });
+    const w = watches.get(room);
+    res.json({ inRoom: true, peers: list, signals, sharer: sp ? sh : null, sharerName: sp ? sp.name : '',
+      watch: w ? { url: w.url, by: w.by, playing: w.playing, pos: w.pos, at: w.at } : null });
+  }));
+
+  // совместный просмотр видео в звонке: ссылку может выставить любой участник
+  app.post('/api/voice/watch', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    const room = vWhere(m.id);
+    if (room === null) return fail(res, 403, 'Сначала подключитесь к звонку');
+    const url = String(req.body.url || '').trim();
+    if (!/^https?:\/\/\S{3,500}$/i.test(url)) return fail(res, 400, 'Нужна ссылка, начинающаяся с http:// или https://');
+    watches.set(room, { url, by: m.name, byId: m.id, playing: false, pos: 0, at: Date.now() });
+    res.json({ ok: true });
+  }));
+
+  app.post('/api/voice/watch-state', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    const room = vWhere(m.id);
+    const w = room === null ? null : watches.get(room);
+    if (!w) return fail(res, 404, 'Видео не открыто');
+    w.playing = !!req.body.playing;
+    w.pos = Math.max(0, +req.body.pos || 0);
+    w.at = Date.now();
+    res.json({ ok: true });
+  }));
+
+  app.post('/api/voice/watch-stop', wrap(async (req, res) => {
+    const m = await me(req);
+    if (!m) return fail(res, 401, 'Войдите через Steam');
+    const room = vWhere(m.id);
+    if (room !== null) watches.delete(room);
+    res.json({ ok: true });
   }));
 
   // демонстрация экрана: один игрок на комнату

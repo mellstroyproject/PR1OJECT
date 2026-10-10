@@ -138,6 +138,13 @@ button,input,textarea{font:inherit;color:inherit}
 .screenbox{flex:none;background:#000;border-bottom:1px solid #1f2023}
 .sb-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 12px;color:#dbdee1;font-size:13px;background:#232428;font-weight:600}
 #screenVid{width:100%;max-height:52vh;display:block;background:#000;object-fit:contain}
+.watchbox{flex:none;background:#000;border-bottom:1px solid #1f2023}
+.wframe{position:relative;width:100%;aspect-ratio:16/9;max-height:62vh;background:#000}
+.wframe iframe,.wframe>div{width:100%;height:100%;border:0}
+.wlink{color:#dbdee1;padding:24px;text-align:center;font-size:14px}
+.wlink a{color:#00a8fc}
+.watchbox:fullscreen{background:#000;display:flex;flex-direction:column}
+.watchbox:fullscreen .wframe{flex:1;aspect-ratio:auto;max-height:none}
 #login{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:10}
 #login .card{background:#313338;padding:28px;border-radius:10px;text-align:center;max-width:320px}
 #login a{display:inline-block;margin-top:14px;background:#5865f2;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600}
@@ -187,6 +194,7 @@ button,input,textarea{font:inherit;color:inherit}
     <div class="callbar" id="callBar" hidden>
       <div class="cb-info"><b id="cbTitle"></b><span id="cbSub"></span></div>
       <div class="cb-av" id="cbAv"></div>
+      <button class="ib" id="cbWatch" title="Смотреть видео вместе">▶</button>
       <button class="ib" id="cbShare" title="Показать экран">🖥</button>
       <button class="ib" id="cbMute" title="Микрофон">🎙</button>
       <button class="ib red" id="cbLeave" title="Отключиться">⏏</button>
@@ -194,6 +202,10 @@ button,input,textarea{font:inherit;color:inherit}
     <div class="screenbox" id="screenBox" hidden>
       <div class="sb-head"><span id="screenTitle"></span><button class="btn-sm r" id="screenStop" hidden>Остановить</button></div>
       <video id="screenVid" autoplay playsinline muted></video>
+    </div>
+    <div class="watchbox" id="watchBox" hidden>
+      <div class="sb-head"><span id="watchTitle"></span><span><button class="btn-sm" id="watchFs">На весь экран</button> <button class="btn-sm r" id="watchStop">Закрыть</button></span></div>
+      <div class="wframe" id="watchFrame"></div>
     </div>
     <div class="msgs" id="msgs"></div>
     <div class="bar" id="bar">
@@ -220,7 +232,7 @@ button,input,textarea{font:inherit;color:inherit}
 const EMOJI = ['👍','❤️','😂','🔥','😮','😢'];
 const S = { view: 'server', people: [], peopleTab: 'online', peopleQ: '', online: new Set(), deaf: false, me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', write: true, msgs: [], hash: '', reply: null, edit: null, sel: null, panel: '', ring: null, notifyLast: null };
 const V = { room: null, label: '', local: null, pcs: new Map(), pending: new Map(), timer: null, muted: false, peers: [], state: new Map(), iceServers: null,
-  vtx: new Map(), remoteVideo: new Map(), sharer: null, sharerName: '', screenStream: null, screenTrack: null, blank: null };
+  vtx: new Map(), remoteVideo: new Map(), sharer: null, sharerName: '', screenStream: null, screenTrack: null, blank: null, watch: null, watchKey: null, ytPlayer: null, ytReady: false, ignoreUntil: 0 };
 const ICE = { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }] };
 const RING_MS = 30000;
 const $ = id => document.getElementById(id);
@@ -632,6 +644,101 @@ async function stopShare() {
   renderCallBar();
 }
 
+/* ---------- совместный просмотр видео (YouTube — с синхронизацией, VK — встроенный плеер, остальное — ссылкой) ---------- */
+
+function parseWatch(url) {
+  let u; try { u = new URL(url); } catch (e) { return { type: 'link' }; }
+  const h = u.hostname.replace(/^www\./, '').replace(/^m\./, '');
+  let id = null;
+  if (h === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
+  else if (h === 'youtube.com' || h === 'music.youtube.com') {
+    if (u.pathname === '/watch') id = u.searchParams.get('v');
+    else { const m = /^\/(shorts|embed|live)\/([\w-]{6,})/.exec(u.pathname); if (m) id = m[2]; }
+  }
+  if (id && /^[\w-]{6,20}$/.test(id)) return { type: 'yt', id };
+  if (h === 'vk.com' || h === 'vkvideo.ru') {
+    const m = /video(-?\d+)_(\d+)/.exec(u.pathname + u.search);
+    if (m) return { type: 'vk', oid: m[1], id: m[2] };
+  }
+  return { type: 'link' };
+}
+
+let ytPromise = null;
+function ytLoad() {
+  if (window.YT && window.YT.Player) return Promise.resolve();
+  if (!ytPromise) ytPromise = new Promise(res => {
+    window.onYouTubeIframeAPIReady = res;
+    const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
+  });
+  return ytPromise;
+}
+
+function destroyYT() {
+  if (V.ytPlayer) { try { V.ytPlayer.destroy(); } catch (e) {} }
+  V.ytPlayer = null; V.ytReady = false;
+}
+
+// где сейчас видео по расписанию сервера (если играет — с учётом прошедшего времени)
+const watchPos = w => w.pos + (w.playing ? (Date.now() - w.at) / 1000 : 0);
+
+function renderWatch() {
+  const box = $('watchBox');
+  const w = V.room ? V.watch : null;
+  if (!w) { box.hidden = true; destroyYT(); V.watchKey = null; return; }
+  box.hidden = false;
+  $('watchTitle').textContent = `▶ ${w.by} показывает видео`;
+  if (V.watchKey !== w.url) { V.watchKey = w.url; destroyYT(); mountWatch(parseWatch(w.url), w); }
+  else applyWatch(w);
+}
+
+function mountWatch(p, w) {
+  const host = $('watchFrame');
+  host.innerHTML = '';
+  if (p.type === 'yt') {
+    ytLoad().then(() => {
+      if (V.watchKey !== w.url) return;   // уже открыли другое видео
+      const div = document.createElement('div');
+      host.appendChild(div);
+      V.ytPlayer = new YT.Player(div, {
+        videoId: p.id,
+        playerVars: { playsinline: 1, rel: 0, modestbranding: 1 },
+        events: {
+          onReady: () => { V.ytReady = true; if (V.watch) applyWatch(V.watch); },
+          onStateChange: e => onYtState(e)
+        }
+      });
+    });
+  } else if (p.type === 'vk') {
+    const f = document.createElement('iframe');
+    f.src = `https://vk.com/video_ext.php?oid=${p.oid}&id=${p.id}&hd=2`;
+    f.allow = 'autoplay; fullscreen; encrypted-media';
+    f.setAttribute('allowfullscreen', '');
+    host.appendChild(f);
+  } else {
+    host.innerHTML = `<div class="wlink">Этот сайт нельзя показать внутри страницы.<br><a href="${esc(w.url)}" target="_blank" rel="noopener">Открыть ссылку</a></div>`;
+  }
+}
+
+// подгоняем свой плеер под общую позицию, если отстал или отличается
+function applyWatch(w) {
+  if (!w || !V.ytPlayer || !V.ytReady) return;
+  const target = watchPos(w);
+  V.ignoreUntil = Date.now() + 1200;   // эти команды не отправляем обратно
+  const cur = V.ytPlayer.getCurrentTime ? V.ytPlayer.getCurrentTime() : 0;
+  if (Math.abs(cur - target) > 2.5) V.ytPlayer.seekTo(target, true);
+  const st = V.ytPlayer.getPlayerState();
+  if (w.playing && st !== 1) V.ytPlayer.playVideo();
+  if (!w.playing && st === 1) V.ytPlayer.pauseVideo();
+}
+
+// если управляет кто-то из участников — отправляем его действие остальным
+function onYtState(e) {
+  if (Date.now() < V.ignoreUntil) return;
+  if (e.data === 1 || e.data === 2) {
+    api('voice/watch-state', { playing: e.data === 1, pos: V.ytPlayer.getCurrentTime() }).catch(() => {});
+  }
+}
+
 function renderRing() {
   const r = S.ring;
   const show = !!r && Date.now() - r.at < RING_MS && V.room !== r.room;
@@ -690,6 +797,7 @@ async function leaveVoice() {
   if (V.local) V.local.getTracks().forEach(t => t.stop());
   V.room = null; V.local = null; V.peers = []; V.muted = false; V.state = new Map();
   V.vtx = new Map(); V.remoteVideo = new Map(); V.sharer = null; V.sharerName = '';
+  V.watch = null; V.watchKey = null; destroyYT(); renderWatch();
   await api('voice/leave', {}).catch(() => {});
   S.panel = '';
   renderCallBar(); renderCallBtn(); renderRing(); renderSide(); renderPanel();
@@ -729,6 +837,7 @@ async function voicePoll() {
     V.peers = j.peers;
     if (V.screenStream && j.sharer !== S.me.id) await stopShare();
     V.sharer = j.sharer || null; V.sharerName = j.sharerName || '';
+    V.watch = j.watch || null; renderWatch();
     const ids = new Set(j.peers.map(p => p.uid));
     for (const p of j.peers) if (!V.pcs.has(p.uid) && S.me.id < p.uid) callPeer(p.uid).catch(() => {});
     for (const uid of [...V.pcs.keys()]) if (!ids.has(uid)) dropPeer(uid);
@@ -951,6 +1060,15 @@ $('msgs').addEventListener('click', e => {
 $('msgs').addEventListener('input', e => {
   if (e.target.id === 'fsearch') { S.peopleQ = e.target.value; renderList(); }
 });
+$('cbWatch').onclick = async () => {
+  if (!V.room) return toast('Сначала подключитесь к звонку');
+  const url = prompt('Ссылка на видео (YouTube, VK или любой сайт):');
+  if (!url || !url.trim()) return;
+  try { await api('voice/watch', { url: url.trim() }); V.watchKey = null; toast('Видео открыто для всех в звонке'); }
+  catch (e) { toast(e.message); }
+};
+$('watchStop').onclick = () => { api('voice/watch-stop', {}).catch(() => {}); V.watch = null; V.watchKey = null; destroyYT(); renderWatch(); };
+$('watchFs').onclick = () => { const el = $('watchBox'); if (el.requestFullscreen) el.requestFullscreen(); };
 $('cbShare').onclick = () => (V.screenStream ? stopShare() : startShare());
 $('screenStop').onclick = stopShare;
 $('cbMute').onclick = toggleMute;
