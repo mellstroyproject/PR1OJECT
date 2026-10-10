@@ -162,7 +162,8 @@ let bsStart = null; // вход в лобби морского боя по сс�
 // --- уведомления владельцу в Telegram: кто-то создал промокод / купил Админ+ на сайте. Выключаются в боте (🔔 Уведомления) и в «Настройках» сайта ---
 let tgOwnerNotify = async () => {};
 let tgCallSend = null;   // отправка ссылки на звонок в Telegram (задаётся при запуске бота)
-let msgCallStart = null; // /call из Telegram (задаётся после подключения мессенджера) // заполняется при запуске бота: шлёт сообщение всем владельцам (TG_ADMINS)
+let msgCallStart = null;
+let cs2SetVip = null;  // синхронизация срока VIP с плагином CS2 (задаётся при подключении cs2api) // /call из Telegram (задаётся после подключения мессенджера) // заполняется при запуске бота: шлёт сообщение всем владельцам (TG_ADMINS)
 const NTF = { promo: 'ntf_promo', buy: 'ntf_buy' }; // в таблице site значение '0' = выключено, нет записи = включено
 const ntfOn = async kind => { try { const r = (await db.query('select value from site where key=$1', [NTF[kind]])).rows[0]; return !r || r.value !== '0'; } catch (e) { return true; } };
 const ntfGet = async () => ({ promo: await ntfOn('promo'), buy: await ntfOn('buy') });
@@ -262,7 +263,7 @@ async function adminPurchaseCheck(id, self = true) {
   try {
     const ex = (await gq('select end_at,is_disabled,deleted_at from iks_admins where steam_id=? limit 1', [id]))[0];
     if (ex && !ex.deleted_at && !ex.is_disabled && !(+ex.end_at)) return self ? 'Вы уже постоянный админ сервера — покупка не нужна' : 'Игрок уже постоянный админ сервера — выдавать не нужно';
-  } catch (e) { console.error('adminCheck:', e.message); return 'Не удалось связаться с базой игрового сервера'; }
+  } catch (e) { console.error('adminCheck:', e.message); return 'Не удалось связаться с базой игрового сервера: ' + (e.code || e.message); }
   return null;
 }
 // untilMs — до какого момента админка по данным сайта (>= FOREVER — навсегда, в игре end_at=0)
@@ -341,7 +342,7 @@ async function vipPurchaseCheck(id) {
     const sid = await vipSid(gq);
     const ex = (await gq('select `expires` from vip_users where account_id=? and sid=? limit 1', [accountId(id), sid]))[0];
     if (ex && +ex.expires === 0) return 'У вас уже постоянный VIP на сервере — покупка не нужна';
-  } catch (e) { console.error('vipCheck:', e.message); return 'Не удалось связаться с базой игрового сервера'; }
+  } catch (e) { console.error('vipCheck:', e.message); return 'Не удалось связаться с базой игрового сервера: ' + (e.code || e.message); }
   return null;
 }
 async function grantGameVip(u, untilMs, exact = false) { // untilMs — до какого момента VIP (в игре expires в секундах, 0 = навсегда)
@@ -363,6 +364,7 @@ async function grantGameVip(u, untilMs, exact = false) { // untilMs — до к�
     }
     await conn.commit();
   } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
+  if (cs2SetVip) await cs2SetVip(u.steam_id, untilMs).catch(e => console.error('cs2 vip sync:', e.message)); // плагин CS2 видит тот же срок
 }
 
 app.post('/api/buy', level('user'), async (req, res) => {
@@ -1098,7 +1100,7 @@ catch (e) { console.error('messenger.js не подключён:', e.message); }
 
 // --- 🎮 CS2: випка и жалобы для плагина VipReport (ключ сервера — CS2_SERVER_KEY) ---
 try {
-  require('./cs2api').site(app, db, { notify: t => tgOwnerNotify(t) });
+  cs2SetVip = require('./cs2api').site(app, db, { notify: t => tgOwnerNotify(t), vipModel: process.env.CS2_VIP_MODEL || null, owner: OWNER }).setUntil;
 } catch (e) { console.error('cs2api.js не подключён:', e.message); }
 // --- 📱 Установка на домашний экран iPhone (PWA): манифест, иконки, service worker ---
 for (const [url, file, type] of [
@@ -1468,6 +1470,52 @@ if (process.env.TG_BOT_TOKEN) {
       ? await msgCallStart(steam, String(ctx.match || '').trim()).catch(() => ({ text: '❌ Ошибка, попробуйте позже' }))
       : { text: '❌ Звонки пока не включены' };
     return ctx.reply(r.text, r.url ? { reply_markup: new InlineKeyboard().url('📞 Открыть звонок на сайте', r.url) } : undefined);
+  });
+
+  // ---------- пополнение баланса монетами за Telegram Stars (XTR); VIP покупается на сайте за монеты ----------
+  // stars — цена в звёздах, coins — сколько монет зачислить на баланс сайта
+  const TOPUP = {
+    c100: { title: '100 монет', description: 'Пополнение баланса на сайте NextProject', stars: 50, coins: 100 },
+    c500: { title: '500 монет', description: 'Пополнение баланса на сайте NextProject', stars: 200, coins: 500 }
+  };
+
+  bot.command('balance', async ctx => {
+    const steam = await tgLinked(ctx);
+    if (!steam) return ctx.reply('Сначала привяжите аккаунт сайта: «👤 Мой аккаунт» → «Войти через сайт».');
+    const u = (await db.query('select coins from users where steam_id=$1', [steam])).rows[0];
+    const kb = new InlineKeyboard();
+    for (const [id, t] of Object.entries(TOPUP)) kb.text(`+ ${t.title} — ${t.stars} ⭐`, `topup:${id}`).row();
+    return ctx.reply(`💰 Баланс на сайте: ${u ? +u.coins : 0} монет\nПополнить через Telegram Stars:`, { reply_markup: kb });
+  });
+
+  bot.callbackQuery(/^topup:(\w+)$/, async ctx => {
+    const steam = await tgLinked(ctx);
+    const t = TOPUP[ctx.match[1]];
+    if (!steam || !t) return ctx.answerCallbackQuery({ text: 'Недоступно', show_alert: true });
+    await ctx.answerCallbackQuery();
+    await ctx.api.sendInvoice(ctx.from.id, t.title, t.description, `topup:${ctx.match[1]}`, 'XTR', [{ label: t.title, amount: t.stars }]);
+  });
+
+  // подтверждаем оплату (у Stars нет отдельного провайдера, достаточно ответить «да»)
+  bot.on('pre_checkout_query', ctx => ctx.answerPreCheckoutQuery(true).catch(e => console.error('pre_checkout:', e.message)));
+
+  bot.on('message:successful_payment', async ctx => {
+    const pay = ctx.message.successful_payment;
+    const [kind, id] = String(pay.invoice_payload || '').split(':');
+    const t = TOPUP[id];
+    if (kind !== 'topup' || !t) return;
+    try {
+      const steam = await tgLinked(ctx);
+      if (!steam) throw new Error('аккаунт не привязан');
+      const r = await db.query('update users set coins=coins+$1 where steam_id=$2', [t.coins, steam]);
+      if (!r.rowCount) throw new Error('нет аккаунта на сайте');
+      await ctx.reply(`✅ Баланс пополнен на ${t.coins} монет. Покупайте VIP в магазине сайта.`);
+    } catch (e) {
+      // оплата прошла, а зачисление — нет: возвращаем звёзды
+      console.error('topup:', e.message);
+      await ctx.api.refundStarPayment(ctx.from.id, pay.telegram_payment_charge_id).catch(() => {});
+      await ctx.reply('❌ Не удалось зачислить монеты, звёзды возвращены. Напишите администрации.');
+    }
   });
   cmd('link', async ctx => { if (ctx.chat?.type !== 'private') return ctx.reply('Напишите мне в личные сообщения'); return openMe(ctx, true); });
   // --- кнопочное меню: /start → «Получить промокод» и «Админ панель». Действия с вводом (промокод, бан…) спрашивают данные следующим сообщением ---
