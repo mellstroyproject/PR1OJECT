@@ -451,8 +451,29 @@ app.post('/api/promo', level('user'), async (req, res) => {
 });
 
 // --- список серверов на странице Public ---
+// --- 🟢 Онлайн серверов: карта, игроки, название (A2S, кэш 15 сек) ---
+const a2s = require('./a2s');
+const srvStatusCache = new Map(); // address -> { t, data }
+db.query("alter table servers add column if not exists mode text not null default ''").catch(e => console.error('servers mode:', e.message));
+app.get('/api/servers/status', async (req, res) => {
+  try {
+    const rows = (await db.query("select id,name,address,coalesce(mode,'') as mode from servers order by id")).rows;
+    const out = await Promise.all(rows.map(async r => {
+      const c = srvStatusCache.get(r.address);
+      if (c && Date.now() - c.t < 15000) return { address: r.address, mode: r.mode, ...c.data };
+      let data;
+      try {
+        const [host, port] = String(r.address).split(':');
+        data = { online: true, ...(await a2s.query(host, +port || 27015)) };
+      } catch (e) { data = { online: false }; }
+      srvStatusCache.set(r.address, { t: Date.now(), data });
+      return { address: r.address, mode: r.mode, ...data };
+    }));
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/api/servers', async (req, res) => {
-  try { res.json((await db.query('select id,name,address from servers order by id')).rows); }
+  try { res.json((await db.query("select id,name,address,coalesce(mode,'') as mode from servers order by id")).rows); }
   catch (e) { console.error('servers:', e.message); res.json([]); }
 });
 app.post('/api/admin/server', can('server'), async (req, res) => {
@@ -461,6 +482,14 @@ app.post('/api/admin/server', can('server'), async (req, res) => {
   if (!/^[\w.-]{3,64}:\d{2,5}$/.test(addr)) return bad(res, 'Адрес должен быть вида 45.95.31.64:27215');
   if (+(await db.query('select count(*) c from servers')).rows[0].c >= 20) return bad(res, 'Достигнут лимит: 20 серверов');
   await db.query('insert into servers(name,address) values($1,$2)', [name, addr]);
+  res.json({ ok: true });
+});
+app.post('/api/admin/server-mode', can('server'), async (req, res) => {
+  const id = +req.body.id || 0;
+  const mode = String(req.body.mode || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 60);
+  if (!id) return bad(res, 'Нет id сервера');
+  await db.query('update servers set mode=$2 where id=$1', [id, mode]);
+  srvStatusCache.delete((await db.query('select address from servers where id=$1', [id])).rows[0]?.address || '');
   res.json({ ok: true });
 });
 app.post('/api/admin/server-delete', can('server'), async (req, res) => {
