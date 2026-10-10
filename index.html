@@ -859,7 +859,7 @@ function view(){
     </div>
     <div class="ap">
       <nav class="ap-nav" aria-label="Разделы админ-панели">${tabs.map(([k,t,d,ic])=>`<button class="ap-tab${k===cur?' on':''}" data-t="${k}" onclick="admTab('${k}')"><span class="ap-ic">${I(ic)}</span><span><b>${t}</b><small>${d}</small></span></button>`).join('')}</nav>
-      <div class="ap-body">${admSec('player',player)}${st.user.full?admSec('abuse',abuseBlock()):''}${adminOwnerSections()}</div>
+      <div class="ap-body">${admSec('player',player)}${can('ban')?admSec('reports',reportsBlock()):''}${st.user.full?admSec('abuse',abuseBlock()):''}${adminOwnerSections()}</div>
     </div>
     <p class="stat">Баны и муты сохраняются в базе и видны на странице «Баны». Кик, заморозка и другие действия прямо в игре требуют плагина на игровом сервере.</p>`;
   }
@@ -878,6 +878,7 @@ function admTabs(){ // [ключ, название, подпись, иконка
   const u=st.user||{};
   return [
     ['player','Игрок','Бан, мут, кик и др.','bans',true],
+    ['reports','Жалобы','Жалобы игроков из игры','bans',can('ban')],
     ['grant','Выдать админку','Админ+ на срок','shield',can('grant')],
     ['admins','Админы сервера','Список и правка','user',!!u.full],
     ['vip','Выдать VIP','Premium на срок','coin',!!u.full],
@@ -893,8 +894,38 @@ function admCur(){const t=admTabs();return t.some(x=>x[0]===st.adminTab)?st.admi
 function admSec(k,h){return `<section data-adm="${k}"${k===admCur()?'':' hidden'}>${h}</section>`}
 function admTab(k){ // переключение без перерисовки — мгновенно, введённые данные не теряются
   st.adminTab=k;st.adminMsg={};
+  if(k==='reports')loadReports();
   document.querySelectorAll('.ap-tab').forEach(b=>b.classList.toggle('on',b.dataset.t===k));
   document.querySelectorAll('.ap-body>section').forEach(e=>{e.hidden=e.dataset.adm!==k});
+}
+function reportsBlock(){
+  return `<div><h2 style="margin:0 0 10px">Жалобы игроков</h2>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px"><button onclick="loadReports()">Обновить</button> <span id="repCount" style="opacity:.7"></span></div>
+    <div id="repList"><p style="opacity:.7">Загрузка…</p></div></div>`;
+}
+async function loadReports(){
+  const box=document.getElementById('repList'); if(!box) return;
+  try{
+    const j=await api('reports');
+    const list=j.reports||[];
+    const c=document.getElementById('repCount'); if(c) c.textContent='Всего: '+list.length;
+    if(!list.length){box.innerHTML='<p style="opacity:.7">Жалоб нет</p>';return}
+    box.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:14px"><thead><tr>'
+      +'<th style="text-align:left">Когда</th><th style="text-align:left">Кто</th><th style="text-align:left">На кого</th>'
+      +'<th style="text-align:left">Причина</th><th style="text-align:left">Сервер</th><th></th></tr></thead><tbody>'
+      +list.map(r=>`<tr style="border-top:1px solid #333">`
+        +`<td>${esc(new Date(r.created_ms).toLocaleString('ru'))}</td>`
+        +`<td>${esc(r.reporter_name||'Игрок')}<br><small>${esc(r.reporter||'')}</small></td>`
+        +`<td><b>${esc(r.target||'')}</b></td>`
+        +`<td style="color:#ffb4b4"><b>${esc(r.reason||'')}</b></td>`
+        +`<td>${esc(r.server||'—')}</td>`
+        +`<td><button onclick="delReport(${+r.id})">Удалить</button></td></tr>`).join('')
+      +'</tbody></table>';
+  }catch(e){ box.innerHTML='<p style="color:#ff8a8a">'+esc(e.message)+'</p>'; }
+}
+async function delReport(id){
+  if(!confirm('Удалить жалобу?')) return;
+  try{ await api('reports/delete',{id}); loadReports(); }catch(e){ alert(e.message); }
 }
 function adminMsgNow(id,text){const e=$(id);if(e){e.textContent=text;e.className='promo-msg err'}}
 function adminOk(kind,text){st.adminMsg={[kind]:{ok:true,text}};draw()}
