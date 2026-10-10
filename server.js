@@ -454,6 +454,26 @@ app.post('/api/promo', level('user'), async (req, res) => {
 // --- 🟢 Онлайн серверов: карта, игроки, название (A2S, кэш 15 сек) ---
 const a2s = require('./a2s');
 const srvStatusCache = new Map(); // address -> { t, data }
+// режим игры CS2 по переменным game_type и game_mode (через RCON, кэш 5 минут)
+const MODE_NAMES = { '0_0': 'Казуальный', '0_1': 'Соревновательный', '0_2': 'Wingman', '1_0': 'Аренда', '1_1': 'Демонтаж', '1_2': 'Дезматч' };
+const modeCache = new Map(); // address -> { t, label }
+async function detectMode(address) {
+  const c = modeCache.get(address);
+  if (c && Date.now() - c.t < 300000) return c.label;
+  let label = null;
+  try {
+    const [host, port] = String(address).split(':');
+    const readVar = async name => {
+      const txt = String(await rconExec(host, +port || 27015, RCON_PASS, name));
+      const m = txt.match(new RegExp('"' + name + '"\\s*=\\s*"(\\d+)"'));
+      return m ? m[1] : null;
+    };
+    const t = await readVar('game_type'), m = await readVar('game_mode');
+    if (t !== null && m !== null) label = MODE_NAMES[`${t}_${m}`] || `режим ${t}/${m}`;
+  } catch (e) { label = null; }
+  modeCache.set(address, { t: Date.now(), label });
+  return label;
+}
 db.query("alter table servers add column if not exists mode text not null default ''").catch(e => console.error('servers mode:', e.message));
 app.get('/api/servers/status', async (req, res) => {
   try {
@@ -468,6 +488,9 @@ app.get('/api/servers/status', async (req, res) => {
       } catch (e) { data = { online: false }; }
       srvStatusCache.set(r.address, { t: Date.now(), data });
       return { address: r.address, mode: r.mode, ...data };
+    }));
+    await Promise.all(out.map(async x => {
+      if (x.online) x.mode = (await detectMode(x.address)) || x.mode || '';
     }));
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
