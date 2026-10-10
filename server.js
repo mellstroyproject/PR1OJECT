@@ -160,7 +160,9 @@ let tgNotify = () => {}, tgBotName = ''; // заполняются при зап
 let ttStart = null; // вход в лобби крестиков-ноликов по ссылке ?start=tt_КОД
 let bsStart = null; // вход в лобби морского боя по ссылке t.me/бот?start=bs_КОД (заполняется при запуске бота)
 // --- уведомления владельцу в Telegram: кто-то создал промокод / купил Админ+ на сайте. Выключаются в боте (🔔 Уведомления) и в «Настройках» сайта ---
-let tgOwnerNotify = async () => {}; // заполняется при запуске бота: шлёт сообщение всем владельцам (TG_ADMINS)
+let tgOwnerNotify = async () => {};
+let tgCallSend = null;   // отправка ссылки на звонок в Telegram (задаётся при запуске бота)
+let msgCallStart = null; // /call из Telegram (задаётся после подключения мессенджера) // заполняется при запуске бота: шлёт сообщение всем владельцам (TG_ADMINS)
 const NTF = { promo: 'ntf_promo', buy: 'ntf_buy' }; // в таблице site значение '0' = выключено, нет записи = включено
 const ntfOn = async kind => { try { const r = (await db.query('select value from site where key=$1', [NTF[kind]])).rows[0]; return !r || r.value !== '0'; } catch (e) { return true; } };
 const ntfGet = async () => ({ promo: await ntfOn('promo'), buy: await ntfOn('buy') });
@@ -1084,7 +1086,14 @@ let bs = null;
 try { bs = require('./battleship'); bs.site(app, getUser, { siteUrl: process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '', botName: () => tgBotName }); }
 catch (e) { console.error('battleship.js не подключён:', e.message); }
 // --- 💬 Чат (Discord-подобный; messenger.js и messenger.html лежат рядом с server.js; не связан с Discord) ---
-try { require('./messenger').site(app, getUser, { db, canModerate: u => permsOf(u).includes('ban') }); }
+try {
+  const msgApi = require('./messenger').site(app, getUser, {
+    db, canModerate: u => permsOf(u).includes('ban'),
+    siteUrl: () => SITE,
+    tgSend: (id, text, url) => (tgCallSend ? tgCallSend(id, text, url) : Promise.resolve())
+  });
+  msgCallStart = msgApi.tgCallStart;
+}
 catch (e) { console.error('messenger.js не подключён:', e.message); }
 // --- 📱 Установка на домашний экран iPhone (PWA): манифест, иконки, service worker ---
 for (const [url, file, type] of [
@@ -1427,6 +1436,17 @@ if (process.env.TG_BOT_TOKEN) {
   cmd('unban', tgRemove('bans'));
   cmd('unmute', tgRemove('mutes'));
   bot.command('admin', ctx => openPanel(ctx, true));
+  // звонки через Telegram: /call ник — звонок игроку на сайте; ссылка открывает звонок
+  tgCallSend = (id, text, url) => bot.api.sendMessage(id, text, { reply_markup: new InlineKeyboard().url('📞 Открыть звонок на сайте', url) })
+    .catch(e => console.error('tg call:', e.message));
+  bot.command('call', async ctx => {
+    const steam = await tgLinked(ctx);
+    if (!steam) return ctx.reply('Сначала привяжите аккаунт сайта: «👤 Мой аккаунт» → «Войти через сайт».');
+    const r = msgCallStart
+      ? await msgCallStart(steam, String(ctx.match || '').trim()).catch(() => ({ text: '❌ Ошибка, попробуйте позже' }))
+      : { text: '❌ Звонки пока не включены' };
+    return ctx.reply(r.text, r.url ? { reply_markup: new InlineKeyboard().url('📞 Открыть звонок на сайте', r.url) } : undefined);
+  });
   cmd('link', async ctx => { if (ctx.chat?.type !== 'private') return ctx.reply('Напишите мне в личные сообщения'); return openMe(ctx, true); });
   // --- кнопочное меню: /start → «Получить промокод» и «Админ панель». Действия с вводом (промокод, бан…) спрашивают данные следующим сообщением ---
   const show = async (ctx, text, k) => {

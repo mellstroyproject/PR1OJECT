@@ -112,6 +112,33 @@ function site(app, getUser, opts) {
     for (const [uid, title] of send) await pushTo([uid], { title, body: text.slice(0, 120), room }).catch(() => {});
   }
 
+  // ---------- Telegram: звонки через бота (бот шлёт ссылку на звонок на сайте) ----------
+  const siteUrl = () => (opts.siteUrl && opts.siteUrl()) || '';
+  async function tgIdOf(steamId) {
+    return (await db.query('select tg_id from tg_links where steam_id=$1 limit 1', [steamId])).rows[0]?.tg_id || null;
+  }
+  // сообщение в Telegram тому, кому привязан аккаунт; ссылка открывает личный звонок на сайте
+  async function tgCallNotify(steamId, text, room) {
+    if (!opts.tgSend) return;
+    const id = await tgIdOf(steamId);
+    if (!id) return;
+    await opts.tgSend(id, text, `${siteUrl()}/messenger?room=${encodeURIComponent(room)}`);
+  }
+  // /call ник из Telegram: звонит игроку на сайте, возвращает текст и ссылку для бота
+  async function tgCallStart(callerSteam, nick) {
+    await ready;
+    if (!nick) return { text: 'Укажите ник: /call ник' };
+    const caller = (await db.query('select steam_id, name from users where steam_id=$1', [callerSteam])).rows[0];
+    const target = (await db.query('select steam_id, name from users where lower(name)=lower($1) and steam_id<>$2 limit 1', [nick, callerSteam])).rows[0];
+    if (!target) return { text: `Игрок «${nick}» не найден. Ник должен совпадать с ником на сайте.` };
+    const room = dmRoom(callerSteam, target.steam_id);
+    const from = caller ? caller.name : 'Игрок';
+    rings.set(target.steam_id, { from, fromId: callerSteam, room, at: Date.now() });
+    if (!isOpen(target.steam_id)) pushTo([target.steam_id], { title: `Звонок от ${from}`, body: 'Нажмите, чтобы ответить', room, call: true }).catch(() => {});
+    tgCallNotify(target.steam_id, `📞 ${from} звонит вам на сайте`, room).catch(() => {});
+    return { text: `📞 Звоню ${target.name}. Нажмите кнопку ниже, чтобы открыть звонок на сайте.`, url: `${siteUrl()}/messenger?room=${encodeURIComponent(room)}` };
+  }
+
   const voiceList = room => [...(voice.get(room) || new Map()).values()].map(p => ({ name: p.name, avatar: p.avatar, muted: p.muted }));
 
   const ready = (async () => {
@@ -433,7 +460,10 @@ function site(app, getUser, opts) {
     // звонок в личке: зовём собеседника, если его ещё нет в этом звонке
     if (acc.other && !voice.get(room).has(acc.other)) {
       rings.set(acc.other, { from: m.name, fromId: m.id, room, at: Date.now() });
-      if (!isOpen(acc.other)) pushTo([acc.other], { title: `Звонок от ${m.name}`, body: 'Нажмите, чтобы ответить', room, call: true }).catch(() => {});
+      if (!isOpen(acc.other)) {
+        pushTo([acc.other], { title: `Звонок от ${m.name}`, body: 'Нажмите, чтобы ответить', room, call: true }).catch(() => {});
+        tgCallNotify(acc.other, `📞 ${m.name} звонит вам на сайте`, room).catch(() => {});
+      }
     }
     res.json({ ok: true });
   }));
@@ -509,6 +539,7 @@ function site(app, getUser, opts) {
     inbox.set(to, q);
     res.json({ ok: true });
   }));
+  return { tgCallStart };
 }
 
 module.exports = { site, dmRoom };

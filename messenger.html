@@ -263,8 +263,14 @@ async function init() {
   await loadRooms();
   const wanted = new URLSearchParams(location.search).get('voice');
   const v = wanted && S.rooms.channels.find(c => c.kind === 'voice' && c.name === wanted);
-  const first = v || S.rooms.channels.find(c => c.kind === 'text') || S.rooms.channels[0];
-  openRoom(first.room, first.name, first.topic, v ? 'voice' : 'ch', first.write);
+  const roomP = new URLSearchParams(location.search).get('room');
+  if (roomP && roomP.startsWith('dm:')) {
+    const d = S.rooms.dms.find(x => x.room === roomP);
+    openRoom(roomP, d ? d.name : 'Личная переписка', '', 'dm', true);
+  } else {
+    const first = v || S.rooms.channels.find(c => c.kind === 'text') || S.rooms.channels[0];
+    openRoom(first.room, first.name, first.topic, v ? 'voice' : 'ch', first.write);
+  }
   setInterval(loadRooms, 5000);
   setInterval(loadMsgs, 2500);
   setInterval(notifyPoll, 3000);
