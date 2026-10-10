@@ -1095,6 +1095,11 @@ try {
   msgCallStart = msgApi.tgCallStart;
 }
 catch (e) { console.error('messenger.js не подключён:', e.message); }
+
+// --- 🎮 CS2: випка и жалобы для плагина VipReport (ключ сервера — CS2_SERVER_KEY) ---
+try {
+  require('./cs2api').site(app, db, { notify: t => tgOwnerNotify(t) });
+} catch (e) { console.error('cs2api.js не подключён:', e.message); }
 // --- 📱 Установка на домашний экран iPhone (PWA): манифест, иконки, service worker ---
 for (const [url, file, type] of [
   ['/manifest.webmanifest', 'manifest.webmanifest', 'application/manifest+json'],
