@@ -1089,7 +1089,7 @@ catch (e) { console.error('battleship.js не подключён:', e.message); 
 try {
   const msgApi = require('./messenger').site(app, getUser, {
     db, canModerate: u => permsOf(u).includes('ban'),
-    siteUrl: () => SITE,
+    siteUrl: () => (process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, ''),
     tgSend: (id, text, url) => (tgCallSend ? tgCallSend(id, text, url) : Promise.resolve())
   });
   msgCallStart = msgApi.tgCallStart;
@@ -1112,12 +1112,13 @@ app.get('/yandex_e579aaaa9eb23608.html', (req, res) => {
 // --- 🔎 Поисковики: robots.txt и sitemap.xml (адрес берётся из SITE_URL / RENDER_EXTERNAL_URL) ---
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain');
-  res.send(`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /auth/\nDisallow: /tg/\nDisallow: /messenger\n\nSitemap: ${SITE}/sitemap.xml\n`);
+  const base = (process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
+  res.send(`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /auth/\nDisallow: /tg/\nDisallow: /messenger\n\nSitemap: ${base}/sitemap.xml\n`);
 });
 app.get('/sitemap.xml', (req, res) => {
   res.type('application/xml');
   res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
-    + ['/', '/shop', '/leaders', '/bans', '/rules'].map(u => `  <url><loc>${SITE}${u}</loc><changefreq>weekly</changefreq></url>`).join('\n')
+    + ['/', '/shop', '/leaders', '/bans', '/rules'].map(u => `  <url><loc>${(process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '')}${u}</loc><changefreq>weekly</changefreq></url>`).join('\n')
     + `\n</urlset>\n`);
 });
 let tt = null;
