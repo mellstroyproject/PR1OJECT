@@ -1094,6 +1094,7 @@ for (const [url, file, type] of [
   ['/icon-192.png', 'icon-192.png', 'image/png'],
   ['/icon-512.png', 'icon-512.png', 'image/png']
 ]) app.get(url, (req, res) => { res.type(type); res.sendFile(path.join(__dirname, file)); });
+app.get('/ring.mp3', (req, res) => { res.type('audio/mpeg'); res.sendFile(path.join(__dirname, 'ring.mp3')); });
 let tt = null;
 try { tt = require('./tictactoe'); tt.site(app, getUser, { siteUrl: process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '', botName: () => tgBotName }); }
 catch (e) { console.error('tictactoe.js не подключён:', e.message); }

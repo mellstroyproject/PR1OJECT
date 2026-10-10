@@ -2794,7 +2794,14 @@ header{gap:16px}
   const toasts = document.createElement('div');
   toasts.id = 'chatToasts';
   document.body.appendChild(toasts);
+  // мелодия входящего звонка: играет на любой странице сайта, в том числе в чате
+  const ringSnd = new Audio('/ring.mp3'); ringSnd.loop = true;
+  let ringT = null;
+  const ringStart = () => { ringSnd.currentTime = 0; ringSnd.play().catch(() => {}); };
+  const ringStop = () => { ringSnd.pause(); clearTimeout(ringT); };
+
   const plaque = d => {
+    if (d.kind === 'call') { ringStart(); clearTimeout(ringT); ringT = setTimeout(ringStop, d.ttl || 30000); }
     if (st.page === 'chat') return;   // на странице чата и так всё видно
     const el = document.createElement('div');
     el.className = 'chat-plaque' + (d.kind === 'call' ? ' call' : '');
@@ -2804,7 +2811,7 @@ header{gap:16px}
     const open = document.createElement('button'); open.textContent = d.kind === 'call' ? 'Открыть звонок' : 'Открыть';
     const x = document.createElement('button'); x.textContent = '✕';
     el.append(b, t, row); row.append(open, x);
-    const close = () => el.remove();
+    const close = () => { el.remove(); if (d.kind === 'call') ringStop(); };
     open.onclick = () => { close(); go('chat'); setTimeout(() => send({ type: 'open-room', room: d.room }), 150); };
     x.onclick = close;
     toasts.appendChild(el);
@@ -2819,6 +2826,7 @@ header{gap:16px}
       if (pendingCmd) { frame.contentWindow.postMessage(pendingCmd, location.origin); pendingCmd = null; }
     }
     if (d.type === 'chat-notify') plaque(d);
+    if (d.type === 'call-stop') ringStop();
   });
 
   // переход по push-уведомлению: открыть чат на нужной комнате
