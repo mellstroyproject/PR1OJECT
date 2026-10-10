@@ -1104,6 +1104,22 @@ for (const [url, file, type] of [
   ['/icon-512.png', 'icon-512.png', 'image/png']
 ]) app.get(url, (req, res) => { res.type(type); res.sendFile(path.join(__dirname, file)); });
 app.get('/ring.mp3', (req, res) => { res.type('audio/mpeg'); res.sendFile(path.join(__dirname, 'ring.mp3')); });
+// --- ✅ Подтверждение прав в Яндекс Вебмастере (HTML-файл из раздела «HTML-файл») ---
+app.get('/yandex_e579aaaa9eb23608.html', (req, res) => {
+  res.type('text/html');
+  res.send('<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"></head><body>Verification: e579aaaa9eb23608</body></html>');
+});
+// --- 🔎 Поисковики: robots.txt и sitemap.xml (адрес берётся из SITE_URL / RENDER_EXTERNAL_URL) ---
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain');
+  res.send(`User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /auth/\nDisallow: /tg/\nDisallow: /messenger\n\nSitemap: ${SITE}/sitemap.xml\n`);
+});
+app.get('/sitemap.xml', (req, res) => {
+  res.type('application/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
+    + ['/', '/shop', '/leaders', '/bans', '/rules'].map(u => `  <url><loc>${SITE}${u}</loc><changefreq>weekly</changefreq></url>`).join('\n')
+    + `\n</urlset>\n`);
+});
 let tt = null;
 try { tt = require('./tictactoe'); tt.site(app, getUser, { siteUrl: process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '', botName: () => tgBotName }); }
 catch (e) { console.error('tictactoe.js не подключён:', e.message); }
