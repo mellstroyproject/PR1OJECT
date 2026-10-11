@@ -95,6 +95,32 @@
 - Встраивать можно только видео с YouTube и VK. Остальные сайты открываются отдельно по ссылке.
 - Синхронизация видео работает только для YouTube.
 
+## Подключение к сборке ServUp (игровая база)
+
+Сайт работает с базой данных игрового сервера, которую ведут плагины сборки `cs2-public-serv-free`. Все плагины и сайт должны смотреть в **одну** MySQL-базу.
+
+**Переменные окружения для игровой базы (Render → Environment):**
+- `GAME_DB_HOST`, `GAME_DB_PORT` (по умолчанию 3306), `GAME_DB_USER`, `GAME_DB_PASS`, `GAME_DB_NAME` — база плагинов.
+- `RCON_PASSWORD` — тот же пароль, что `rcon_password` в `cfg/server.cfg`. В коде пароля по умолчанию больше нет.
+- `ADMIN_FLAGS` (по умолчанию `z`) — флаги, которые получает купивший Админ+. `ADMIN_IMMUNITY` — иммунитет (по умолчанию 0).
+- `VIP_GROUP` (по умолчанию `premium`) — ключ группы из `VIPCore/vip.json`.
+- `VIP_SID` — необязательно; если не задан, сайт берёт id сервера из таблицы `vip_servers`.
+
+**Какие таблицы использует сайт:**
+- `iks_admins`, `iks_bans`, `iks_comms`, `iks_servers` — админы и наказания (плагин IksAdmin).
+- `vip_users`, `vip_servers` — VIP (плагин VIPCore).
+- `lvl_base` — ранги и статистика (плагин Ranks).
+- `wp_player_skins`, `wp_player_knife`, `wp_player_agents` — скин-ченджер (плагин WeaponPaints).
+- `np_bans`, `np_reports` — служебные таблицы сайта, создаются сами.
+
+**Настройки плагинов сборки (файлы в `addons/counterstrikesharp/configs/plugins/`):**
+- `IksAdmin/core.json`: `Host`, `Database`, `User`, `Password`, `Port`; `ServerId` (1), `ServerIp`, `ServerName`; `RconPassword` должен совпадать с `RCON_PASSWORD`; `IgnoreAdminServers: true`, чтобы админы, выданные с сайта, работали на сервере без записи в `iks_admin_to_server`.
+- `VIPCore/vip_core.json`: блок `Connection` (те же данные БД), `ServerId` (1).
+- `RanksCore/ranks.json`: блок `Connection`; `TableName` = `lvl_base`.
+- `WeaponPaints/WeaponPaints.json`: `DatabaseHost`, `DatabaseUser`, `DatabasePassword`, `DatabaseName`, `DatabasePort`.
+
+Важно: пароли из `server.cfg` и `IksAdmin/core.json` в архиве сборки уже лежат в открытом виде. Смените их и не публикуйте архивы с паролями.
+
 ## Лицензия
 
 Проект приватный. Использовать его для другого сервера или публиковать без разрешения владельца нельзя. Музыка и мелодии в `ring.mp3` защищены авторским правом их владельцев: используй только то, на что у тебя есть права.

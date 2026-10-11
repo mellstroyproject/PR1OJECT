@@ -12,8 +12,6 @@ const gq = async (sql, p = []) => { if (!game) throw new Error('База игр�
 // таблицы NextProject в игровой базе: создаём, если их нет (после очистки базы сайт и плагин поднимут их сами)
 if (game) {
   const NP_TABLES = [
-    `CREATE TABLE IF NOT EXISTS np_vip (steam_id VARCHAR(20) NOT NULL PRIMARY KEY, until_ms BIGINT NOT NULL, model VARCHAR(255) NULL)`,
-    `CREATE TABLE IF NOT EXISTS np_admins (steam_id VARCHAR(20) NOT NULL PRIMARY KEY, name VARCHAR(64) NULL, until_ms BIGINT NOT NULL, flags VARCHAR(32) NOT NULL DEFAULT 'full')`,
     `CREATE TABLE IF NOT EXISTS np_bans (id INT AUTO_INCREMENT PRIMARY KEY, kind VARCHAR(10) NOT NULL, steam_id VARCHAR(20) NOT NULL, name VARCHAR(64) NULL, admin VARCHAR(64) NULL, reason VARCHAR(200) NULL, until_ms BIGINT NOT NULL, active TINYINT(1) NOT NULL DEFAULT 1, created_ms BIGINT NOT NULL, INDEX idx_steam_kind (steam_id, kind, active))`,
     `CREATE TABLE IF NOT EXISTS np_reports (id INT AUTO_INCREMENT PRIMARY KEY, reporter VARCHAR(20) NOT NULL, reporter_name VARCHAR(64) NULL, target VARCHAR(64) NOT NULL, reason VARCHAR(300) NOT NULL, server VARCHAR(64) NULL, created_ms BIGINT NOT NULL)`
   ];
@@ -21,14 +19,14 @@ if (game) {
 }
 const nowS = () => Math.floor(Date.now() / 1000);
 const gaCache = new Map();
-async function gameAdmin(id) { // админ из таблицы np_admins (своя база NextProject)
+async function gameAdmin(id) { // админ из таблицы iks_admins (плагин IksAdmin на игровом сервере)
   if (!game) return null;
   const c = gaCache.get(id); if (c && Date.now() - c.t < 60000 && (!c.v || !+c.v.end_at || +c.v.end_at > nowS())) return c.v;
   let v = null;
   try {
-    const r = (await gq('select steam_id,name,until_ms from np_admins where steam_id=? and (until_ms=0 or until_ms>?) limit 1', [id, Date.now()]))[0];
-    if (r) v = { id: r.steam_id, name: r.name, end_at: +r.until_ms ? Math.floor(+r.until_ms / 1000) : 0 };
-  } catch (e) { console.error('np_admins:', e.message); }
+    const r = (await gq('select steam_id,name,end_at from iks_admins where steam_id=? and deleted_at is null and is_disabled=0 and (end_at=0 or end_at>?) limit 1', [id, nowS()]))[0];
+    if (r) v = { id: r.steam_id, name: r.name, end_at: +r.end_at };
+  } catch (e) { console.error('iks_admins:', e.message); }
   gaCache.set(id, { t: Date.now(), v }); return v;
 }
 // --- профили Steam: ник и аватарка ---
@@ -273,20 +271,24 @@ const ADMIN_FLAGS = process.env.ADMIN_FLAGS || 'z', ADMIN_IMMUNITY = +process.en
 async function adminPurchaseCheck(id, self = true) {
   if (!game) return 'Выдача админки сейчас недоступна, попробуйте позже';
   try {
-    const ex = (await gq('select until_ms from np_admins where steam_id=? limit 1', [id]))[0];
-    if (ex && +ex.until_ms === 0) return self ? 'Вы уже постоянный админ сервера — покупка не нужна' : 'Игрок уже постоянный админ сервера — выдавать не нужно';
-  } catch (e) { console.error('np_admins check:', e.message); return 'Не удалось связаться с базой: ' + (e.code || e.message); }
+    const ex = (await gq('select end_at from iks_admins where steam_id=? and deleted_at is null limit 1', [id]))[0];
+    if (ex && +ex.end_at === 0) return self ? 'Вы уже постоянный админ сервера — покупка не нужна' : 'Игрок уже постоянный админ сервера — выдавать не нужно';
+  } catch (e) { console.error('iks_admins check:', e.message); return 'Не удалось связаться с базой: ' + (e.code || e.message); }
   return null;
 }
 // untilMs — до какого момента админка по данным сайта (>= FOREVER — навсегда, в игре end_at=0)
-async function grantGameAdmin(u, untilMs, o = {}) { // запись в np_admins; срок не уменьшаем, 0 = навсегда
-  const until = untilMs >= FOREVER ? 0 : Math.floor(untilMs);
+// пишем в iks_admins плагина IksAdmin: срок в секундах, срок не уменьшаем, 0 = навсегда
+async function grantGameAdmin(u, untilMs, o = {}) {
+  const endAt = untilMs >= FOREVER ? 0 : Math.floor(untilMs / 1000);
   const name = String(o.name || u.name || u.steam_id).slice(0, 64);
-  const flags = o.flags || 'full';
-  await gq(`insert into np_admins(steam_id,name,until_ms,flags) values(?,?,?,?)
-    on duplicate key update name=values(name), flags=values(flags),
-    until_ms = if(values(until_ms)=0 or until_ms=0, 0, greatest(until_ms, values(until_ms)))`,
-    [u.steam_id, name, until, flags]);
+  const flags = o.flags || ADMIN_FLAGS, now = nowS();
+  const ex = (await gq('select id, end_at from iks_admins where steam_id=? and deleted_at is null limit 1', [u.steam_id]))[0];
+  if (ex) {
+    const keep = +ex.end_at === 0 || endAt === 0 ? 0 : Math.max(+ex.end_at, endAt);
+    await gq('update iks_admins set name=?, flags=?, immunity=?, end_at=?, is_disabled=0, updated_at=? where id=?', [name, flags, ADMIN_IMMUNITY, keep, now, ex.id]);
+  } else {
+    await gq('insert into iks_admins(steam_id,name,flags,immunity,end_at,is_disabled,created_at,updated_at) values(?,?,?,?,?,0,?,?)', [u.steam_id, name, flags, ADMIN_IMMUNITY, endAt, now, now]);
+  }
   gaCache.delete(u.steam_id);
 }
 async function deleteGameAdmin(id) { // убираем строку админа из iks_admins (и его привязку к серверу)
@@ -316,7 +318,7 @@ async function deleteGameAdmin(id) { // убираем строку админа
 }
 
 // --- выдача VIP в игре при покупке Премиума (таблица vip_users плагина VIP) ---
-const VIP_GROUP = process.env.VIP_GROUP || 'Premium'; // название группы из groups.ini плагина VIP
+const VIP_GROUP = process.env.VIP_GROUP || 'premium'; // ключ группы из vip.json плагина VIPCore
 const STEAM64_BASE = 76561197960265728n;
 const accountId = id => Number(BigInt(id) - STEAM64_BASE); // SteamID64 -> account_id (SteamID3)
 async function vipSid(q) { // id сервера из vip_servers (если в таблице нет такой колонки — берём VIP_SID или 0)
@@ -331,19 +333,21 @@ async function vipSid(q) { // id сервера из vip_servers (если в т
 async function vipPurchaseCheck(id) {
   if (!game) return 'Выдача VIP сейчас недоступна, попробуйте позже';
   try {
-    const ex = (await gq('select until_ms from np_vip where steam_id=? limit 1', [id]))[0];
-    if (ex && +ex.until_ms === 0) return 'У вас уже постоянный VIP на сервере — покупка не нужна';
-  } catch (e) { console.error('np_vip check:', e.message); return 'Не удалось связаться с базой: ' + (e.code || e.message); }
+    const ex = (await gq('select expires from vip_users where account_id=? and sid=? limit 1', [accountId(id), await vipSid(gq)]))[0];
+    if (ex && +ex.expires === 0) return 'У вас уже постоянный VIP на сервере — покупка не нужна';
+  } catch (e) { console.error('vip_users check:', e.message); return 'Не удалось связаться с базой: ' + (e.code || e.message); }
   return null;
 }
-async function grantGameVip(u, untilMs, exact = false) { // запись в np_vip; срок не уменьшаем (если не exact), 0 = навсегда
-  const until = untilMs >= FOREVER ? 0 : Math.floor(untilMs);
-  if (exact) {
-    await gq(`insert into np_vip(steam_id,until_ms) values(?,?) on duplicate key update until_ms=values(until_ms)`, [u.steam_id, until]);
-  } else {
-    await gq(`insert into np_vip(steam_id,until_ms) values(?,?)
-      on duplicate key update until_ms = if(values(until_ms)=0 or until_ms=0, 0, greatest(until_ms, values(until_ms)))`, [u.steam_id, until]);
-  }
+// пишем в vip_users плагина VIPCore: срок в секундах, 0 = навсегда; если exact=false — срок не уменьшаем
+async function grantGameVip(u, untilMs, exact = false) {
+  const expires = untilMs >= FOREVER ? 0 : Math.floor(untilMs / 1000);
+  const sid = await vipSid(gq), acc = accountId(u.steam_id), now = nowS();
+  const name = String(u.name || u.steam_id).slice(0, 64);
+  const ex = (await gq('select expires from vip_users where account_id=? and sid=? limit 1', [acc, sid]))[0];
+  const keep = !exact && ex ? (+ex.expires === 0 || expires === 0 ? 0 : Math.max(+ex.expires, expires)) : expires;
+  await gq(`insert into vip_users(account_id,name,lastvisit,sid,\`group\`,expires) values(?,?,?,?,?,?)
+    on duplicate key update \`group\`=values(\`group\`), name=values(name), lastvisit=values(lastvisit), expires=values(expires)`,
+    [acc, name, now, sid, VIP_GROUP, keep]);
 }
 
 app.post('/api/buy', level('user'), async (req, res) => {
@@ -520,8 +524,8 @@ app.post('/api/admin/server-delete', can('server'), async (req, res) => {
 });
 
 // --- перезагрузка игрового сервера через RCON (только владелец и назначенные замы) ---
-// Пароль RCON задан ниже в строке const pass = ... (он должен совпадать с rcon_password в server.cfg игрового сервера). Команда по умолчанию — quit, меняется через RESTART_CMD
-const RCON_PASS = process.env.RCON_PASSWORD || '3465ergsdfgasdfs23wwsaw%urt'; // лучше задать RCON_PASSWORD в Render и убрать значение по умолчанию отсюда
+// Пароль RCON берётся из переменной RCON_PASSWORD (он должен совпадать с rcon_password в server.cfg игрового сервера). Команда по умолчанию — quit, меняется через RESTART_CMD
+const RCON_PASS = process.env.RCON_PASSWORD || ''; // задаётся только в Environment (Render): RCON_PASSWORD = rcon_password из server.cfg
 function rconExec(host, port, password, command) {
   return new Promise((resolve, reject) => {
     const net = require('net');
