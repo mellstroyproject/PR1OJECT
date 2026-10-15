@@ -258,6 +258,20 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
 .srv-bot{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;font-weight:600}
 .srv-map,.srv-pl{background:rgba(0,0,0,.45);padding:3px 10px;border-radius:999px}
 .srv-btns{display:flex;gap:8px}
+.srv-card{cursor:pointer}
+.srvm-ov{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;box-sizing:border-box}
+.srvm{width:min(640px,100%);max-height:88vh;background:#16161f;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;color:#fff;border:1px solid var(--line)}
+.srvm-head{padding:14px 18px 16px;background-size:cover;background-position:center;border-bottom:1px solid rgba(255,255,255,.08)}
+.srvm-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.srvm-title{font-weight:800;font-size:20px;text-shadow:0 2px 8px rgba(0,0,0,.7)}
+.srvm-x{background:rgba(0,0,0,.4);border:0;color:#fff;border-radius:999px;width:32px;height:32px;cursor:pointer;font-size:16px}
+.srvm-info{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:14px;opacity:.95}
+.srvm-body{flex:1;overflow:auto;padding:8px 18px;min-height:200px}
+.srvm-tb{width:100%;border-collapse:collapse;font-size:14px}
+.srvm-tb th,.srvm-tb td{padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+.srvm-tb th{opacity:.6;font-weight:600}
+.srvm-empty{text-align:center;opacity:.6;padding:60px 0}
+.srvm-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid rgba(255,255,255,.08)}
 </style>
 <style>
 .pf-back{display:inline-flex;gap:6px;align-items:center;background:none;border:0;color:var(--mut);font:inherit;cursor:pointer;padding:6px 0;margin-bottom:10px}.pf-back:hover{color:var(--tx)}
@@ -940,7 +954,7 @@ async function delReport(id){
 }
 // карточки серверов: фон = текущая карта сервера (картинка /maps/<карта>.jpg)
 function srvCard(name,address){
-  return `<div class="srv-card" data-srv="${esc(address)}"><div class="srv-bg" data-bg></div><div class="srv-shade"></div><div class="srv-body"><div class="srv-top"><div class="srv-name">${esc(name)}</div><div class="srv-st" data-st="${esc(address)}">проверяем…</div></div><div class="srv-bot"><div class="srv-map" data-map>—</div><div class="srv-pl" data-pl>—</div></div><div class="srv-btns"><button class="join" onclick="location.href='steam://connect/${esc(address)}'">Играть</button> <button class="join" onclick="navigator.clipboard&&navigator.clipboard.writeText('connect ${esc(address)}');uiAlert('Скопировано: connect ${esc(address)}')">Копировать</button></div></div></div>`;
+  return `<div class="srv-card" data-srv="${esc(address)}" onclick="srvOpen('${esc(address)}')"><div class="srv-bg" data-bg></div><div class="srv-shade"></div><div class="srv-body"><div class="srv-top"><div class="srv-name">${esc(name)}</div><div class="srv-st" data-st="${esc(address)}">проверяем…</div></div><div class="srv-bot"><div class="srv-map" data-map>—</div><div class="srv-pl" data-pl>—</div></div><div class="srv-btns"><button class="join" onclick="event.stopPropagation();location.href='steam://connect/${esc(address)}'">Играть</button> <button class="join" onclick="event.stopPropagation();navigator.clipboard&&navigator.clipboard.writeText('connect ${esc(address)}');uiAlert('Скопировано: connect ${esc(address)}')">Копировать</button></div></div></div>`;
 }
 async function loadServerStatus(){
   if(!document.querySelectorAll('[data-srv]').length) return;
@@ -952,7 +966,7 @@ async function loadServerStatus(){
         const map=x.online?String(x.map||'').replace(/[^\w-]/g,''):'';
         const bg=card.querySelector('[data-bg]');
         const want=map?`url("/maps/${map}.jpg")`:'';
-        if(bg.dataset.map!==map){ bg.dataset.map=map; bg.style.backgroundImage=want; }
+        if(bg.dataset.cur!==map){ bg.dataset.cur=map; bg.style.backgroundImage=want; }
         const st=card.querySelector('[data-st]');
         st.innerHTML=x.online
           ? `<span style="color:#7dff9b">● онлайн</span>${x.mode?' · '+esc(x.mode):''}`
@@ -962,6 +976,55 @@ async function loadServerStatus(){
       });
     }
   }catch(e){ document.querySelectorAll('[data-st]').forEach(el=>el.textContent='статус недоступен'); }
+}
+let SRVM=null;
+const fmtT=s=>{const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?`${h}:${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`:`${m}:${String(x).padStart(2,'0')}`};
+async function srvOpen(address){
+  SRVM=address;
+  let ov=document.getElementById('srvm');
+  if(!ov){
+    ov=document.createElement('div');ov.id='srvm';ov.className='srvm-ov';
+    ov.addEventListener('click',e=>{if(e.target===ov)srvClose()});
+    document.body.appendChild(ov);
+  }
+  ov.style.display='flex';
+  ov.innerHTML='<div class="srvm"><div class="srvm-empty">Загрузка…</div></div>';
+  await srvRefresh();
+}
+function srvClose(){const ov=document.getElementById('srvm');if(ov)ov.style.display='none';SRVM=null}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')srvClose()});
+async function srvRefresh(){
+  const ov=document.getElementById('srvm');if(!ov||!SRVM)return;
+  const address=SRVM;
+  try{
+    const d=await api('servers/players?address='+encodeURIComponent(address));
+    if(SRVM===address)ov.innerHTML=srvModalHTML(d);
+  }catch(e){
+    if(SRVM===address)ov.innerHTML=`<div class="srvm"><div class="srvm-head"><div class="srvm-title">Ошибка</div><button class="srvm-x" onclick="srvClose()">✕</button></div><div class="srvm-body"><div class="srvm-empty">${esc(e.message)}</div></div></div>`;
+  }
+}
+setInterval(()=>{if(SRVM)srvRefresh()},10000);
+function srvModalHTML(d){
+  const map=String(d.map||'').replace(/[^\w-]/g,'');
+  const head=d.online&&map?`linear-gradient(rgba(10,10,18,.55),rgba(10,10,18,.9)),url("/maps/${map}.jpg")`:'linear-gradient(135deg,#1c1c2e,#12121e)';
+  const list=(d.list||[]).slice().sort((a,b)=>b.score-a.score);
+  const body=!d.online
+    ?'<div class="srvm-empty">Сервер оффлайн</div>'
+    :list.length
+      ?`<table class="srvm-tb"><tr><th>Игрок</th><th>Очки</th><th>Время</th></tr>${list.map(p=>`<tr><td>${esc(p.name)}</td><td>${p.score}</td><td>${fmtT(p.time)}</td></tr>`).join('')}</table>`
+      :'<div class="srvm-empty">Сервер пуст</div>';
+  return `<div class="srvm"><div class="srvm-head" style="background-image:${head}">
+    <div class="srvm-top"><div class="srvm-title">${esc(d.name)}</div><button class="srvm-x" onclick="srvClose()" aria-label="Закрыть">✕</button></div>
+    <div class="srvm-info">
+      <div>Игроки: <b>${d.online?`${d.players}/${d.maxPlayers}`:'—'}</b></div>
+      <div>Режим: <b>${esc(d.mode||'не указан')}</b></div>
+      <div>Карта: <b>${esc(d.online?(d.map||'—'):'—')}</b></div>
+    </div></div>
+    <div class="srvm-body">${body}</div>
+    <div class="srvm-foot">
+      <button class="join" onclick="navigator.clipboard&&navigator.clipboard.writeText('connect ${esc(d.address)}');uiAlert('Скопировано: connect ${esc(d.address)}')">Скопировать IP</button>
+      <div><button class="join" onclick="srvRefresh()">Обновить</button> <button class="join" onclick="location.href='steam://connect/${esc(d.address)}'">Присоединиться</button></div>
+    </div></div>`;
 }
 setInterval(loadServerStatus,15000);
 setTimeout(loadServerStatus,1500);

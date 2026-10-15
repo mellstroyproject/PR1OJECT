@@ -49,4 +49,42 @@ function query(host, port, timeoutMs = 2000) {
   });
 }
 
-module.exports = { query };
+// Список игроков (A2S_PLAYER): ник, очки, время в секундах.
+function players(host, port, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    const sock = dgram.createSocket('udp4');
+    let done = false;
+    const finish = (err, val) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { sock.close(); } catch (e) {}
+      err ? reject(err) : resolve(val);
+    };
+    const timer = setTimeout(() => finish(new Error('timeout')), timeoutMs);
+    const req = ch => Buffer.concat([Buffer.from([0xff, 0xff, 0xff, 0xff, 0x55]), ch]);
+    sock.on('error', e => finish(e));
+    sock.on('message', msg => {
+      if (msg.length < 6 || msg.readUInt32LE(0) !== 0xffffffff) return;
+      const type = msg[4];
+      if (type === 0x41) { sock.send(req(msg.slice(5, 9)), port, host); return; }
+      if (type !== 0x44) return;
+      try {
+        const count = msg[5];
+        let o = 6;
+        const list = [];
+        for (let i = 0; i < count && o < msg.length; i++) {
+          o++;                                    // индекс игрока
+          const nm = readCStr(msg, o); o = nm.next;
+          const score = msg.readInt32LE(o); o += 4;
+          const dur = msg.readFloatLE(o); o += 4;
+          list.push({ name: nm.s || '(без ника)', score, time: Math.max(0, Math.floor(dur)) });
+        }
+        finish(null, list);
+      } catch (e) { finish(e); }
+    });
+    sock.send(req(Buffer.from([0xff, 0xff, 0xff, 0xff])), port, host, err => { if (err) finish(err); });
+  });
+}
+
+module.exports = { query, players };

@@ -499,6 +499,28 @@ app.get('/api/servers/status', async (req, res) => {
     res.json(out);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// подробности сервера для окна: карта, игроки, очки (только серверы из списка)
+const plCache = new Map();
+app.get('/api/servers/players', async (req, res) => {
+  try {
+    const address = String(req.query.address || '');
+    if (!/^[\w.-]{3,64}:\d{2,5}$/.test(address)) return bad(res, 'Неверный адрес');
+    const row = (await db.query("select name,address,coalesce(mode,'') as mode from servers where address=$1", [address])).rows[0];
+    if (!row) return res.status(404).json({ error: 'Сервер не найден' });
+    const c = plCache.get(address);
+    if (c && Date.now() - c.t < 10000) return res.json(c.data);
+    const [host, port] = address.split(':');
+    let data;
+    try {
+      const [info, list] = await Promise.all([a2s.query(host, +port || 27015), a2s.players(host, +port || 27015)]);
+      data = { name: row.name, address, mode: row.mode, online: true, map: info.map, players: info.players, maxPlayers: info.maxPlayers, list };
+    } catch (e) {
+      data = { name: row.name, address, mode: row.mode, online: false, list: [] };
+    }
+    plCache.set(address, { t: Date.now(), data });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/api/servers', async (req, res) => {
   try { res.json((await db.query("select id,name,address,coalesce(mode,'') as mode from servers order by id")).rows); }
   catch (e) { console.error('servers:', e.message); res.json([]); }
