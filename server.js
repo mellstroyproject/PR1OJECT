@@ -998,6 +998,21 @@ app.get('/api/player/:id', async (req, res) => {
   }
   res.json(out);
 });
+app.get('/api/player/:id/blocks', async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!/^\d{17}$/.test(id)) return bad(res, 'Неверный SteamID64');
+  const forms = steamForms(id), ph = forms.map(() => '?').join(',');
+  const pick = async T => {
+    try {
+      const rows = await gq(`select b.reason, b.duration, b.created_at, b.end_at, b.unbanned_by, a.name as admin_name
+        from ${T} b left join iks_admins a on a.id=b.admin_id where b.steam_id in (${ph}) and b.deleted_at is null order by b.id desc limit 20`, forms);
+      const n = nowS();
+      return rows.map(r => ({ reason: r.reason || '', admin: r.admin_name || 'Консоль', term: +r.duration ? fmtDur(+r.duration) : 'Навсегда',
+        at: r.created_at ? r.created_at * 1000 : null, active: !r.unbanned_by && (+r.end_at === 0 || r.end_at === null || +r.end_at > n) }));
+    } catch (e) { console.error('player blocks:', e.message); return []; }
+  };
+  res.json({ bans: await pick('iks_bans'), mutes: await pick('iks_comms') });
+});
 // --- чат сайта: читать могут все, писать — вошедшие через Steam; удалять сообщения — те, у кого есть право банить ---
 const chatLast = new Map();
 app.get('/api/chat', async (req, res) => {

@@ -322,6 +322,16 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
 .pf2-kv small{display:block;color:var(--mut);font-size:12px;margin-top:2px}
 .pf2-copy b{cursor:pointer}.pf2-copy b:hover{color:#6f8cff}
 .pf2-note{color:var(--mut);font-size:14px}
+.pf2-nav{display:flex;flex-direction:column;gap:2px}
+.pf2-nav button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--mut);font:inherit;font-weight:600;padding:12px 14px;border-radius:10px;cursor:pointer}
+.pf2-nav button:hover{color:var(--tx)}
+.pf2-nav button.on{background:#14141d;color:var(--tx)}
+.pf2-wide{min-height:300px}
+.pf2-sec{font-size:16px;font-weight:800;margin:18px 0 6px;color:var(--tx)}
+.pf2-sec:first-of-type{margin-top:4px}
+.pf2-empty{color:#6f7090;font-weight:800;font-size:20px;text-align:center;padding:48px 0}
+.pf2-item{padding:12px 14px;background:#0f0f16;border-radius:12px;margin-top:8px}
+.pf2-item span{display:block;color:var(--mut);font-size:13px;margin-top:4px}
 .pf-fx .pf2-panel{animation:skIn .6s var(--ease) calc(var(--i,0)*80ms + .15s) backwards}
 @media(max-width:860px){.pf2{grid-template-columns:1fr}.pf2-grid{grid-template-columns:1fr}.pf2-row.wide{grid-template-columns:1fr}}
 .lb-who{cursor:pointer}.lb-who:hover .nm{text-decoration:underline}
@@ -694,7 +704,7 @@ const PAGES=[['home','Играть','play'],['shop','Магазин','shop'],['l
 // ===== Адреса страниц: /shop, /leaders, /bans, /rules, /profile/<SteamID64> … =====
 const ROUTES={home:'/',shop:'/shop',leaders:'/leaders',bans:'/bans',rules:'/rules',settings:'/settings',admin:'/admin',skins:'/skins',battleship:'/battleship',chat:'/chat',public:'/public'};
 const ROUTE_PAGE=Object.fromEntries(Object.entries(ROUTES).map(([k,v])=>[v,k]));
-const PF={id:null,data:null,err:'',busy:false};
+const PF={id:null,data:null,err:'',busy:false,tab:'info',blocks:null};
 let AUTH_READY=false,NAV_PUSH=false,WANT_PAGE='home',WANT_PROFILE=null;
 const curPath=()=>location.pathname.replace(/(.)\/+$/,'$1');
 function pageFromPath(){const p=curPath(),m=p.match(/^\/profile\/(\d{17})$/);return m?{page:'profile',id:m[1]}:{page:ROUTE_PAGE[p]||'home',id:null}}
@@ -1328,7 +1338,7 @@ loadLeaders();
 // ===== Профиль игрока =====
 async function openProfile(id,noPush){
   if(!/^\d{17}$/.test(id||''))return;
-  PF.id=id;PF.data=null;PF.err='';PF.busy=true;PF.fxFor=null;st.menu=false;st.promoOpen=false;st.page='profile';if(!noPush)NAV_PUSH=true;
+  PF.id=id;PF.data=null;PF.tab='info';PF.blocks=null;PF.err='';PF.busy=true;PF.fxFor=null;st.menu=false;st.promoOpen=false;st.page='profile';if(!noPush)NAV_PUSH=true;
   try{window.scrollTo(0,0)}catch(e){}
   draw();
   try{const d=await api('player/'+id);if(PF.id===id)PF.data=d}catch(e){PF.err=e.message}
@@ -1342,10 +1352,18 @@ function pfAgo(ts){
   const d=Math.floor(h/24);return 'Был(-а) в игре '+d+' дн. назад';
 }
 function pfCopy(t){try{navigator.clipboard.writeText(t)}catch(e){}}
+async function pfTab(t){
+  PF.tab=t;draw();
+  if(t==='bans'&&!PF.blocks){const id=PF.id;
+    try{const d=await api('player/'+id+'/blocks');if(PF.id===id)PF.blocks=d}
+    catch(e){if(PF.id===id)PF.blocks={bans:[],mutes:[],err:e.message}}
+    draw();}
+}
 function profileView(){
   const back=`<button class="pf-back" onclick="go('leaders')">← К лидерам</button>`;
   if(PF.err)return back+`<div class="empty">${esc(PF.err)}</div>`;
   const d=PF.data;if(!d)return back+`<div class="empty">Загружаем профиль…</div>`;
+  const tab=PF.tab||'info';
   const a=safeAvatar(d.avatar),n=String(d.name||d.id),S=d.stats;
   const num=v=>v===null||v===undefined?'—':Number(v).toLocaleString('ru-RU');
   const kd=S&&S.kills!==null&&S.deaths!==null?(S.deaths?S.kills/S.deaths:S.kills).toFixed(2):'—';
@@ -1363,13 +1381,43 @@ function profileView(){
   const kv=(l,v,s)=>`<div class="pf2-kv"><span>${l}</span><b>${v}</b>${s?`<small>${s}</small>`:''}</div>`;
   const panel=(t,body,i,wide)=>`<section class="pf2-panel" style="--i:${i}"><h3>${t}</h3><div class="pf2-row${wide?' wide':''}">${body}</div></section>`;
   const seen=d.lastSeen?pfAgo(d.lastSeen):(S?'':'Игрок ещё не заходил на сервер');
+  const navBtn=(k,l)=>`<button class="${tab===k?'on':''}" onclick="pfTab('${k}')">${l}</button>`;
+  const fmtDate=t=>t?new Date(t).toLocaleDateString('ru-RU'):'';
+  const item=(x)=>`<div class="pf2-item"><b>${esc(x.reason||'Без причины')}</b><span>${esc(x.term)} · админ: ${esc(x.admin)}${x.at?' · '+fmtDate(x.at):''} · ${x.active?'активен':'снят'}</span></div>`;
+  const list=(arr,empty)=>arr&&arr.length?arr.map(item).join(''):`<div class="pf2-empty">${empty}</div>`;
+
+  let body='';
+  if(tab==='info'){
+    body=`<div class="pf2-grid">
+        ${panel('Статистика',kv('Звание',rankTxt)+kv('Опыт',expTxt)+kv('Место',place,topTxt)+kv('Время игры',hours),0)}
+        ${panel('Результативность',kv('Убийств',num(S&&S.kills))+kv('Смертей',num(S&&S.deaths))+kv('У/С',kd),1)}
+        ${panel('Меткость',kv('Точность',acc)+kv('В голову',hs)+kv('Выстрелов',num(S&&S.shoots))+kv('Попаданий',num(S&&S.hits)),2)}
+        ${panel('Steam ID',`<div class="pf2-kv pf2-copy"><span>SteamID32</span><b onclick="pfCopy('${id32}')">${id32}</b></div><div class="pf2-kv pf2-copy"><span>SteamID3</span><b onclick="pfCopy('${id3}')">${id3}</b></div>`,3,true)}
+      </div>
+      ${S?'':'<div class="pf2-note">Статистики пока нет — игрок не появлялся в таблице лидеров.</div>'}
+      ${mine&&typeof skinsView==='function'?`<div class="pf-tabs"><button class="on">Скинченджер</button></div>${skinsView().replace('<h1>Скины</h1>','')}`:''}`;
+  } else if(tab==='bans'){
+    const b=PF.blocks;
+    body=`<section class="pf2-panel pf2-wide"><h3>Блокировки</h3>
+        ${!b?`<div class="pf2-empty">Загружаем…</div>`:`
+        <div class="pf2-sec">Последние баны (${b.bans.length})</div>${list(b.bans,'Нет банов')}
+        <div class="pf2-sec">Последние муты (${b.mutes.length})</div>${list(b.mutes,'Нет мутов')}`}
+      </section>`;
+  } else if(tab==='friends'){
+    body=`<section class="pf2-panel pf2-wide"><h3>Друзья</h3><div class="pf2-empty">Друзей пока нет</div></section>`;
+  } else {
+    body=`<section class="pf2-panel pf2-wide"><h3>Транзакции</h3>
+        <div class="pf2-sec">Донаты (0 ₽)</div><div class="pf2-empty">История пополнений пуста</div>
+        <div class="pf2-sec">История покупок</div><div class="pf2-empty">Покупок пока нет</div>
+      </section>`;
+  }
+
   return `<div class="pf2-page ${fx?'pf-fx':''}">${back}
   <div class="pf2">
     <aside class="pf2-side">
-      <div class="pf2-card">
-        <div class="pf2-nav"><button class="on">Информация</button>
-        <div class="pf2-navi"><span>Блокировки</span><b class="${ban?'bad':''}">${ban?'Есть':'Нет'}</b></div></div>
-      </div>
+      <div class="pf2-card"><div class="pf2-nav">
+        ${navBtn('info','Информация')}${navBtn('bans','Блокировки')}${navBtn('friends','Друзья')}${navBtn('tx','Транзакции')}
+      </div></div>
       <div class="pf2-card">
         <div class="pf2-label">Steam</div>
         <a class="pf2-steamlink" href="https://steamcommunity.com/profiles/${d.id}" target="_blank" rel="noopener">
@@ -1390,14 +1438,7 @@ function profileView(){
       </div>
       ${d.banned?`<div class="pf-banbox"><b>Игрок заблокирован</b> · срок: ${esc(d.banned.term)}${d.banned.reason?' · причина: '+esc(d.banned.reason):''}</div>`:''}
       ${mine?`<div class="pf-acts"><button class="join" onclick="go('settings')">Настройки</button><button class="join del" onclick="logout()">Выйти из аккаунта</button></div>`:''}
-      <div class="pf2-grid">
-        ${panel('Статистика',kv('Звание',rankTxt)+kv('Опыт',expTxt)+kv('Место',place,topTxt)+kv('Время игры',hours),0)}
-        ${panel('Результативность',kv('Убийств',num(S&&S.kills))+kv('Смертей',num(S&&S.deaths))+kv('У/С',kd),1)}
-        ${panel('Меткость',kv('Точность',acc)+kv('В голову',hs)+kv('Выстрелов',num(S&&S.shoots))+kv('Попаданий',num(S&&S.hits)),2)}
-        ${panel('Steam ID',`<div class="pf2-kv pf2-copy"><span>SteamID32</span><b onclick="pfCopy('${id32}')">${id32}</b></div><div class="pf2-kv pf2-copy"><span>SteamID3</span><b onclick="pfCopy('${id3}')">${id3}</b></div>`,3,true)}
-      </div>
-      ${S?'':'<div class="pf2-note">Статистики пока нет — игрок не появлялся в таблице лидеров.</div>'}
-      ${mine&&typeof skinsView==='function'?`<div class="pf-tabs"><button class="on">Скинченджер</button></div>${skinsView().replace('<h1>Скины</h1>','')}`:''}
+      ${body}
     </div>
   </div></div>`;
 }
