@@ -292,6 +292,38 @@ html[data-theme=green]{--r:34;--g:197;--b:94;--ar:20;--ag:184;--ab:166;--on-acc:
 .pf-tabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);font:inherit;font-weight:700;padding:12px 16px;margin-bottom:-1px}
 .pf-tabs button.on{color:var(--tx);border-bottom-color:var(--acc)}
 .pf-acts{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+.pf2-page{background:#05050a;border:1px solid #111119;border-radius:22px;padding:18px 20px 28px}
+.pf2{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;align-items:start}
+.pf2-side{display:flex;flex-direction:column;gap:14px}
+.pf2-card{background:#0b0b11;border:1px solid #15151e;border-radius:16px;padding:14px}
+.pf2-nav button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--mut);font:inherit;font-weight:600;padding:12px 14px;border-radius:10px;cursor:pointer}
+.pf2-nav button.on{background:#14141d;color:var(--tx)}
+.pf2-navi{display:flex;justify-content:space-between;padding:12px 14px;color:var(--mut);font-weight:600}
+.pf2-navi b{color:#4ade80}.pf2-navi b.bad{color:var(--red)}
+.pf2-label{color:var(--mut);font-size:14px;margin:4px 6px 10px}
+.pf2-steamlink{display:flex;gap:12px;align-items:center;text-decoration:none;color:var(--tx);padding:4px 6px}
+.pf2-steamlink b{display:block;font-size:14px}.pf2-steamlink small{color:var(--mut);font-size:12px}
+.pf2-mini{width:36px;height:36px;border-radius:8px;flex:none;background:#1b1b26 center/cover no-repeat}
+.pf2-main{display:flex;flex-direction:column;gap:18px;min-width:0}
+.pf2-hero{background:#0b0b11;border:1px solid #15151e;border-radius:18px;padding:22px;display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+.pf2-ava{width:120px;height:120px;border-radius:14px;flex:none;background:#1b1b26 center/cover no-repeat;display:grid;place-items:center;font-size:40px;font-weight:800}
+.pf2-hinfo{flex:1;min-width:220px}
+.pf2-name{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:28px;font-weight:800;word-break:break-word}
+.pf2-seen{color:#6f8cff;font-size:13px;font-weight:600;margin-top:8px}
+.pf2-xp{margin-top:14px;display:inline-flex;align-items:center;gap:8px;background:#14141d;border-radius:8px;padding:6px 12px;font-weight:700;color:var(--mut)}
+.pf2-xp b{color:var(--tx)}
+.pf2-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.pf2-panel{background:#0b0b11;border:1px solid #15151e;border-radius:18px;padding:20px 22px}
+.pf2-panel h3{font-size:18px;font-weight:800;margin-bottom:16px}
+.pf2-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:18px 14px}
+.pf2-row.wide{grid-template-columns:1fr 1fr}
+.pf2-kv span{display:block;color:var(--mut);font-size:13px;margin-bottom:6px}
+.pf2-kv b{display:block;font-size:17px;word-break:break-all}
+.pf2-kv small{display:block;color:var(--mut);font-size:12px;margin-top:2px}
+.pf2-copy b{cursor:pointer}.pf2-copy b:hover{color:#6f8cff}
+.pf2-note{color:var(--mut);font-size:14px}
+.pf-fx .pf2-panel{animation:skIn .6s var(--ease) calc(var(--i,0)*80ms + .15s) backwards}
+@media(max-width:860px){.pf2{grid-template-columns:1fr}.pf2-grid{grid-template-columns:1fr}.pf2-row.wide{grid-template-columns:1fr}}
 .lb-who{cursor:pointer}.lb-who:hover .nm{text-decoration:underline}
 </style>
 <style>
@@ -1309,34 +1341,65 @@ function pfAgo(ts){
   const h=Math.floor(m/60);if(h<24)return 'Был(-а) в игре '+h+' ч. назад';
   const d=Math.floor(h/24);return 'Был(-а) в игре '+d+' дн. назад';
 }
+function pfCopy(t){try{navigator.clipboard.writeText(t)}catch(e){}}
 function profileView(){
   const back=`<button class="pf-back" onclick="go('leaders')">← К лидерам</button>`;
   if(PF.err)return back+`<div class="empty">${esc(PF.err)}</div>`;
   const d=PF.data;if(!d)return back+`<div class="empty">Загружаем профиль…</div>`;
   const a=safeAvatar(d.avatar),n=String(d.name||d.id),S=d.stats;
-  const fmt=v=>v===null||v===undefined?null:Number(v).toLocaleString('ru-RU');
-  const kd=S&&S.kills!==null&&S.deaths!==null?(S.deaths?S.kills/S.deaths:S.kills).toFixed(2):null;
-  const acc=S&&S.shoots?(S.hits/S.shoots*100).toFixed(1)+'%':null;
-  const hs=S&&S.kills&&S.headshots!==null?(S.headshots/S.kills*100).toFixed(1)+'%':null;
-  const top=S&&S.total?Math.max(0.1,S.place/S.total*100).toFixed(1):null;
-  const tiles=S?[
-    ['Место','#'+S.place.toLocaleString('ru-RU'),top?'Топ '+top+'%':''],['У/С',kd],['Убийств',fmt(S.kills)],['Смертей',fmt(S.deaths)],
-    ['Убийств в голову',fmt(S.headshots)],['Выстрелов',fmt(S.shoots)],['Время игры',S.hours!==null?S.hours.toLocaleString('ru-RU')+' ч.':null],
-    ['Попаданий',fmt(S.hits)],['Точность',acc],['% в голову',hs]
-  ].filter(t=>t[1]!==null&&t[1]!==undefined):[];
+  const num=v=>v===null||v===undefined?'—':Number(v).toLocaleString('ru-RU');
+  const kd=S&&S.kills!==null&&S.deaths!==null?(S.deaths?S.kills/S.deaths:S.kills).toFixed(2):'—';
+  const acc=S&&S.shoots?(S.hits/S.shoots*100).toFixed(1)+'%':'—';
+  const hs=S&&S.kills?(S.headshots/S.kills*100).toFixed(1)+'%':'—';
+  const hours=S&&S.hours!==null&&S.hours!==undefined?S.hours.toLocaleString('ru-RU')+' ч.':'—';
+  const place=S&&S.place!==null&&S.place!==undefined?'#'+S.place.toLocaleString('ru-RU'):'—';
+  const topTxt=S&&S.place&&S.total?'Топ '+Math.max(0.1,S.place/S.total*100).toFixed(1)+'%':'';
+  const expTxt=S&&S.exp!==null&&S.exp!==undefined?num(S.exp):'—';
+  const rankTxt=S&&S.rank!==null&&S.rank!==undefined?String(S.rank):'—';
+  let id32='—',id3='—';
+  try{const x=BigInt(d.id)-76561197960265728n;id3='[U:1:'+x+']';id32='STEAM_1:'+(x%2n)+':'+(x/2n)}catch(e){}
+  const ban=d.banned;
   const mine=st.user&&st.user.id===d.id,fx=PF.fxFor!==d.id;PF.fxFor=d.id;
-  return `<div class="${fx?'pf-fx':''}">`+back+`<div class="pf-head">
-    <div class="pf-ava" style="${a?`background-image:url('${a}')`:''}">${a?'':esc(n.trim().charAt(0).toUpperCase())}</div>
-    <div class="pf-main"><div class="pf-name">${esc(n)}
-      ${d.role?`<span class="pf-bdg role ${({'Владелец':'own','Зам':'dep','Админ+':'plus'})[d.role]||'mod'}">${esc(d.role)}</span>`:''}${d.banned?'<span class="pf-bdg ban">Заблокирован</span>':''}${d.vip?'<span class="pf-bdg vip">Премиум</span>':''}
-      <a class="pf-steam" href="https://steamcommunity.com/profiles/${d.id}" target="_blank" rel="noopener" title="Профиль в Steam">S</a></div>
-      <div class="pf-sub">${d.lastSeen?pfAgo(d.lastSeen):(S?'':'Игрок ещё не заходил на сервер')}</div></div>
-    ${S&&S.rank!==null?`<div class="pf-rank"><b>${fmt(S.exp)}</b><span>опыта · звание ${S.rank}</span></div>`:''}
-  </div>
-  ${d.banned?`<div class="pf-banbox"><b>Игрок заблокирован</b> · срок: ${esc(d.banned.term)}${d.banned.reason?' · причина: '+esc(d.banned.reason):''}</div>`:''}
-  ${mine?`<div class="pf-acts"><button class="join" onclick="go('settings')">Настройки</button><button class="join del" onclick="logout()">Выйти из аккаунта</button></div>`:''}
-  ${tiles.length?`<div class="pf-grid">${tiles.map((t,i)=>`<div class="pf-tile" style="--i:${i}"><span>${t[0]}</span><b>${t[1]}</b>${t[2]?`<small>${t[2]}</small>`:''}</div>`).join('')}</div>`:'<div class="empty">Статистики пока нет — игрок не появлялся в таблице лидеров.</div>'}
-  ${mine&&typeof skinsView==='function'?`<div class="pf-tabs"><button class="on">Скинченджер</button></div>${skinsView().replace('<h1>Скины</h1>','')}`:''}</div>`;
+  const kv=(l,v,s)=>`<div class="pf2-kv"><span>${l}</span><b>${v}</b>${s?`<small>${s}</small>`:''}</div>`;
+  const panel=(t,body,i,wide)=>`<section class="pf2-panel" style="--i:${i}"><h3>${t}</h3><div class="pf2-row${wide?' wide':''}">${body}</div></section>`;
+  const seen=d.lastSeen?pfAgo(d.lastSeen):(S?'':'Игрок ещё не заходил на сервер');
+  return `<div class="pf2-page ${fx?'pf-fx':''}">${back}
+  <div class="pf2">
+    <aside class="pf2-side">
+      <div class="pf2-card">
+        <div class="pf2-nav"><button class="on">Информация</button>
+        <div class="pf2-navi"><span>Блокировки</span><b class="${ban?'bad':''}">${ban?'Есть':'Нет'}</b></div></div>
+      </div>
+      <div class="pf2-card">
+        <div class="pf2-label">Steam</div>
+        <a class="pf2-steamlink" href="https://steamcommunity.com/profiles/${d.id}" target="_blank" rel="noopener">
+          <span class="pf2-mini" style="${a?`background-image:url('${a}')`:''}"></span>
+          <span><b>${esc(n)}</b><small>открыть профиль ↗</small></span></a>
+      </div>
+    </aside>
+    <div class="pf2-main">
+      <div class="pf2-hero">
+        <div class="pf2-ava" style="${a?`background-image:url('${a}')`:''}">${a?'':esc(n.trim().charAt(0).toUpperCase())}</div>
+        <div class="pf2-hinfo">
+          <div class="pf2-name">${esc(n)}
+            ${d.role?`<span class="pf-bdg role ${({'Владелец':'own','Зам':'dep','Админ+':'plus'})[d.role]||'mod'}">${esc(d.role)}</span>`:''}${d.banned?'<span class="pf-bdg ban">Заблокирован</span>':''}${d.vip?'<span class="pf-bdg vip">Премиум</span>':''}
+          </div>
+          <div class="pf2-seen">${seen}</div>
+          <div class="pf2-xp"><i>//</i><b>${expTxt}</b></div>
+        </div>
+      </div>
+      ${d.banned?`<div class="pf-banbox"><b>Игрок заблокирован</b> · срок: ${esc(d.banned.term)}${d.banned.reason?' · причина: '+esc(d.banned.reason):''}</div>`:''}
+      ${mine?`<div class="pf-acts"><button class="join" onclick="go('settings')">Настройки</button><button class="join del" onclick="logout()">Выйти из аккаунта</button></div>`:''}
+      <div class="pf2-grid">
+        ${panel('Статистика',kv('Звание',rankTxt)+kv('Опыт',expTxt)+kv('Место',place,topTxt)+kv('Время игры',hours),0)}
+        ${panel('Результативность',kv('Убийств',num(S&&S.kills))+kv('Смертей',num(S&&S.deaths))+kv('У/С',kd),1)}
+        ${panel('Меткость',kv('Точность',acc)+kv('В голову',hs)+kv('Выстрелов',num(S&&S.shoots))+kv('Попаданий',num(S&&S.hits)),2)}
+        ${panel('Steam ID',`<div class="pf2-kv pf2-copy"><span>SteamID32</span><b onclick="pfCopy('${id32}')">${id32}</b></div><div class="pf2-kv pf2-copy"><span>SteamID3</span><b onclick="pfCopy('${id3}')">${id3}</b></div>`,3,true)}
+      </div>
+      ${S?'':'<div class="pf2-note">Статистики пока нет — игрок не появлялся в таблице лидеров.</div>'}
+      ${mine&&typeof skinsView==='function'?`<div class="pf-tabs"><button class="on">Скинченджер</button></div>${skinsView().replace('<h1>Скины</h1>','')}`:''}
+    </div>
+  </div></div>`;
 }
 {const _v=view;view=function(){return st.page==='profile'?profileView():_v()}}
 if(WANT_PROFILE){const id=WANT_PROFILE;WANT_PROFILE=null;openProfile(id,true)} // открыли ссылку вида /profile/<SteamID64>
