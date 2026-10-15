@@ -1700,8 +1700,9 @@ async function chatPoll(){
 }
 function chatBadge(){const b=document.getElementById('chatBadge');if(!b)return;b.textContent=CH.unread>9?'9+':CH.unread;b.classList.toggle('on',CH.unread>0)}
 function chatToggle(v){
+  const p=document.getElementById('chatPanel');if(!p)return;
   CH.open=v===undefined?!CH.open:v;
-  const p=document.getElementById('chatPanel');p.classList.toggle('open',CH.open);document.getElementById('chatDock').classList.toggle('hide',CH.open&&innerWidth<700);
+  p.classList.toggle('open',CH.open);document.getElementById('chatDock')?.classList.toggle('hide',CH.open&&innerWidth<700);
   if(CH.open){
     CH.unread=0;CH.seen=CH.last;try{localStorage.chatSeen=CH.last}catch(e){}chatBadge();
     const l=document.getElementById('chatList');l.scrollTop=l.scrollHeight;
@@ -1718,7 +1719,7 @@ async function chatSend(){
 }
 async function chatDel(id){try{await api('chat/delete',{id});CH.msgs=CH.msgs.filter(m=>m.id!==id);chatRender(false)}catch(e){toast(e.message,'err')}}
 addEventListener('keydown',e=>{if(e.key==='Escape'&&CH.open&&!document.getElementById('promoModal')&&!document.getElementById('skModal'))chatToggle(false)});
-chatBuild();chatPoll();
+// Плавающая кнопка чата убрана: чат открывается только по ссылке /chat
 
 // ===== Красивые окна подтверждения вместо браузерных confirm/alert/prompt =====
 let UI_CLOSE=null;
