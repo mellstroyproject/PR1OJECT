@@ -1955,6 +1955,7 @@ if (process.env.TG_BOT_TOKEN) {
 }
 
 // страницы сайта имеют свои адреса (/shop, /leaders, /profile/<SteamID64> …) — все отдают тот же index.html, дальше работает маршрутизация в браузере
+app.get('/maps/:file', (req, res) => { const f = req.params.file; if (!/^[\w-]+\.(jpg|png|webp)$/i.test(f)) return res.status(404).end(); res.sendFile(path.join(__dirname, 'maps', f), { maxAge: '1d' }, err => { if (err && !res.headersSent) res.status(404).end(); }); }); // картинки карт для карточек серверов (папка maps/, имена вида de_mirage.jpg)
 app.get('/glent.mp3', (req, res) => res.sendFile(path.join(__dirname, 'glent.mp3'), { maxAge: '7d' })); // песня режима /глент (файл glent.mp3 лежит рядом с server.js)
 app.get(['/', '/shop', '/leaders', '/bans', '/rules', '/settings', '/admin', '/skins', '/public', '/battleship', '/chat', '/profile/:id'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
