@@ -45,6 +45,8 @@ function site(app, getUser, opts) {
   const canMod = opts.canModerate || (() => false);
   const clean = (s, max) => String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
   const lastSend = new Map();
+  // общие команды (как в Telegram-боте): /help, /servers, /call, /glent — см. commands.js
+  const commands = require('./commands').create({ db, callStart: (...a) => tgCallStart(...a), glentToggle: opts.glentToggle });
   const rolePing = new Map(); // uid -> время последнего @админы (для обычных игроков — раз в минуту)
 
   // ---------- голос (в памяти сервера) ----------
@@ -258,7 +260,7 @@ function site(app, getUser, opts) {
       where x.room = $1 order by x.id desc limit 100`, [room])).rows.reverse();
     res.json({
       msgs: rows.map(r => ({
-        id: +r.id, uid: r.uid, name: r.name || 'Игрок', avatar: okAvatar(r.avatar) ? r.avatar : null,
+        id: +r.id, uid: r.uid, name: r.uid === 'bot' ? '🤖 Бот' : (r.name || 'Игрок'), avatar: r.uid !== 'bot' && okAvatar(r.avatar) ? r.avatar : null,
         text: r.text, at: +r.at, edited: r.edited, reactions: r.reactions || {},
         reply: r.reply_to ? { id: +r.reply_to, name: r.reply_name || 'Игрок', text: (r.reply_text || 'Сообщение удалено').slice(0, 120) } : null
       }))
@@ -313,6 +315,14 @@ function site(app, getUser, opts) {
       rolePing.set(m.id, now);
     }
     lastSend.set(m.id, now);
+    if (text.startsWith('/')) { // команда: ответ присылает «Бот» в этот же чат; сама команда в чат не попадает
+      const out = await commands.run({ platform: 'site', steam: m.id, text });
+      if (out) {
+        const body = out.url ? `${out.text}\n${out.url}` : out.text;
+        await db.query('insert into dc_messages(room, uid, text, reply_to, at) values ($1,$2,$3,$4,$5)', [room, 'bot', body.slice(0, 1500), null, now]);
+        return res.json({ ok: true, command: true });
+      }
+    }
     const reply = parseInt(req.body.reply_to) || null;
     await db.query('insert into dc_messages(room, uid, text, reply_to, at) values ($1,$2,$3,$4,$5)', [room, m.id, text, reply, now]);
     pushForMessage(room, m, text).catch(() => {});
@@ -574,7 +584,7 @@ function site(app, getUser, opts) {
     inbox.set(to, q);
     res.json({ ok: true });
   }));
-  return { tgCallStart };
+  return { tgCallStart, runCommand: opts => commands.run(opts), commands };
 }
 
 module.exports = { site, dmRoom };

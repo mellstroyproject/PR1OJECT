@@ -173,6 +173,7 @@ let bsStart = null; // вход в лобби морского боя по сс�
 let tgOwnerNotify = async () => {};
 let tgCallSend = null;   // отправка ссылки на звонок в Telegram (задаётся при запуске бота)
 let msgCallStart = null;
+let msgRun = null;       // общие команды (commands.js): те же ответы, что и в чате на сайте
 let cs2SetVip = null;  // синхронизация срока VIP с плагином CS2 (задаётся при подключении cs2api) // /call из Telegram (задаётся после подключения мессенджера) // заполняется при запуске бота: шлёт сообщение всем владельцам (TG_ADMINS)
 const NTF = { promo: 'ntf_promo', buy: 'ntf_buy' }; // в таблице site значение '0' = выключено, нет записи = включено
 const ntfOn = async kind => { try { const r = (await db.query('select value from site where key=$1', [NTF[kind]])).rows[0]; return !r || r.value !== '0'; } catch (e) { return true; } };
@@ -400,6 +401,10 @@ app.post('/api/promo/create', level('user'), async (req, res) => {
 });
 app.post('/api/promo', level('user'), async (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase();
+  if (/^DS-[0-9A-F]{8}$/.test(code)) { // код привязки Discord из команды /link бота (та же строка промокода)
+    const r = await dcBot.consumeCode(code, req.u.steam_id).catch(() => ({ ok: false, error: 'Не удалось привязать Discord, попробуйте позже' }));
+    return r.ok ? res.json({ ok: true, msg: r.msg }) : bad(res, r.error);
+  }
   if (/^TG-[0-9A-F]{8}$/.test(code)) { // код привязки Telegram из команды /link бота (вводится в то же окно промокода)
     try {
       const r = await db.query('delete from tg_link_codes where code=$1 and at>$2 returning tg_id', [code, Date.now() - 9e5]);
@@ -1164,11 +1169,16 @@ try {
   const msgApi = require('./messenger').site(app, getUser, {
     db, canModerate: u => permsOf(u).includes('ban'),
     siteUrl: () => (process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, ''),
-    tgSend: (id, text, url) => (tgCallSend ? tgCallSend(id, text, url) : Promise.resolve())
+    tgSend: (id, text, url) => (tgCallSend ? tgCallSend(id, text, url) : Promise.resolve()),
+    glentToggle // /glent в чате сайта — та же функция, что и в боте
   });
   msgCallStart = msgApi.tgCallStart;
+  msgRun = msgApi.runCommand;
 }
 catch (e) { console.error('messenger.js не подключён:', e.message); }
+// --- Discord-бот (личка и каналы): discordbot.js; без DISCORD_BOT_TOKEN выключен ---
+const dcBot = require('./discordbot');
+dcBot.start({ db, glentToggle, callStart: (s, n) => (msgCallStart ? msgCallStart(s, n) : Promise.resolve({ text: '❌ Звонки пока не включены' })) });
 
 // --- 🎮 CS2: випка и жалобы для плагина VipReport (ключ сервера — CS2_SERVER_KEY) ---
 try {
@@ -1544,6 +1554,15 @@ if (process.env.TG_BOT_TOKEN) {
     return ctx.reply(r.text, r.url ? { reply_markup: new InlineKeyboard().url('📞 Открыть звонок на сайте', r.url) } : undefined);
   });
 
+  // общие команды бота и чата сайта: /help, /servers (список серверов с онлайном); /call и /glent — как в чате
+  bot.hears(/^\/(help|помощь|servers|сервера|серверы)(@\w+)?\s*$/i, async ctx => {
+    try {
+      const steam = await tgLinked(ctx).catch(() => null);
+      const out = msgRun ? await msgRun({ platform: 'tg', steam, tgId: ctx.from?.id, text: ctx.message.text }) : null;
+      if (!out) return ctx.reply('❌ Команды пока не подключены');
+      return ctx.reply(out.text, out.url ? { reply_markup: new InlineKeyboard().url('📞 Открыть звонок на сайте', out.url) } : undefined);
+    } catch (e) { console.error('tg shared cmd:', e.message); ctx.reply('❌ Ошибка, попробуйте позже'); }
+  });
   // ---------- пополнение баланса монетами за Telegram Stars (XTR); VIP покупается на сайте за монеты ----------
   // stars — цена в звёздах, coins — сколько монет зачислить на баланс сайта
   const TOPUP = {
