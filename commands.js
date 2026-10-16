@@ -13,12 +13,15 @@ const COMMANDS = [
   { name: 'servers', desc: 'список серверов и онлайн' },
   { name: 'call', args: 'ник', desc: 'позвонить игроку на сайте' },
   { name: 'glent', desc: 'взрывы на сайте на 24 часа (только владельцы)', owner: true },
-  { name: 'link', desc: 'привязать Discord к аккаунту сайта (в личке)', dcOnly: true }
+  { name: 'link', desc: 'привязать Discord к аккаунту сайта (в личке)', dcOnly: true },
+  { name: 'list', desc: 'закрепить в этом канале список серверов с онлайном (владельцы)', owner: true, dcOnly: true },
+  { name: 'unlist', desc: 'остановить закреплённый список серверов (владельцы)', owner: true, dcOnly: true }
 ];
 
 function helpText(isOwner, platform) {
+  const prefix = platform === 'dc' ? '!' : '/'; // в каналах Discord команды пишутся с «!», в личке и в других местах — с «/»
   const lines = COMMANDS.filter(c => (!c.owner || isOwner) && (!c.dcOnly || platform === 'dc'))
-    .map(c => `/${c.name}${c.args ? ' ' + c.args : ''} — ${c.desc}`);
+    .map(c => `${prefix}${c.name}${c.args ? ' ' + c.args : ''} — ${c.desc}`);
   return '📋 Команды:\n' + lines.join('\n');
 }
 
