@@ -174,7 +174,7 @@ let tgOwnerNotify = async () => {};
 let tgCallSend = null;   // отправка ссылки на звонок в Telegram (задаётся при запуске бота)
 let msgCallStart = null;
 let msgRun = null;
-let tgRunDc = null;       // команды Telegram-бота, вызванные из Discord (мост, см. ниже)       // общие команды (commands.js): те же ответы, что и в чате на сайте
+let tgRunDc = null, tgNamesDc = null;       // команды Telegram-бота, вызванные из Discord (мост, см. ниже)       // общие команды (commands.js): те же ответы, что и в чате на сайте
 let cs2SetVip = null;  // синхронизация срока VIP с плагином CS2 (задаётся при подключении cs2api) // /call из Telegram (задаётся после подключения мессенджера) // заполняется при запуске бота: шлёт сообщение всем владельцам (TG_ADMINS)
 const NTF = { promo: 'ntf_promo', buy: 'ntf_buy' }; // в таблице site значение '0' = выключено, нет записи = включено
 const ntfOn = async kind => { try { const r = (await db.query('select value from site where key=$1', [NTF[kind]])).rows[0]; return !r || r.value !== '0'; } catch (e) { return true; } };
@@ -1181,7 +1181,8 @@ catch (e) { console.error('messenger.js не подключён:', e.message); }
 const dcBot = require('./discordbot');
 dcBot.start({ db, glentToggle,
   callStart: (s, n) => (msgCallStart ? msgCallStart(s, n) : Promise.resolve({ text: '❌ Звонки пока не включены' })),
-  runTg: o => (tgRunDc ? tgRunDc(o) : Promise.resolve(false)) });
+  runTg: o => (tgRunDc ? tgRunDc(o) : Promise.resolve(false)),
+  tgNames: () => (tgNamesDc ? tgNamesDc() : []) });
 
 // --- 🎮 CS2: випка и жалобы для плагина VipReport (ключ сервера — CS2_SERVER_KEY) ---
 try {
@@ -1563,6 +1564,7 @@ if (process.env.TG_BOT_TOKEN) {
 
   // общие команды бота и чата сайта: /help, /servers (список серверов с онлайном); /call и /glent — как в чате
   // Discord → обработчики Telegram-бота. Ответы уходят в тот же канал текстом; кнопки превращаются в ссылки.
+  tgNamesDc = () => Object.keys(H); // имена команд Telegram — для слеш-команд в Discord
   tgRunDc = async ({ discordId, name, args, reply }) => {
     const fn = H[name];
     if (!fn) return false;

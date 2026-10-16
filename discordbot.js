@@ -1,19 +1,28 @@
 // Discord-бот: те же команды, что в Telegram-боте и на сайте (commands.js).
-// Работает и в личных сообщениях, и в каналах сервера. В каналах отвечает только на команды с «/».
-// Нужно: DISCORD_BOT_TOKEN (и DISCORD_OWNER_IDS — Discord ID владельцев через запятую).
-// Без токена файл ничего не запускает, сайт работает как раньше.
+// Команды — слеш-команды (/help, /bonus …). Ответы видны только тому, кто их вызвал (ephemeral).
+// Текстовые команды с «!» тоже работают: в канале их ответ уходит в личные сообщения.
+// Нужно: DISCORD_BOT_TOKEN, DISCORD_OWNER_IDS. Бот приглашается с областями bot и applications.commands.
 
 const a2s = require('./a2s');
 
-let db = null, commands = null, ready = null, client = null, runTg = null;
+let db = null, commands = null, ready = null, client = null, runTg = null, tgNames = null;
 let live = null; // закреплённый список серверов: { channel, message, timer, last }
 const LIST_EVERY = 5000; // обновление списка, мс
-
-const CHUNK = 1900; // лимит Discord — 2000 символов на сообщение
+const CHUNK = 1900;      // лимит Discord — 2000 символов на сообщение
 const chunks = t => { const out = []; for (let i = 0; i < t.length; i += CHUNK) out.push(t.slice(i, i + CHUNK)); return out.length ? out : ['…']; };
 
-// код привязки: /link в личке → код DS-XXXXXXXX → вводится на сайте в окне промокода (как и Telegram-код TG-)
-async function makeCode(discordId, name) {
+const DESC = {
+  help: 'Список команд',
+  servers: 'Серверы и онлайн',
+  call: 'Позвонить игроку на сайте (ник)',
+  glent: 'Взрывы на сайте на 24 часа (владельцы)',
+  link: 'Код привязки Discord к аккаунту сайта',
+  list: 'Закрепить список серверов в этом канале (владельцы)',
+  unlist: 'Остановить закреплённый список (владельцы)'
+};
+
+// код привязки: /link → код DS-XXXXXXXX → вводится на сайте в окне промокода
+async function makeCode(discordId) {
   const code = 'DS-' + require('crypto').randomBytes(4).toString('hex').toUpperCase();
   await db.query('delete from dc_link_codes where discord_id=$1 or at<$2', [discordId, Date.now() - 9e5]);
   await db.query('insert into dc_link_codes(code, discord_id, at) values($1,$2,$3)', [code, discordId, Date.now()]);
@@ -25,49 +34,52 @@ async function consumeCode(code, steamId) {
   if (!ready) return { ok: false, error: 'Discord-бот не подключён' };
   await ready;
   const r = await db.query('delete from dc_link_codes where code=$1 and at>$2 returning discord_id', [code, Date.now() - 9e5]);
-  if (!r.rowCount) return { ok: false, error: 'Код привязки неверный или просрочен — напишите боту /link ещё раз' };
+  if (!r.rowCount) return { ok: false, error: 'Код привязки неверный или просрочен — отправьте /link ещё раз' };
   await db.query('delete from dc_links where steam_id=$1', [steamId]);
   await db.query('insert into dc_links(discord_id, steam_id, at) values($1,$2,$3) on conflict (discord_id) do update set steam_id=excluded.steam_id, at=excluded.at', [r.rows[0].discord_id, steamId, Date.now()]);
   return { ok: true, msg: 'Discord привязан. Команды бота теперь работают с вашим аккаунтом.' };
 }
 
-async function handle(msg, text, isDM) {
-  const id = msg.author.id;
+// --- общая обработка команды: ctx = { id, isDM, channel, send(text) } — send отправляет только вызывающему ---
+async function handleCore(ctx, text) {
   const name = text.split(/\s+/)[0].slice(1).split('@')[0].toLowerCase();
   if (name === 'list' || name === 'unlist') {
-    if (!commands.isOwnerDc(id)) return { text: 'Нет доступа' };
-    if (isDM) return { text: 'Эта команда работает в канале сервера, где нужен список.' };
+    if (!commands.isOwnerDc(ctx.id)) return { text: 'Нет доступа' };
     if (name === 'unlist') { await stopList(); return { text: 'Список серверов остановлен и откреплён.' }; }
-    return startList(msg);
+    if (!ctx.channel || ctx.isDM) return { text: 'Эта команда работает в канале сервера.' };
+    return startList(ctx.channel);
   }
   if (name === 'link') {
-    if (!isDM) return { text: 'Напишите мне в личные сообщения: /link (код нельзя показывать в канале).' };
-    const code = await makeCode(id, msg.author.username);
+    const code = await makeCode(ctx.id);
     return { text: `🔗 Код привязки: ${code}\n\nОткройте сайт → окно промокода → введите этот код. Код действует 15 минут.` };
   }
-  const link = (await db.query('select steam_id from dc_links where discord_id=$1', [id])).rows[0];
-  const out = await commands.run({ platform: 'dc', discordId: id, steam: link ? link.steam_id : null, text });
+  const link = (await db.query('select steam_id from dc_links where discord_id=$1', [ctx.id])).rows[0];
+  const out = await commands.run({ platform: 'dc', discordId: ctx.id, steam: link ? link.steam_id : null, text });
   if (out) return out;
-  // остальные команды — из Telegram-бота: ответы пишутся сами, поэтому возвращаем признак «уже отправлено»
+  // остальные команды — из Telegram-бота: он сам пишет ответы через send
   const args = text.replace(/^\/\S+\s*/, '');
-  const sent = runTg && await runTg({ discordId: id, name, args, reply: t => sendText(msg, t) });
+  const sent = runTg && await runTg({ discordId: ctx.id, name, args, reply: t => ctx.send(t) });
   if (sent) return { sent: true };
-  return { text: 'Такой команды нет. Напишите !help — список команд.' };
+  return { text: 'Такой команды нет. Напишите /help — список команд.' };
 }
 
-async function sendText(msg, text) {
-  for (const p of chunks(String(text))) await msg.channel.send({ content: p }).catch(e => console.error('discord send:', e.message));
+// --- ответы: слеш-команды — ephemeral (видно только вызвавшему); текстовые «!» — в личку ---
+async function sendEphemeral(interaction, text) {
+  for (const p of chunks(String(text))) await interaction.followUp({ content: p, ephemeral: true }).catch(e => console.error('discord followUp:', e.message));
 }
 
-async function reply(msg, out) {
-  const body = out.url ? `${out.text}\n${out.url}` : out.text;
-  const parts = chunks(body);
-  try { await msg.reply({ content: parts[0], allowedMentions: { repliedUser: false } }); }
-  catch (e) { console.error('discord reply:', e.message); await msg.channel.send({ content: parts[0] }).catch(err => console.error('discord send:', err.message)); }
-  for (const p of parts.slice(1)) await msg.channel.send({ content: p }).catch(() => {});
+async function sendDM(msg, text) {
+  for (const p of chunks(String(text))) {
+    try { await msg.author.send({ content: p }); }
+    catch (e) {
+      console.error('discord dm:', e.message);
+      await msg.reply({ content: 'Не могу написать вам в личку. Включите личные сообщения от участников сервера или используйте команду через / — ответ будет виден только вам.', allowedMentions: { repliedUser: false } }).catch(() => {});
+      return;
+    }
+  }
 }
 
-// --- живой список серверов: один закреплённый message, который редактируется каждые 5 секунд ---
+// --- живой список серверов: закреплённое сообщение, которое редактируется каждые 5 секунд ---
 async function fetchServers() {
   const rows = (await db.query('select id, name, address from servers order by id')).rows;
   return Promise.all(rows.map(async s => {
@@ -96,9 +108,7 @@ async function tick() {
     live.last = text;
   } catch (e) {
     console.error('discord list tick:', e.message);
-    if (e.code === 10008) { // сообщение удалили вручную: останавливаемся, пока не запустят !list заново
-      await stopList();
-    }
+    if (e.code === 10008) await stopList(); // сообщение удалили вручную
   }
 }
 
@@ -109,12 +119,12 @@ function runLive(channel, message) {
   tick();
 }
 
-async function startList(msg) {
-  const message = await msg.channel.send({ content: 'Загружаю список серверов…' });
+async function startList(channel) {
+  const message = await channel.send({ content: 'Загружаю список серверов…' });
   await message.pin().catch(e => console.error('discord pin (нужно право «Управлять сообщениями»):', e.message));
   await db.query(`insert into dc_list(id, channel_id, message_id) values (1,$1,$2)
-    on conflict (id) do update set channel_id=excluded.channel_id, message_id=excluded.message_id`, [msg.channel.id, message.id]);
-  runLive(msg.channel, message);
+    on conflict (id) do update set channel_id=excluded.channel_id, message_id=excluded.message_id`, [channel.id, message.id]);
+  runLive(channel, message);
   return { text: 'Список серверов закреплён в этом канале и обновляется каждые 5 секунд.' };
 }
 
@@ -124,7 +134,6 @@ async function stopList() {
   await db.query('delete from dc_list where id=1').catch(() => {});
 }
 
-// после перезапуска бота возвращаем список в тот же канал и на то же сообщение
 async function restoreList() {
   const row = (await db.query('select channel_id, message_id from dc_list where id=1')).rows[0];
   if (!row) return;
@@ -136,9 +145,25 @@ async function restoreList() {
   } catch (e) { console.error('discord restore list:', e.message); }
 }
 
+// --- регистрация слеш-команд на всех серверах бота (видны сразу) ---
+async function registerSlash() {
+  const names = new Set([...Object.keys(DESC), ...(tgNames ? tgNames() : [])]);
+  names.delete('start'); // меню Telegram с кнопками в Discord не нужно
+  const defs = [...names].filter(n => /^[a-z0-9_-]{1,32}$/.test(n)).slice(0, 100).map(n => ({
+    name: n,
+    description: (DESC[n] || 'Команда Telegram-бота').slice(0, 100),
+    options: [{ name: 'args', description: 'Аргументы (необязательно)', type: 3, required: false }]
+  }));
+  for (const g of client.guilds.cache.values()) {
+    await g.commands.set(defs).catch(e => console.error('discord slash (нужна область applications.commands):', e.message));
+  }
+  console.log('Слеш-команд зарегистрировано:', defs.length);
+}
+
 function start(opts) {
   db = opts.db;
   runTg = opts.runTg || null;
+  tgNames = opts.tgNames || null;
   ready = (async () => {
     await db.query('create table if not exists dc_links(discord_id text primary key, steam_id text not null, at bigint)');
     await db.query('create table if not exists dc_link_codes(code text primary key, discord_id text not null, at bigint not null)');
@@ -155,34 +180,56 @@ function start(opts) {
 
   client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent],
-    partials: [Partials.Channel] // без этого личные сообщения не приходят
+    partials: [Partials.Channel]
   });
+
   client.once('ready', async c => {
     console.log('Discord бот запущен:', c.user.tag);
     await ready;
+    await registerSlash().catch(e => console.error('discord register:', e.message));
     restoreList();
   });
+
+  // слеш-команды: ответ только вызвавшему
+  client.on('interactionCreate', async i => {
+    if (!i.isChatInputCommand()) return;
+    try {
+      await ready;
+      await i.deferReply({ ephemeral: true });
+      const args = i.options.getString('args') || '';
+      const text = '/' + i.commandName + (args ? ' ' + args : '');
+      const ctx = { id: i.user.id, isDM: !i.guild, channel: i.channel, send: t => sendEphemeral(i, t) };
+      const out = await handleCore(ctx, text);
+      if (!out.sent) await ctx.send(out.text);
+    } catch (e) {
+      console.error('discord slash:', e.message);
+      const payload = { content: '❌ Ошибка, попробуйте позже', ephemeral: true };
+      (i.deferred || i.replied ? i.followUp(payload) : i.reply(payload)).catch(() => {});
+    }
+  });
+
+  // текстовые команды с «!»: ответ уходит в личку вызвавшему, в канале остаётся только закреплённый список
   client.on('messageCreate', async msg => {
     try {
       if (msg.author.bot) return;
       const raw = (msg.content || '').trim();
       if (!raw) return;
       const isDM = !msg.guild;
-      // в Discord команды пишутся с «!» (например !help): «/» Discord не отправляет без слеш-команд
       if (!raw.startsWith('!')) {
-        if (isDM) await msg.reply({ content: 'Команды начинаются с «!». Напишите !help — список команд.', allowedMentions: { repliedUser: false } });
+        if (isDM) await msg.reply({ content: 'Команды вводятся через /. Напишите /help — список команд.', allowedMentions: { repliedUser: false } });
         return; // в каналах на обычные сообщения не отвечаем
       }
-      const text = '/' + raw.slice(1); // внутри бота команды разбираются как в Telegram и на сайте
       await ready;
+      const text = '/' + raw.slice(1);
       console.log('discord cmd:', text.split(/\s+/)[0], 'от', msg.author.id, isDM ? '(личка)' : '(канал)');
-      const out = await handle(msg, text, isDM);
-      if (!out.sent) await reply(msg, out);
+      const ctx = { id: msg.author.id, isDM, channel: msg.channel, send: t => sendDM(msg, t) };
+      const out = await handleCore(ctx, text);
+      if (!out.sent) await ctx.send(out.text);
     } catch (e) {
       console.error('discord msg:', e.message);
-      msg.reply({ content: '❌ Ошибка, попробуйте позже', allowedMentions: { repliedUser: false } }).catch(() => {});
     }
   });
+
   client.login(token).catch(e => console.error('discord login:', e.message));
 }
 
