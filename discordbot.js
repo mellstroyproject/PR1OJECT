@@ -5,7 +5,7 @@
 
 const a2s = require('./a2s');
 
-let db = null, commands = null, ready = null, client = null;
+let db = null, commands = null, ready = null, client = null, runTg = null;
 let live = null; // закреплённый список серверов: { channel, message, timer, last }
 const LIST_EVERY = 5000; // обновление списка, мс
 
@@ -47,7 +47,16 @@ async function handle(msg, text, isDM) {
   }
   const link = (await db.query('select steam_id from dc_links where discord_id=$1', [id])).rows[0];
   const out = await commands.run({ platform: 'dc', discordId: id, steam: link ? link.steam_id : null, text });
-  return out || { text: 'Такой команды нет. Напишите /help — список команд.' };
+  if (out) return out;
+  // остальные команды — из Telegram-бота: ответы пишутся сами, поэтому возвращаем признак «уже отправлено»
+  const args = text.replace(/^\/\S+\s*/, '');
+  const sent = runTg && await runTg({ discordId: id, name, args, reply: t => sendText(msg, t) });
+  if (sent) return { sent: true };
+  return { text: 'Такой команды нет. Напишите !help — список команд.' };
+}
+
+async function sendText(msg, text) {
+  for (const p of chunks(String(text))) await msg.channel.send({ content: p }).catch(e => console.error('discord send:', e.message));
 }
 
 async function reply(msg, out) {
@@ -129,6 +138,7 @@ async function restoreList() {
 
 function start(opts) {
   db = opts.db;
+  runTg = opts.runTg || null;
   ready = (async () => {
     await db.query('create table if not exists dc_links(discord_id text primary key, steam_id text not null, at bigint)');
     await db.query('create table if not exists dc_link_codes(code text primary key, discord_id text not null, at bigint not null)');
@@ -167,7 +177,7 @@ function start(opts) {
       await ready;
       console.log('discord cmd:', text.split(/\s+/)[0], 'от', msg.author.id, isDM ? '(личка)' : '(канал)');
       const out = await handle(msg, text, isDM);
-      await reply(msg, out);
+      if (!out.sent) await reply(msg, out);
     } catch (e) {
       console.error('discord msg:', e.message);
       msg.reply({ content: '❌ Ошибка, попробуйте позже', allowedMentions: { repliedUser: false } }).catch(() => {});

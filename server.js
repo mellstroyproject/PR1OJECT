@@ -173,7 +173,8 @@ let bsStart = null; // вход в лобби морского боя по сс�
 let tgOwnerNotify = async () => {};
 let tgCallSend = null;   // отправка ссылки на звонок в Telegram (задаётся при запуске бота)
 let msgCallStart = null;
-let msgRun = null;       // общие команды (commands.js): те же ответы, что и в чате на сайте
+let msgRun = null;
+let tgRunDc = null;       // команды Telegram-бота, вызванные из Discord (мост, см. ниже)       // общие команды (commands.js): те же ответы, что и в чате на сайте
 let cs2SetVip = null;  // синхронизация срока VIP с плагином CS2 (задаётся при подключении cs2api) // /call из Telegram (задаётся после подключения мессенджера) // заполняется при запуске бота: шлёт сообщение всем владельцам (TG_ADMINS)
 const NTF = { promo: 'ntf_promo', buy: 'ntf_buy' }; // в таблице site значение '0' = выключено, нет записи = включено
 const ntfOn = async kind => { try { const r = (await db.query('select value from site where key=$1', [NTF[kind]])).rows[0]; return !r || r.value !== '0'; } catch (e) { return true; } };
@@ -1178,7 +1179,9 @@ try {
 catch (e) { console.error('messenger.js не подключён:', e.message); }
 // --- Discord-бот (личка и каналы): discordbot.js; без DISCORD_BOT_TOKEN выключен ---
 const dcBot = require('./discordbot');
-dcBot.start({ db, glentToggle, callStart: (s, n) => (msgCallStart ? msgCallStart(s, n) : Promise.resolve({ text: '❌ Звонки пока не включены' })) });
+dcBot.start({ db, glentToggle,
+  callStart: (s, n) => (msgCallStart ? msgCallStart(s, n) : Promise.resolve({ text: '❌ Звонки пока не включены' })),
+  runTg: o => (tgRunDc ? tgRunDc(o) : Promise.resolve(false)) });
 
 // --- 🎮 CS2: випка и жалобы для плагина VipReport (ключ сервера — CS2_SERVER_KEY) ---
 try {
@@ -1234,6 +1237,8 @@ if (process.env.TG_BOT_TOKEN) {
   });
   const H = {}; // обработчики команд: их же вызывают кнопки меню (команды тоже продолжают работать)
   const cmd = (name, fn) => { H[name] = fn; bot.command(name, fn); };
+  // все bot.command(...) тоже сохраняем в H: так их можно вызвать из Discord без переписывания
+  { const origBotCommand = bot.command.bind(bot); bot.command = (names, ...fns) => { for (const n of [].concat(names)) H[n] = fns[0]; return origBotCommand(names, ...fns); }; }
   const sub = (ctx, match) => Object.create(ctx, { match: { value: match } }); // тот же ctx, но с «аргументами», которые человек прислал текстом
   const pending = new Map(); // tg_id -> { act, at }: какое действие админ-панели ждёт ввода
   const SITE = (process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
@@ -1241,7 +1246,8 @@ if (process.env.TG_BOT_TOKEN) {
   bot.api.getMe().then(m => { tgBotName = m.username || ''; }).catch(() => {});
   const TG_ADMINS = (process.env.TG_ADMINS || '').split(',').map(s => s.trim()).filter(Boolean);
   tgOwnerNotify = text => Promise.all(TG_ADMINS.map(id => bot.api.sendMessage(id, text, { reply_markup: new InlineKeyboard().text('🔔 Уведомления', 'ntf') }).catch(e => console.error('tg owner notify:', e.message))));
-  const isOwner = ctx => TG_ADMINS.includes(String(ctx.from?.id)); // владельцы: из переменной TG_ADMINS в Render — могут всё
+  const DC_OWNERS = (process.env.DISCORD_OWNER_IDS || '').split(',').map(x => x.trim()).filter(Boolean);
+  const isOwner = ctx => TG_ADMINS.includes(String(ctx.from?.id)) || DC_OWNERS.includes(String(ctx.from?.id)); // владельцы: TG_ADMINS (Telegram) или DISCORD_OWNER_IDS (Discord)
   const isTgAdmin = async ctx => isOwner(ctx) || !!(await db.query('select 1 from tg_admins where tg_id=$1', [String(ctx.from?.id)])).rowCount; // + помощники, получившие доступ по ключу
   const HELPER = { coins: 1000, vipDays: 30, max: 100 }; // лимиты для помощников (у владельцев лимитов нет)
   const CHANNEL = process.env.TG_CHANNEL || '@Next1Project'; // канал, на который надо быть подписанным
@@ -1480,7 +1486,8 @@ if (process.env.TG_BOT_TOKEN) {
   });
 
   // --- баны и муты из Telegram (админы бота: владельцы и помощники): пишет в те же таблицы игры (iks_bans / iks_comms), что и админ-панель сайта ---
-  const tgLinked = async ctx => (await db.query('select steam_id from tg_links where tg_id=$1', [String(ctx.from?.id)])).rows[0]?.steam_id || null;
+  const tgLinked = async ctx => (await db.query('select steam_id from tg_links where tg_id=$1', [String(ctx.from?.id)])).rows[0]?.steam_id
+    || (ctx.from?.dc ? (await db.query('select steam_id from dc_links where discord_id=$1', [ctx.from.dc])).rows[0]?.steam_id : null) || null;
   const tgStaff = async ctx => { // -> null (нет доступа) | { steam, limited }; доступ: админ бота, зам/владелец сайта или активный Админ+ (куплен/выдан) по привязанному Steam
     const steam = await tgLinked(ctx);
     if (await isTgAdmin(ctx)) return { steam, limited: false };
@@ -1555,6 +1562,25 @@ if (process.env.TG_BOT_TOKEN) {
   });
 
   // общие команды бота и чата сайта: /help, /servers (список серверов с онлайном); /call и /glent — как в чате
+  // Discord → обработчики Telegram-бота. Ответы уходят в тот же канал текстом; кнопки превращаются в ссылки.
+  tgRunDc = async ({ discordId, name, args, reply }) => {
+    const fn = H[name];
+    if (!fn) return false;
+    const id = String(discordId);
+    const send = async (text, opts) => {
+      const urls = (opts?.reply_markup?.inline_keyboard || []).flat().map(b => b.url).filter(Boolean);
+      const body = String(text).replace(/<\/?(b|strong)>/g, '**').replace(/<\/?code>/g, '`').replace(/<\/?(i|pre)>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+      await reply(urls.length ? body + '\n' + urls.join('\n') : body);
+      return {};
+    };
+    const ctx = {
+      from: { id, dc: id }, match: args || '', chat: { type: 'private', id },
+      reply: send, editMessageText: send, answerCallbackQuery: async () => {}, api: {}
+    };
+    try { await fn(ctx); }
+    catch (e) { console.error('discord->tg', name, e.message); await reply('❌ Эта команда доступна только в Telegram или сейчас не работает'); }
+    return true;
+  };
   bot.hears(/^\/(help|помощь|servers|сервера|серверы)(@\w+)?\s*$/i, async ctx => {
     try {
       const steam = await tgLinked(ctx).catch(() => null);

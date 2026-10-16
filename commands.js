@@ -22,7 +22,8 @@ function helpText(isOwner, platform) {
   const prefix = platform === 'dc' ? '!' : '/'; // в каналах Discord команды пишутся с «!», в личке и в других местах — с «/»
   const lines = COMMANDS.filter(c => (!c.owner || isOwner) && (!c.dcOnly || platform === 'dc'))
     .map(c => `${prefix}${c.name}${c.args ? ' ' + c.args : ''} — ${c.desc}`);
-  return '📋 Команды:\n' + lines.join('\n');
+  const extra = platform === 'dc' ? '\n\nТакже работают команды Telegram-бота, например !bonus, !balance, !promo, !ban. Меню с кнопками — только в Telegram.' : '';
+  return '📋 Команды:\n' + lines.join('\n') + extra;
 }
 
 // строка онлайна для одного сервера (запрос по протоколу A2S, с коротким таймаутом)
