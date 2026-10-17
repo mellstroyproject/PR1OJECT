@@ -1,0 +1,61 @@
+.pf-back{display:inline-flex;gap:6px;align-items:center;background:none;border:0;color:var(--mut);font:inherit;cursor:pointer;padding:6px 0;margin-bottom:10px}.pf-back:hover{color:var(--tx)}
+.pf-head{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
+.pf-ava{width:84px;height:84px;border-radius:16px;flex:none;background:linear-gradient(135deg,var(--acc),var(--acc-b)) center/cover no-repeat;display:grid;place-items:center;font-size:34px;font-weight:800}
+.pf-main{flex:1;min-width:200px}
+.pf-name{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:28px;font-weight:800;line-height:1.15;word-break:break-word}
+.pf-bdg{font-size:11px;font-weight:700;border-radius:6px;padding:3px 9px;letter-spacing:.2px}
+.pf-bdg.ban{background:var(--red);color:#fff}
+.pf-bdg.vip{background:linear-gradient(135deg,var(--acc),var(--acc-b));color:var(--on-acc)}
+.pf-steam{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--panel2);color:var(--tx);font-size:12px;font-weight:700;text-decoration:none}
+.pf-sub{color:var(--mut);font-size:14px;margin-top:6px}
+.pf-banbox{background:color-mix(in srgb,var(--red) 14%,var(--panel));border:1px solid color-mix(in srgb,var(--red) 40%,transparent);border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:14px}
+.pf-rank{background:var(--panel2);border-radius:12px;padding:12px 18px;text-align:center}.pf-rank b{display:block;font-size:20px}.pf-rank span{color:var(--mut);font-size:13px}
+.pf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.pf-tile{background:var(--panel);border-radius:14px;padding:14px 16px}.pf-tile span{display:block;color:var(--mut);font-size:13px}.pf-tile b{display:block;font-size:22px;margin-top:10px}.pf-tile small{color:var(--mut);font-size:12px}
+.pf-tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin:26px 0 8px}
+.pf-tabs button{background:none;border:0;border-bottom:2px solid transparent;color:var(--mut);font:inherit;font-weight:700;padding:12px 16px;margin-bottom:-1px}
+.pf-tabs button.on{color:var(--tx);border-bottom-color:var(--acc)}
+.pf-acts{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+.pf2-page{background:#05050a;border:1px solid #111119;border-radius:22px;padding:18px 20px 28px}
+.pf2{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;align-items:start}
+.pf2-side{display:flex;flex-direction:column;gap:14px}
+.pf2-card{background:#0b0b11;border:1px solid #15151e;border-radius:16px;padding:14px}
+.pf2-nav button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--mut);font:inherit;font-weight:600;padding:12px 14px;border-radius:10px;cursor:pointer}
+.pf2-nav button.on{background:#14141d;color:var(--tx)}
+.pf2-navi{display:flex;justify-content:space-between;padding:12px 14px;color:var(--mut);font-weight:600}
+.pf2-navi b{color:#4ade80}.pf2-navi b.bad{color:var(--red)}
+.pf2-label{color:var(--mut);font-size:14px;margin:4px 6px 10px}
+.pf2-steamlink{display:flex;gap:12px;align-items:center;text-decoration:none;color:var(--tx);padding:4px 6px}
+.pf2-steamlink b{display:block;font-size:14px}.pf2-steamlink small{color:var(--mut);font-size:12px}
+.pf2-mini{width:36px;height:36px;border-radius:8px;flex:none;background:#1b1b26 center/cover no-repeat}
+.pf2-main{display:flex;flex-direction:column;gap:18px;min-width:0}
+.pf2-hero{background:#0b0b11;border:1px solid #15151e;border-radius:18px;padding:22px;display:flex;gap:22px;align-items:center;flex-wrap:wrap}
+.pf2-ava{width:120px;height:120px;border-radius:14px;flex:none;background:#1b1b26 center/cover no-repeat;display:grid;place-items:center;font-size:40px;font-weight:800}
+.pf2-hinfo{flex:1;min-width:220px}
+.pf2-name{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:28px;font-weight:800;word-break:break-word}
+.pf2-seen{color:#6f8cff;font-size:13px;font-weight:600;margin-top:8px}
+.pf2-xp{margin-top:14px;display:inline-flex;align-items:center;gap:8px;background:#14141d;border-radius:8px;padding:6px 12px;font-weight:700;color:var(--mut)}
+.pf2-xp b{color:var(--tx)}
+.pf2-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.pf2-panel{background:#0b0b11;border:1px solid #15151e;border-radius:18px;padding:20px 22px}
+.pf2-panel h3{font-size:18px;font-weight:800;margin-bottom:16px}
+.pf2-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:18px 14px}
+.pf2-row.wide{grid-template-columns:1fr 1fr}
+.pf2-kv span{display:block;color:var(--mut);font-size:13px;margin-bottom:6px}
+.pf2-kv b{display:block;font-size:17px;word-break:break-all}
+.pf2-kv small{display:block;color:var(--mut);font-size:12px;margin-top:2px}
+.pf2-copy b{cursor:pointer}.pf2-copy b:hover{color:#6f8cff}
+.pf2-note{color:var(--mut);font-size:14px}
+.pf2-nav{display:flex;flex-direction:column;gap:2px}
+.pf2-nav button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--mut);font:inherit;font-weight:600;padding:12px 14px;border-radius:10px;cursor:pointer}
+.pf2-nav button:hover{color:var(--tx)}
+.pf2-nav button.on{background:#14141d;color:var(--tx)}
+.pf2-wide{min-height:300px}
+.pf2-sec{font-size:16px;font-weight:800;margin:18px 0 6px;color:var(--tx)}
+.pf2-sec:first-of-type{margin-top:4px}
+.pf2-empty{color:#6f7090;font-weight:800;font-size:20px;text-align:center;padding:48px 0}
+.pf2-item{padding:12px 14px;background:#0f0f16;border-radius:12px;margin-top:8px}
+.pf2-item span{display:block;color:var(--mut);font-size:13px;margin-top:4px}
+.pf-fx .pf2-panel{animation:skIn .6s var(--ease) calc(var(--i,0)*80ms + .15s) backwards}
+@media(max-width:860px){.pf2{grid-template-columns:1fr}.pf2-grid{grid-template-columns:1fr}.pf2-row.wide{grid-template-columns:1fr}}
+.lb-who{cursor:pointer}.lb-who:hover .nm{text-decoration:underline}

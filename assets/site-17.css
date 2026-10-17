@@ -1,0 +1,28 @@
+/* ===== Анимации: переходы между страницами, плашка меню, сообщения ===== */
+@keyframes pgin{from{opacity:0;transform:translateY(34px) scale(.965);filter:blur(8px)}55%{filter:blur(0)}to{opacity:1;transform:none;filter:none}}
+#app.enter h1{animation:pgin .7s cubic-bezier(.2,.9,.3,1.08) backwards}
+#app.enter :is(tr,.plan,.mode,.admin-card,.admin-tools,.bar,.side,.empty,.stat,.set-card){animation:pgin .8s cubic-bezier(.2,.9,.3,1.06) backwards;animation-delay:calc(var(--i,0)*75ms + 90ms)}
+nav{position:relative}
+nav button{position:relative;z-index:1}
+nav button.on{background:transparent}
+.navpill{position:absolute;top:0;left:0;z-index:0;pointer-events:none;border-radius:12px;opacity:0;
+  background:linear-gradient(135deg,rgba(var(--acc-rgb),.38),rgba(var(--acc-b-rgb),.28));box-shadow:0 0 24px -2px rgba(var(--acc-rgb),.65),inset 0 0 0 1px rgba(var(--acc-rgb),.55);
+  transition:transform .55s cubic-bezier(.3,1.35,.4,1),width .55s cubic-bezier(.3,1.35,.4,1),height .4s,opacity .3s}
+nav button.on .ic{animation:navpop .5s cubic-bezier(.2,1.6,.4,1)}
+@keyframes navpop{from{transform:scale(.5) rotate(-25deg)}to{transform:none}}
+.promo-msg.ok,.promo-msg.err{animation:msgin .4s cubic-bezier(.2,1.3,.3,1) both}
+.promo-msg.err{animation:msgin .4s cubic-bezier(.2,1.3,.3,1) both,shake .45s .1s}
+@keyframes msgin{from{opacity:0;transform:translateY(-10px) scale(.96)}}
+@keyframes shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+button:active:not(:disabled){transform:scale(.95)}
+/* ===== Агенты ===== */
+.ag-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.ag-tabs button{padding:8px 14px;border-radius:10px;background:var(--panel2);font-weight:600}
+.ag-tabs button.on{background:linear-gradient(135deg,var(--acc),var(--acc-b));color:var(--on-acc)}
+.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-top:14px}
+.ag-card{position:relative;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;cursor:pointer;text-align:center;transition:transform .3s cubic-bezier(.2,1.3,.4,1),box-shadow .3s}
+.ag-card::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--rc,#888)}
+.ag-card:hover{transform:translateY(-6px) scale(1.02);box-shadow:0 16px 40px -10px var(--rc,var(--acc))}
+.ag-card.on{border-color:var(--acc);box-shadow:0 0 0 2px rgba(var(--acc-rgb),.6)}
+.ag-card img{width:100%;height:170px;object-fit:contain}
+.ag-card b{display:block;font-size:12.5px;margin-top:6px;line-height:1.3}

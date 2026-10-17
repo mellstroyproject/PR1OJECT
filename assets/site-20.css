@@ -1,0 +1,8 @@
+/* режим /глент: кнопки «гуляют» и пляшут, фон переливается (цвета — через живую RGB-тему сайта) */
+@keyframes nxwob1{0%,100%{translate:0 0;rotate:0deg}20%{translate:7px -9px;rotate:-5deg}40%{translate:-8px 6px;rotate:4deg}60%{translate:6px 8px;rotate:-3deg}80%{translate:-7px -6px;rotate:5deg}}
+@keyframes nxwob2{0%,100%{translate:0 0;rotate:0deg}25%{translate:-9px 5px;rotate:6deg}50%{translate:8px -8px;rotate:-5deg}75%{translate:-5px -7px;rotate:3deg}}
+html.nx-party button:not(:disabled),html.nx-party .chip,html.nx-party .steam,html.nx-party .join,html.nx-party .promo-btn{animation:nxwob1 2.8s ease-in-out infinite}
+html.nx-party button:nth-child(2n):not(:disabled),html.nx-party .chip:nth-child(2n){animation-name:nxwob2;animation-duration:3.3s;animation-delay:-.7s}
+html.nx-party button:nth-child(3n):not(:disabled),html.nx-party .chip:nth-child(3n){animation-duration:2.3s;animation-delay:-1.4s}
+html.nx-party button:nth-child(5n):not(:disabled){animation-duration:3.9s;animation-delay:-2.1s}
+html.nx-party .fx i{opacity:.75!important}

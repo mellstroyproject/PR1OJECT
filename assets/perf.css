@@ -1,0 +1,4 @@
+/* Производительность: на телефонах и слабых устройствах убираем размытие фона (самый тяжёлый эффект) */
+@media (max-width: 900px), (hover: none) {
+  *, *::before, *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+}

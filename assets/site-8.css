@@ -1,0 +1,48 @@
+/* ===== Чат ===== */
+#chatDock{position:fixed;right:18px;bottom:18px;z-index:140;display:flex;gap:10px;align-items:center;transition:opacity .25s,transform .3s var(--ease)}
+#chatDock.hide{opacity:0;pointer-events:none;transform:translateY(20px)}
+#chatDock.nohint .chat-pill{display:none}
+.chat-pill{background:rgba(14,16,28,.9);border:1px solid var(--line);color:var(--tx);border-radius:16px;padding:15px 20px;font:inherit;font-weight:700;cursor:pointer;backdrop-filter:blur(10px);transition:transform .3s var(--ease),background .25s}
+.chat-pill:hover{transform:translateY(-3px);background:var(--panel2)}
+.chat-fab{position:relative;width:52px;height:52px;border-radius:16px;border:0;cursor:pointer;color:#fff;display:grid;place-items:center;background:linear-gradient(135deg,var(--acc),var(--acc-b));box-shadow:0 14px 32px -8px rgba(var(--acc-rgb),.85);transition:transform .3s var(--ease)}
+.chat-fab:hover{transform:translateY(-3px) scale(1.06)}
+.chat-fab .ic{width:24px;height:24px;fill:currentColor;stroke:none}
+.chat-badge{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;border-radius:10px;background:var(--red);color:#fff;font:700 12px/20px inherit;font-style:normal;text-align:center;padding:0 5px;transform:scale(0);transition:transform .3s var(--ease)}
+.chat-badge.on{transform:scale(1);animation:skPulse 1.6s ease-out infinite}
+.chat-panel{position:fixed;top:10px;right:10px;bottom:10px;width:min(380px,calc(100vw - 20px));z-index:155;display:flex;flex-direction:column;gap:10px;padding:10px;border-radius:24px;
+  background:color-mix(in srgb,var(--acc) 5%,rgba(12,13,24,.96));border:1px solid var(--line);box-shadow:0 30px 80px -20px #000;backdrop-filter:blur(18px);
+  transform:translateX(115%);opacity:0;pointer-events:none;transition:transform .45s var(--ease),opacity .3s}
+.chat-panel.open{transform:none;opacity:1;pointer-events:auto}
+.chat-head{position:relative;display:flex;justify-content:space-between;align-items:center;background:var(--panel);border-radius:16px;padding:10px 12px 10px 18px}
+.chat-title{display:flex;gap:10px;align-items:center;font-weight:800;font-size:17px}.chat-title .ic{width:20px;height:20px;fill:currentColor;stroke:none}
+.chat-btns{display:flex;gap:8px}.chat-btns button{width:40px;height:40px;border-radius:12px;border:0;background:var(--panel2);color:var(--tx);font-size:16px;cursor:pointer;display:grid;place-items:center;transition:transform .3s var(--ease),background .25s}
+.chat-btns button:hover{background:var(--line);transform:rotate(8deg)}.chat-btns .ic{width:18px;height:18px}
+.chat-menu{position:absolute;top:62px;right:8px;width:270px;z-index:3;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:8px;box-shadow:0 16px 40px -10px #000;opacity:0;transform:translateY(-8px) scale(.97);pointer-events:none;transition:opacity .2s,transform .25s var(--ease)}
+.chat-menu.on{opacity:1;transform:none;pointer-events:auto}
+.chat-menu label{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;font-size:14px;cursor:pointer;border-radius:10px}.chat-menu label:hover{background:var(--panel)}
+.chat-menu input{position:absolute;opacity:0;pointer-events:none}
+.chat-menu i{flex:none;width:38px;height:22px;border-radius:12px;background:var(--panel);border:1px solid var(--line);position:relative;transition:background .25s}
+.chat-menu i:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--mut);transition:transform .25s var(--ease),background .25s}
+.chat-menu input:checked+i{background:linear-gradient(135deg,var(--acc),var(--acc-b));border-color:transparent}.chat-menu input:checked+i:after{transform:translateX(16px);background:#fff}
+.chat-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 2px 2px 0;scroll-behavior:smooth;overscroll-behavior:contain}
+.chat-list::-webkit-scrollbar{width:6px}.chat-list::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.ch-m{display:flex;gap:12px;padding:12px 14px;border-radius:18px;background:var(--panel);border:1px solid transparent}
+.ch-m.st{background:linear-gradient(135deg,rgba(244,63,94,.16),rgba(244,63,94,.05));border-color:rgba(244,63,94,.14)}
+.ch-m.vp{background:linear-gradient(135deg,rgba(80,110,255,.2),rgba(80,110,255,.06));border-color:rgba(80,110,255,.16)}
+.ch-m.new{animation:skIn .45s var(--ease) backwards}
+.ch-ava{flex:none;width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--acc),var(--acc-b)) center/cover no-repeat;display:grid;place-items:center;font-weight:800;font-size:18px;color:#fff;text-decoration:none;transition:transform .3s var(--ease)}
+.ch-ava:hover{transform:scale(1.08) rotate(-4deg)}
+.ch-b{min-width:0;flex:1}
+.ch-t{display:flex;align-items:center;gap:6px}
+.ch-n{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ch-crown{width:15px;height:15px;flex:none}
+.ch-t time{margin-left:auto;color:var(--mut);font-size:13px}
+.ch-del{opacity:0;background:none;border:0;color:var(--mut);cursor:pointer;font-size:13px;padding:0 2px;transition:opacity .2s,color .2s}.ch-m:hover .ch-del{opacity:1}.ch-del:hover{color:var(--red)}
+.ch-x{margin-top:5px;font-size:15px;line-height:1.4;overflow-wrap:anywhere;word-break:break-word}
+.ch-men{color:var(--acc-b);font-weight:600}
+.chat-foot{display:flex;gap:10px;align-items:center;background:var(--panel);border-radius:18px;padding:10px}
+.chat-foot input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--tx);font:inherit;font-size:16px;padding:10px 8px}
+.ch-send{flex:none;width:44px;height:44px;border-radius:50%;border:0;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--acc),var(--acc-b));display:grid;place-items:center;transition:transform .3s var(--ease)}
+.ch-send:hover{transform:scale(1.1) rotate(-8deg)}.ch-send .ic{width:20px;height:20px}
+.ch-login{width:100%;border:0;border-radius:14px;padding:14px;font:inherit;font-weight:700;color:var(--on-acc);cursor:pointer;background:linear-gradient(135deg,var(--acc),var(--acc-b))}
+@media (max-width:700px){.chat-panel{inset:0;width:auto;border-radius:0;padding:10px;padding-top:max(10px,env(safe-area-inset-top));padding-bottom:max(10px,env(safe-area-inset-bottom))}.chat-pill{display:none}#chatDock{right:14px;bottom:14px}}

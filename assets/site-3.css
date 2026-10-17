@@ -1,0 +1,24 @@
+/* ===== Скинченджер: карточки оружия по категориям ===== */
+.sk-top{display:flex;gap:16px;align-items:center;flex-wrap:wrap;background:var(--panel);border-radius:14px;padding:12px 16px;margin:10px 0 4px}
+.sk-sw{display:flex;gap:12px;align-items:center;font-weight:700;cursor:pointer}
+.sk-sw input{position:absolute;opacity:0;pointer-events:none}
+.sk-sw i{width:38px;height:22px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);position:relative;transition:background .25s var(--ease)}
+.sk-sw i:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--mut);transition:transform .25s var(--ease),background .25s var(--ease)}
+.sk-sw input:checked+i{background:linear-gradient(135deg,var(--acc),var(--acc-b));border-color:transparent}
+.sk-sw input:checked+i:after{transform:translateX(16px);background:#fff}
+.sk-hint{color:var(--mut);font-size:13px}
+.sk-cat{font-size:14px;font-weight:600;color:var(--mut);margin:26px 0 10px}
+.sk-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,190px));gap:12px}
+.sk-w{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-height:170px;padding:12px 10px;border-radius:14px;cursor:pointer;text-align:center;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 7%,var(--panel)),var(--panel));border:1px solid var(--line);border-bottom:3px solid var(--c,transparent);transition:transform .3s var(--ease),box-shadow .3s var(--ease)}
+.sk-w:hover{transform:translateY(-4px);box-shadow:0 14px 34px -10px rgba(var(--acc-rgb),.6)}
+.sk-w img{width:100%;aspect-ratio:4/3;object-fit:contain;display:block;margin-bottom:auto}
+.sk-w .hex{width:74px;height:74px;color:var(--acc);opacity:.45;margin:auto 0 8px}
+.sk-w .wn{color:var(--mut);font-size:12px;margin-top:6px}
+.sk-w b{font-size:14px;margin-top:2px}
+.sk-w:not(.has) b{color:var(--mut);font-weight:600}
+#skModal{position:fixed;inset:0;z-index:150;background:rgba(3,6,16,.72);backdrop-filter:blur(6px);display:grid;place-items:center;padding:16px}
+.skm{width:min(980px,100%);max-height:90vh;display:flex;flex-direction:column;background:var(--panel2);border:1px solid var(--line);border-radius:18px;padding:18px 20px;box-shadow:0 30px 80px -20px #000}
+.skm-head{display:flex;justify-content:space-between;align-items:center;font-size:20px;margin-bottom:12px}
+.skm-x{background:var(--panel);border:1px solid var(--line);color:var(--tx);border-radius:10px;width:36px;height:36px;font-size:16px}
+.skm-body{overflow:auto;min-height:0;flex:1;padding-right:4px}

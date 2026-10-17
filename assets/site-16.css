@@ -1,0 +1,3 @@
+/* логотип: при наведении/нажатии быстро крутится, пока мышка на нём */
+.logo:hover,.logo:active{transform:none;animation:logospin .5s linear infinite}
+@keyframes logospin{from{transform:scale(1.12) rotate(0)}to{transform:scale(1.12) rotate(360deg)}}

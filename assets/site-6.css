@@ -1,0 +1,17 @@
+/* ===== Соцсети вместо картинки на главной ===== */
+.soc{text-align:center;opacity:clamp(0,calc(var(--e)*1.7 - .35),1);
+  transform:translateY(calc((1 - var(--e))*140px)) scale(calc(.7 + var(--e)*.3)) rotate(calc((var(--q) - .5)*6deg))}
+.soc h2{font-size:clamp(24px,5vw,40px);margin:0 0 22px;text-shadow:0 6px 30px rgba(var(--acc-rgb),.6)}
+.soc-row{display:flex;gap:18px;justify-content:center;flex-wrap:wrap}
+.soc-card{--b:42,171,238;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:6px;width:min(78vw,260px);padding:30px 20px;border-radius:22px;color:#fff;text-decoration:none;
+  background:linear-gradient(160deg,rgba(var(--b),.38),rgba(var(--b),.12));border:1px solid rgba(var(--b),.55);
+  box-shadow:0 24px 60px -18px rgba(var(--b),.75);transition:transform .35s var(--ease),box-shadow .35s var(--ease)}
+.soc-card.dc{--b:88,101,242}
+.soc-card .ic{width:46px;height:46px;stroke:#fff;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;margin-bottom:6px;transition:transform .45s var(--ease)}
+.soc-card b{font-size:22px}
+.soc-card span{color:rgba(255,255,255,.75);font-size:14px}
+.soc-card::after{content:"";position:absolute;top:0;bottom:0;left:0;width:34%;pointer-events:none;transform:translateX(-130%) skewX(-18deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)}
+.soc-card:hover,.soc-card:focus-visible{transform:translateY(-8px) scale(1.03);box-shadow:0 30px 70px -14px rgba(var(--b),.95)}
+.soc-card:hover .ic{transform:scale(1.18) rotate(-8deg)}
+.soc-card:hover::after{animation:skShine .9s var(--ease)}
+.soc-card:active{transform:scale(.97)}

@@ -1,6 +1,6 @@
 // Service worker: оболочка сайта открывается даже без сети.
 // API, вход через Steam и Telegram никогда не кэшируются — там всегда свежие данные.
-const CACHE = 'nextproject-v1';
+const CACHE = 'nextproject-v2'; // новая версия: старая оболочка больше не подменяет сайт
 const SHELL = ['/', '/icon-180.png', '/icon-192.png', '/icon-512.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', e => {

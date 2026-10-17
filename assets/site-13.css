@@ -1,0 +1,20 @@
+/* ===== Карточка PUBLIC: арт «прицел на закате города» (цвета следуют теме) ===== */
+.mode{position:relative;overflow:hidden;isolation:isolate;background:#040814;justify-content:flex-end;padding-bottom:30px}
+.mode-art{position:absolute;inset:0;width:100%;height:100%;z-index:-2;transition:transform .9s var(--ease)}
+.mode:hover .mode-art{transform:scale(1.07)}
+.mode::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(4,8,20,0) 55%,rgba(4,8,20,.7) 82%,rgba(4,8,20,.95) 100%)}
+.mode-art .s1{stop-color:color-mix(in srgb,var(--acc) 34%,#060c24)}.mode-art .s2{stop-color:#040814}
+.mode-art .g1{stop-color:var(--acc);stop-opacity:.6}.mode-art .g2{stop-color:var(--acc);stop-opacity:0}
+.mode-art .st{fill:#fff;opacity:.8}.mode-art .sp{fill:var(--acc3)}
+.mode-art .ln{stroke:var(--acc3);stroke-width:1;opacity:.45;fill:none;stroke-dasharray:6 10}.mode-art .l2{opacity:.25}
+.mode-art .ring{stroke:var(--acc3);stroke-width:2;filter:drop-shadow(0 0 7px var(--acc))}
+.mode-art .ring2{stroke:var(--acc2);stroke-width:1.5;stroke-dasharray:2 9;opacity:.8;transform-box:fill-box;transform-origin:center;animation:mspin 40s linear infinite}
+.mode-art .cross{stroke:var(--acc3);stroke-width:2;filter:drop-shadow(0 0 5px var(--acc))}.mode-art .tick{stroke:var(--acc3);stroke-width:2}
+.mode-art .dot{fill:#fff;filter:drop-shadow(0 0 8px var(--acc))}
+.mode-art .bl{fill:var(--acc3);filter:drop-shadow(0 0 8px var(--acc))}.mode-art .bl2{fill:#fff}
+.mode-art .sk1{fill:color-mix(in srgb,var(--acc) 22%,#070d26)}.mode-art .sk2{fill:#03060f}.mode-art .win{fill:var(--acc3)}
+@keyframes mspin{to{transform:rotate(360deg)}}
+.mode b{text-shadow:0 2px 24px rgba(var(--acc-rgb),.9),0 0 3px rgba(0,0,0,.6)}
+.mode-go{padding:8px 22px;border-radius:999px;font-weight:700;font-size:14px;letter-spacing:.5px;color:var(--on-acc);background:linear-gradient(135deg,var(--acc),var(--acc-b));box-shadow:0 6px 22px -4px rgba(var(--acc-rgb),.75);transition:transform .3s var(--ease)}
+.mode:hover .mode-go{transform:translateY(-3px)}
+@media not all{.mode-art .ring2{animation:none}}

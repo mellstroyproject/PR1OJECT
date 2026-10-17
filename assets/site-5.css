@@ -1,0 +1,12 @@
+/* ===== Телефоны и планшеты: без наведения, поэтому всё «живое» работает само и по касанию ===== */
+@keyframes skSway{0%,100%{transform:rotate(-4deg) translateY(0) scale(1)}50%{transform:rotate(4deg) translateY(-5px) scale(1.05)}}
+@keyframes skTap{0%{transform:scale(.94)}60%{transform:scale(1.05)}100%{transform:scale(1)}}
+@media (hover:none){
+  .sk-w img,.sk-w.has img,#skModal .sk-card img{animation:skSway 6s ease-in-out infinite;animation-delay:calc(var(--i,0)*-.5s);filter:drop-shadow(0 8px 14px var(--c,#000))}
+  .sk-w .hex{animation-duration:2.6s}
+  .sk-w:active,#skModal .sk-card:active,.pf-tile:active{--ty:0px;transform:perspective(700px) scale(.95)}
+  .sk-w:active::before,#skModal .sk-card:active::before{opacity:1}
+  .sk-w:active::after,#skModal .sk-card:active::after{animation:skShine .6s var(--ease)}
+  .sk-w.pulse img,#skModal .sk-card.just img{animation:skPop .6s var(--ease)}
+}
+@media not all{.sk-w img,#skModal .sk-card img{animation:none!important}}

@@ -1,0 +1,5 @@
+.ppl{display:flex;align-items:center;gap:10px}
+.pa{width:32px;height:32px;border-radius:8px;flex:none;background:linear-gradient(135deg,var(--acc),var(--acc-b)) center/cover no-repeat;display:grid;place-items:center;font-size:14px;font-weight:800;font-style:normal;color:#fff}
+.perm-grid{display:flex;flex-wrap:wrap;gap:10px 22px;width:100%}
+.perm{display:flex;align-items:center;gap:8px;cursor:pointer}
+.perm input,.admin-tools .perm input{flex:none;min-width:0;width:18px;height:18px;padding:0;margin:0;accent-color:var(--acc)}

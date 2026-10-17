@@ -1,0 +1,62 @@
+/* ===== Анимации ===== */
+@keyframes skIn{from{opacity:0;transform:translateY(22px) scale(.92);filter:blur(5px)}to{opacity:1;transform:none;filter:none}}
+@keyframes skSlide{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
+@keyframes skLine{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes skPop{0%{opacity:0;transform:scale(.55) rotate(-8deg)}60%{opacity:1;transform:scale(1.12) rotate(2deg)}100%{transform:none}}
+@keyframes skPulse{0%{box-shadow:0 0 0 0 rgba(var(--acc-rgb),.75)}100%{box-shadow:0 0 0 24px rgba(var(--acc-rgb),0)}}
+@keyframes hexSpin{to{transform:rotate(360deg)}}
+@keyframes hexBreath{0%,100%{opacity:.3;transform:scale(.94)}50%{opacity:.7;transform:scale(1.05)}}
+@keyframes skShine{from{transform:translateX(-130%) skewX(-18deg)}to{transform:translateX(330%) skewX(-18deg)}}
+@keyframes skmFade{from{opacity:0}to{opacity:1}}
+@keyframes skmPop{from{opacity:0;transform:translateY(34px) scale(.93)}to{opacity:1;transform:none}}
+@keyframes skFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+/* карточки оружия */
+.sk-w,#skModal .sk-card,.pf-tile{position:relative;overflow:hidden;transform:perspective(700px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(var(--ty,0px));transition:transform .22s ease-out,box-shadow .35s var(--ease),border-color .3s}
+.sk-w:hover,#skModal .sk-card:hover{--ty:-6px;box-shadow:0 18px 40px -12px rgba(var(--acc-rgb),.7),0 0 0 1px rgba(var(--acc-rgb),.45)}
+.sk-w::before,#skModal .sk-card::before,.pf-tile::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .3s;
+  background:radial-gradient(220px circle at var(--mx,50%) var(--my,0%),rgba(var(--acc-rgb),.30),transparent 62%)}
+.sk-w:hover::before,#skModal .sk-card:hover::before,.pf-tile:hover::before{opacity:1}
+.sk-w::after,#skModal .sk-card::after{content:"";position:absolute;top:0;bottom:0;left:0;width:34%;pointer-events:none;transform:translateX(-130%) skewX(-18deg);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent)}
+.sk-w:hover::after,#skModal .sk-card:hover::after{animation:skShine .9s var(--ease)}
+.sk-w img,#skModal .sk-card img{transition:transform .45s var(--ease),filter .45s var(--ease);filter:drop-shadow(0 6px 10px rgba(0,0,0,.45))}
+.sk-w:hover img,#skModal .sk-card:hover img{transform:scale(1.1) rotate(-3deg);filter:drop-shadow(0 10px 18px var(--c,#000))}
+.sk-w.has img{animation:skFloat 5s ease-in-out infinite}
+.sk-w:hover img{animation:none}
+.sk-w .hex{animation:hexBreath 3.4s ease-in-out infinite}
+.sk-w .hex .h2{transform-origin:32px 32px;animation:hexSpin 9s linear infinite}
+.sk-w.has{background:linear-gradient(180deg,color-mix(in srgb,var(--c) 14%,var(--panel)),var(--panel))}
+/* появление страницы */
+.sk-enter .sk-top{animation:skSlide .5s var(--ease) backwards}
+.sk-enter .sk-cat{position:relative;animation:skSlide .5s var(--ease) calc(var(--i,0)*35ms) backwards}
+.sk-cat::after{content:"";display:block;height:2px;width:46px;margin-top:6px;border-radius:2px;background:linear-gradient(90deg,var(--acc),var(--acc-b));transform-origin:left}
+.sk-enter .sk-cat::after{animation:skLine .7s var(--ease) calc(var(--i,0)*35ms + .15s) backwards}
+.sk-enter .sk-w{animation:skIn .6s var(--ease) calc(var(--i,0)*38ms) backwards}
+.sk-w.pulse{animation:skPulse .85s ease-out}
+.sk-w.pulse img{animation:skPop .6s var(--ease)}
+/* окно выбора скина */
+#skModal{transition:opacity .22s}
+#skModal.fresh{animation:skmFade .25s ease-out}
+#skModal.fresh .skm{animation:skmPop .45s var(--ease)}
+#skModal.fresh .sk-card{animation:skIn .5s var(--ease) calc(var(--i,0)*24ms + .12s) backwards}
+#skModal .skm{transition:transform .22s var(--ease)}
+#skModal.out{opacity:0;pointer-events:none}
+#skModal.out .skm{transform:translateY(18px) scale(.97)}
+#skModal .sk-card.just{animation:skPulse .85s ease-out}
+#skModal .sk-card.just img{animation:skPop .6s var(--ease)}
+#skModal .sk-card.cur{box-shadow:0 0 28px -4px rgba(var(--acc-rgb),.9)}
+/* профиль */
+.pf-fx .pf-ava{animation:skPop .75s var(--ease) backwards}
+.pf-fx .pf-name{animation:skSlide .55s var(--ease) .1s backwards}
+.pf-fx .pf-bdg{animation:skPop .6s var(--ease) .35s backwards}
+.pf-fx .pf-rank{animation:skIn .6s var(--ease) .2s backwards}
+.pf-fx .pf-banbox{animation:skSlide .5s var(--ease) .3s backwards}
+.pf-fx .pf-tile{animation:skIn .6s var(--ease) calc(var(--i,0)*50ms + .2s) backwards}
+.pf-fx .pf-tabs{animation:skSlide .5s var(--ease) .5s backwards}
+.pf-tile:hover{--ty:-4px;box-shadow:0 14px 30px -12px rgba(var(--acc-rgb),.6)}
+.pf-bdg.vip{background-size:200% 100%;animation:pfGlow 3s linear infinite}
+@keyframes pfGlow{0%,100%{box-shadow:0 0 0 0 rgba(var(--acc-rgb),.0)}50%{box-shadow:0 0 14px 2px rgba(var(--acc-rgb),.65)}}
+@media not all{
+  .sk-w,.sk-w *,#skModal,#skModal *,.pf-fx *,.pf-bdg{animation:none!important;transition:none!important}
+  .sk-w,#skModal .sk-card,.pf-tile{transform:none!important}
+}

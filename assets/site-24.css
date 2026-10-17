@@ -1,0 +1,12 @@
+.chatpg{margin:0 -4px}
+.chatpg #chatSlot{width:100%;height:calc(100vh - 150px);min-height:540px}
+body.pg-chat #chatDock{display:none!important}
+#chatToasts{position:fixed;top:84px;right:16px;z-index:200;display:flex;flex-direction:column;gap:10px;max-width:340px;pointer-events:none}
+.chat-plaque{pointer-events:auto;background:rgba(22,22,30,.96);border:1px solid var(--line,#2a2a38);border-radius:14px;padding:12px 14px;color:var(--tx,#eee);box-shadow:0 14px 36px -12px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:4px;animation:cpIn .25s ease-out}
+.chat-plaque.call{border-color:#23a55a}
+.chat-plaque b{font-size:14px}
+.chat-plaque span{font-size:13px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-plaque .cp-btns{display:flex;gap:8px;margin-top:6px}
+.chat-plaque button{border:0;border-radius:8px;padding:5px 10px;font-weight:700;font-size:12px;cursor:pointer;background:#5865f2;color:#fff}
+.chat-plaque button+button{background:#2b2d31;color:#dbdee1}
+@keyframes cpIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}

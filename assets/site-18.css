@@ -1,0 +1,12 @@
+/* ===== Дополнительные анимации: уход страницы, волна на кнопках, пульс выбранного, кольцо на успехе ===== */
+#app{transition:opacity .15s ease,transform .15s ease,filter .15s ease}
+#app.leave{opacity:0;transform:translateY(-10px) scale(.99);filter:blur(5px)}
+.toast .ti{position:relative}
+.toast.ok .ti::before{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid rgb(var(--tc));animation:tring .9s .2s ease-out both}
+@keyframes tring{from{transform:scale(.7);opacity:.9}to{transform:scale(2.4);opacity:0}}
+.sk-card.cur,.ag-card.on{animation:curpulse 2.4s ease-in-out infinite}
+@keyframes curpulse{50%{box-shadow:0 0 0 2px rgba(var(--acc-rgb),.6),0 0 30px rgba(var(--acc-rgb),.6)}}
+.rip{position:relative;overflow:hidden}
+.ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.4);transform:scale(0);animation:ripple .6s ease-out forwards;pointer-events:none}
+@keyframes ripple{to{transform:scale(1);opacity:0}}
+@media not all{#app.leave{opacity:1;transform:none;filter:none}.sk-card.cur,.ag-card.on{animation:none}}
