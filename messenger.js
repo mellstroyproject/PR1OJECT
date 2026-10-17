@@ -9,7 +9,7 @@ const pushOn = !!(webpush && PUSH_PUBLIC && process.env.VAPID_PRIVATE);
 if (pushOn) webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', PUSH_PUBLIC, process.env.VAPID_PRIVATE);
 
 const EMOJI = ['👍', '❤️', '😂', '🔥', '😮', '😢'];
-const okAvatar = a => typeof a === 'string' && /^https:\/\/[\w.-]+\.(steamstatic\.com|akamaihd\.net)\//i.test(a);
+const okAvatar = a => typeof a === 'string' && /^https:\/\/[\w.-]+\.(steamstatic\.com|akamaihd\.net|discordapp\.com)\//i.test(a);
 const dmRoom = (a, b) => 'dm:' + [a, b].sort().join(':');
 const RING_MS = 30000; // входящий звонок показываем 30 секунд
 
@@ -158,6 +158,8 @@ function site(app, getUser, opts) {
     await db.query("alter table dc_channels add column if not exists access text not null default 'all'");
     await db.query('alter table dc_channels add column if not exists category text');
     await db.query('alter table dc_channels add column if not exists pos int not null default 0');
+    await db.query('alter table dc_messages add column if not exists ext_name text');
+    await db.query('alter table dc_messages add column if not exists ext_avatar text');
     let pos = 0;
     for (const g of LAYOUT) for (const [name, kind, access, topic] of g.ch) {
       pos += 1;
@@ -252,7 +254,7 @@ function site(app, getUser, opts) {
     const room = String(req.query.room || '');
     if (!await roomOk(room, m)) return fail(res, 403, 'Нет доступа к этой комнате');
     const rows = (await db.query(`
-      select x.id, x.uid, x.text, x.at, x.edited, x.reactions, x.reply_to,
+      select x.id, x.uid, x.text, x.at, x.edited, x.reactions, x.reply_to, x.ext_name, x.ext_avatar,
              r.text as reply_text, ru.name as reply_name, u.name, u.avatar
       from dc_messages x
       left join dc_messages r on r.id = x.reply_to
@@ -261,7 +263,7 @@ function site(app, getUser, opts) {
       where x.room = $1 order by x.id desc limit 100`, [room])).rows.reverse();
     res.json({
       msgs: rows.map(r => ({
-        id: +r.id, uid: r.uid, name: r.uid === 'dc' ? '💬 Discord' : r.uid === 'bot' ? '🤖 Бот' : (r.name || 'Игрок'), avatar: r.uid !== 'bot' && r.uid !== 'dc' && okAvatar(r.avatar) ? r.avatar : null,
+        id: +r.id, uid: r.uid, name: r.ext_name ? r.ext_name : r.uid === 'dc' ? '💬 Discord' : r.uid === 'bot' ? '🤖 Бот' : (r.name || 'Игрок'), avatar: okAvatar(r.ext_avatar) ? r.ext_avatar : (r.uid !== 'bot' && r.uid !== 'dc' && okAvatar(r.avatar) ? r.avatar : null),
         text: r.text, at: +r.at, edited: r.edited, reactions: r.reactions || {},
         reply: r.reply_to ? { id: +r.reply_to, name: r.reply_name || 'Игрок', text: (r.reply_text || 'Сообщение удалено').slice(0, 120) } : null
       }))
@@ -327,7 +329,7 @@ function site(app, getUser, opts) {
     const reply = parseInt(req.body.reply_to) || null;
     await db.query('insert into dc_messages(room, uid, text, reply_to, at) values ($1,$2,$3,$4,$5)', [room, m.id, text, reply, now]);
     // мост с Discord: сообщения общего канала сайта уходят в Discord-канал
-    if (siteBridgeRoom() && room === siteBridgeRoom() && opts.toDiscord) opts.toDiscord({ author: m.name, text }).catch(() => {});
+    if (siteBridgeRoom() && room === siteBridgeRoom() && opts.toDiscord) opts.toDiscord({ author: m.name, avatar: m.avatar, text }).catch(() => {});
     pushForMessage(room, m, text).catch(() => {});
     res.json({ ok: true });
   }));

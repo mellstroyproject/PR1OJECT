@@ -228,7 +228,9 @@ function start(opts) {
         await ready;
         const room = process.env.SITE_CHAT_CHANNEL_ID ? 'ch:' + process.env.SITE_CHAT_CHANNEL_ID : null;
         const files = [...msg.attachments.values()].map(a => a.url).join(' ');
-        if (room) await db.query('insert into dc_messages(room, uid, text, reply_to, at) values ($1,$2,$3,$4,$5)', [room, 'dc', `${msg.author.username}: ${raw}${files ? ' ' + files : ''}`.slice(0, 1500), null, Date.now()]);
+        const who = (msg.member?.displayName || msg.author.username || 'Discord').slice(0, 80);
+        const ava = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
+        if (room) await db.query('insert into dc_messages(room, uid, text, reply_to, at, ext_name, ext_avatar) values ($1,$2,$3,$4,$5,$6,$7)', [room, 'dc', `${raw}${files ? ' ' + files : ''}`.slice(0, 1500), null, Date.now(), who, ava]);
         return;
       }
       if (!raw.startsWith('!')) {
@@ -252,12 +254,24 @@ function start(opts) {
 }
 
 // сообщения с сайта в Discord-канал моста (вызывается из messenger.js)
-async function toDiscordChat({ author, text }) {
+async function toDiscordChat({ author, avatar, text }) {
+  const hook = process.env.DISCORD_CHAT_WEBHOOK;
+  const content = String(text).slice(0, 1990);
+  if (hook) {
+    // вебхук пишет от имени игрока: ник и аватарка Steam, без префиксов
+    const username = String(author || 'Игрок').replace(/discord/gi, 'd1scord').slice(0, 80);
+    const body = { username, content, allowed_mentions: { parse: [] } };
+    if (typeof avatar === 'string' && avatar.startsWith('https://')) body.avatar_url = avatar;
+    const r = await fetch(hook, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) console.error('discord webhook:', r.status);
+    return;
+  }
+  // запасной вариант без вебхука: сообщение от бота с ником
   const id = process.env.DISCORD_CHAT_CHANNEL_ID;
   if (!id || !client) return;
   const ch = await client.channels.fetch(id).catch(() => null);
   if (!ch) return;
-  await ch.send({ content: `**${author}** (сайт): ${String(text)}`.slice(0, 1990), allowedMentions: { parse: [] } });
+  await ch.send({ content: `**${author}**: ${content}`, allowedMentions: { parse: [] } });
 }
 
 module.exports = { start, consumeCode, toDiscordChat };
