@@ -228,6 +228,8 @@ function start(opts) {
       }
       await ready;
       const text = '/' + raw.slice(1);
+      // «!репорт» и «!тикет» обрабатывает бот поддержки — здесь молчим
+      if (['репорт', 'тикет', 'report', 'ticket'].includes(text.split(/\s+/)[0].slice(1).toLowerCase())) return;
       console.log('discord cmd:', text.split(/\s+/)[0], 'от', msg.author.id, isDM ? '(личка)' : '(канал)');
       const ctx = { id: msg.author.id, displayName: msg.author.username, isDM, channel: msg.channel, guild: msg.guild, send: t => sendDM(msg, t) };
       const out = await handleCore(ctx, text);
