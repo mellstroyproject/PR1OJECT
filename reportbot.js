@@ -237,37 +237,40 @@ async function isAdminClick(i) {
   return i.memberPermissions?.has(D.PermissionFlagsBits.ManageMessages) || isOwner(i.user.id);
 }
 
+// ответ только нажавшему (после defer — через followUp)
+const say = (i, content) => i.followUp({ content, ephemeral: true }).catch(() => {});
+
 async function handleReportButton(i) {
   const [, action, id] = i.customId.split(':');
-  if (!await isAdminClick(i)) return i.reply({ content: 'Менять статус могут только администраторы.', ephemeral: true });
+  if (!await isAdminClick(i)) return say(i, 'Менять статус могут только администраторы.');
   const status = action === 'done' ? 'closed' : 'rejected';
   const label = action === 'done' ? '✅ Рассмотрено' : '❌ Отклонено';
   const r = await db.query("update dc_reports set status=$1, handled_by=$2 where id=$3 and status='open' and kind='report' returning id", [status, i.user.id, id]);
-  if (!r.rowCount) return i.reply({ content: 'Эта жалоба уже обработана.', ephemeral: true });
+  if (!r.rowCount) return say(i, 'Эта жалоба уже обработана.');
   const old = i.message.embeds[0];
   const embed = D.EmbedBuilder.from(old).setColor(action === 'done' ? 0x2ecc71 : 0x95a5a6)
     .setFields(old.fields.map(f => f.name === 'Статус' ? { name: 'Статус', value: `${label} (<@${i.user.id}>)` } : f));
-  await i.update({ embeds: [embed], components: [] });
+  await i.editReply({ embeds: [embed], components: [] });
 }
 
 async function handleTicketButton(i) {
   const [, action, id] = i.customId.split(':');
-  if (!await isAdminClick(i)) return i.reply({ content: 'Работать с тикетами могут только администраторы.', ephemeral: true });
+  if (!await isAdminClick(i)) return say(i, 'Работать с тикетами могут только администраторы.');
   const row = (await db.query("select reporter_id, thread_id from dc_reports where id=$1 and kind='ticket' and status='open'", [id])).rows[0];
-  if (!row) return i.reply({ content: 'Тикет не найден или уже закрыт.', ephemeral: true });
+  if (!row) return say(i, 'Тикет не найден или уже закрыт.');
   const owner = await client.users.fetch(row.reporter_id).catch(() => null);
   const old = i.message.embeds[0];
 
   if (action === 'take') {
-    if (row.thread_id) return i.reply({ content: 'Тикет уже принят.', ephemeral: true });
+    if (row.thread_id) return say(i, 'Тикет уже принят.');
     const thread = await i.message.startThread({ name: `тикет-${id}`, autoArchiveDuration: 1440 });
     await db.query("update dc_reports set thread_id=$1, handled_by=$2 where id=$3", [thread.id, i.user.id, id]);
-    await thread.send({ content: `✅ Тикет принят: <@${i.user.id}>. Пишите сюда, сообщения уйдут игроку в личные сообщения.` });
     const embed = D.EmbedBuilder.from(old).setColor(0x3ba55d)
       .setFields(old.fields.map(f => f.name === 'Статус' ? { name: 'Статус', value: `🟢 В работе (<@${i.user.id}>)` } : f));
     const buttons = new D.ActionRowBuilder().addComponents(
       new D.ButtonBuilder().setCustomId(`tk:close:${id}`).setLabel('Закрыть').setStyle(D.ButtonStyle.Danger));
-    await i.update({ embeds: [embed], components: [buttons] });
+    await i.editReply({ embeds: [embed], components: [buttons] });
+    thread.send({ content: `✅ Тикет принят: <@${i.user.id}>. Пишите сюда, сообщения уйдут игроку в личные сообщения.` }).catch(() => {});
     if (owner) owner.send({ content: `✅ Ваш тикет #${id} принят администрацией. Ответы будут приходить сюда, в личные сообщения.` }).catch(() => {});
     return;
   }
@@ -276,7 +279,7 @@ async function handleTicketButton(i) {
   await db.query("update dc_reports set status='closed', handled_by=$1 where id=$2", [i.user.id, id]);
   const embed = D.EmbedBuilder.from(old).setColor(0x95a5a6)
     .setFields(old.fields.map(f => f.name === 'Статус' ? { name: 'Статус', value: `🔒 Закрыт (<@${i.user.id}>)` } : f));
-  await i.update({ embeds: [embed], components: [] });
+  await i.editReply({ embeds: [embed], components: [] });
   if (row.thread_id) {
     const thread = await client.channels.fetch(row.thread_id).catch(() => null);
     if (thread) { await thread.send('🔒 Тикет закрыт.').catch(() => {}); await thread.setArchived(true).catch(() => {}); }
@@ -379,18 +382,25 @@ function start(opts) {
       }
       // --- кнопки ---
       if (i.isButton()) {
+        // Discord ждёт ответ не дольше 3 секунд: сначала подтверждаем нажатие, потом работаем
         if (i.customId === 'tk:create') {
+          await i.deferReply({ ephemeral: true });
+          const open = await openTicketOf(i.user.id);
+          if (open) return i.editReply({ content: `У вас уже есть открытый тикет #${open.id}. Пишите в личку, ответ придёт в этот же чат.` });
           awaitingTicket.set(i.user.id, Date.now());
           try { await i.user.send({ embeds: [ticketPrompt()] }); }
-          catch (e) { return i.reply({ content: 'Не могу написать вам в личку. Включите личные сообщения от участников сервера и нажмите ещё раз.', ephemeral: true }); }
-          return i.reply({ content: '📬 Проверьте личные сообщения с ботом и опишите проблему.', ephemeral: true });
+          catch (e) { return i.editReply({ content: 'Не могу написать вам в личку. Включите личные сообщения от участников сервера и нажмите ещё раз.' }); }
+          return i.editReply({ content: '📬 Проверьте личные сообщения с ботом и опишите проблему.' });
         }
         if (i.customId === 'rp:start') {
-          const r = await startReport(i);
-          return i.reply({ ...r, ephemeral: true });
+          await i.deferReply({ ephemeral: true });
+          return i.editReply(await startReport(i));
         }
-        if (i.customId.startsWith('rep:')) return handleReportButton(i);
-        if (i.customId.startsWith('tk:close:')) return handleTicketButton(i);
+        if (i.customId.startsWith('rep:') || i.customId.startsWith('tk:take:') || i.customId.startsWith('tk:close:')) {
+          await i.deferUpdate();
+          if (i.customId.startsWith('rep:')) return handleReportButton(i);
+          return handleTicketButton(i);
+        }
         return;
       }
       // --- выбор сервера → выбор игрока ---
