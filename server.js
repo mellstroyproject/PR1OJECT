@@ -1199,11 +1199,12 @@ for (const [url, file, type] of [
   ['/icon-192.png', 'icon-192.png', 'image/png'],
   ['/icon-512.png', 'icon-512.png', 'image/png']
 ]) app.get(url, (req, res) => { res.type(type); res.sendFile(path.join(__dirname, file)); });
-// статические стили сайта (assets/*.css): только безопасные имена файлов, кэшируются браузером
+// статические стили и скрипты сайта (assets/*.css, assets/*.js): только безопасные имена файлов, кэшируются браузером
 app.get('/assets/:file', (req, res) => {
   const f = req.params.file;
-  if (!/^[a-z0-9-]+\.css$/.test(f)) return res.status(404).end();
-  res.type('text/css');
+  const m = /^[a-z0-9-]+\.(css|js)$/.exec(f);
+  if (!m) return res.status(404).end();
+  res.type(m[1] === 'css' ? 'text/css' : 'application/javascript');
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.sendFile(path.join(__dirname, 'assets', f), err => { if (err) res.status(404).end(); });
 });

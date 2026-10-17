@@ -1,0 +1,1 @@
+document.body.appendChild(document.getElementById('nav'));try{document.documentElement.dataset.nav=localStorage.getItem('np_nav')||'side';document.documentElement.dataset.navc=localStorage.getItem('np_navc')||'full'}catch(e){document.documentElement.dataset.nav='side';document.documentElement.dataset.navc='full'}

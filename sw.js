@@ -1,7 +1,41 @@
 // Service worker: оболочка сайта открывается даже без сети.
 // API, вход через Steam и Telegram никогда не кэшируются — там всегда свежие данные.
-const CACHE = 'nextproject-v2'; // новая версия: старая оболочка больше не подменяет сайт
-const SHELL = ['/', '/icon-180.png', '/icon-192.png', '/icon-512.png', '/manifest.webmanifest'];
+const CACHE = 'nextproject-v3'; // новая версия: старая оболочка больше не подменяет сайт
+const SHELL = [
+  '/', '/icon-180.png', '/icon-192.png', '/icon-512.png', '/manifest.webmanifest',
+  // скрипты и стили, которые раньше были внутри index.html (чтобы оболочка работала без сети)
+  '/assets/app-1.js',
+  '/assets/app-2.js',
+  '/assets/app-3.js',
+  '/assets/bans.js',
+  '/assets/battleship-site.js',
+  '/assets/chat.js',
+  '/assets/db-api.js',
+  '/assets/dock.css',
+  '/assets/fx.js',
+  '/assets/glent.js',
+  '/assets/head-motion.js',
+  '/assets/header.js',
+  '/assets/leaders.js',
+  '/assets/nav-init.js',
+  '/assets/nav-pill.js',
+  '/assets/notifications.js',
+  '/assets/nx-shoot.css',
+  '/assets/page-transition.js',
+  '/assets/permissions-design.js',
+  '/assets/servers.js',
+  '/assets/settings-skins.js',
+  '/assets/skin-aurora.css',
+  '/assets/skin-flat.css',
+  '/assets/skin-light.css',
+  '/assets/skin-switcher.js',
+  '/assets/skin-terminal.css',
+  '/assets/skins.js',
+  '/assets/sw-register.js',
+  '/assets/theme-motion.js',
+  '/assets/tictactoe-site.js',
+  '/assets/white-screen.js'
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
