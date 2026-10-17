@@ -183,6 +183,7 @@ function site(app, getUser, opts) {
     return { id: u.steam_id, name: row.name || 'Игрок', avatar: okAvatar(row.avatar) ? row.avatar : null, mod: !!canMod(u) };
   }
 
+  const siteBridgeRoom = () => process.env.SITE_CHAT_CHANNEL_ID ? 'ch:' + process.env.SITE_CHAT_CHANNEL_ID : null;
   const chanRow = async room => {
     if (!/^ch:\d+$/.test(room)) return null;
     return (await db.query('select id, name, topic, kind, access, category from dc_channels where id=$1', [+room.slice(3)])).rows[0] || null;
@@ -260,7 +261,7 @@ function site(app, getUser, opts) {
       where x.room = $1 order by x.id desc limit 100`, [room])).rows.reverse();
     res.json({
       msgs: rows.map(r => ({
-        id: +r.id, uid: r.uid, name: r.uid === 'bot' ? '🤖 Бот' : (r.name || 'Игрок'), avatar: r.uid !== 'bot' && okAvatar(r.avatar) ? r.avatar : null,
+        id: +r.id, uid: r.uid, name: r.uid === 'dc' ? '💬 Discord' : r.uid === 'bot' ? '🤖 Бот' : (r.name || 'Игрок'), avatar: r.uid !== 'bot' && r.uid !== 'dc' && okAvatar(r.avatar) ? r.avatar : null,
         text: r.text, at: +r.at, edited: r.edited, reactions: r.reactions || {},
         reply: r.reply_to ? { id: +r.reply_to, name: r.reply_name || 'Игрок', text: (r.reply_text || 'Сообщение удалено').slice(0, 120) } : null
       }))
@@ -325,6 +326,8 @@ function site(app, getUser, opts) {
     }
     const reply = parseInt(req.body.reply_to) || null;
     await db.query('insert into dc_messages(room, uid, text, reply_to, at) values ($1,$2,$3,$4,$5)', [room, m.id, text, reply, now]);
+    // мост с Discord: сообщения общего канала сайта уходят в Discord-канал
+    if (siteBridgeRoom() && room === siteBridgeRoom() && opts.toDiscord) opts.toDiscord({ author: m.name, text }).catch(() => {});
     pushForMessage(room, m, text).catch(() => {});
     res.json({ ok: true });
   }));

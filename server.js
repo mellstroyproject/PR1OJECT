@@ -1171,7 +1171,8 @@ try {
     db, canModerate: u => permsOf(u).includes('ban'),
     siteUrl: () => (process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, ''),
     tgSend: (id, text, url) => (tgCallSend ? tgCallSend(id, text, url) : Promise.resolve()),
-    glentToggle // /glent в чате сайта — та же функция, что и в боте
+    glentToggle, // /glent в чате сайта — та же функция, что и в боте
+    toDiscord: a => require('./discordbot').toDiscordChat(a) // мост: сообщения сайта в Discord
   });
   msgCallStart = msgApi.tgCallStart;
   msgRun = msgApi.runCommand;

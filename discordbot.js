@@ -222,6 +222,15 @@ function start(opts) {
       const raw = (msg.content || '').trim();
       if (!raw) return;
       const isDM = !msg.guild;
+      // мост с сайтом: обычные сообщения из канала моста попадают в общий чат сайта
+      const chatCh = process.env.DISCORD_CHAT_CHANNEL_ID;
+      if (msg.guild && chatCh && msg.channel.id === chatCh && !raw.startsWith('!') && !raw.startsWith('/')) {
+        await ready;
+        const room = process.env.SITE_CHAT_CHANNEL_ID ? 'ch:' + process.env.SITE_CHAT_CHANNEL_ID : null;
+        const files = [...msg.attachments.values()].map(a => a.url).join(' ');
+        if (room) await db.query('insert into dc_messages(room, uid, text, reply_to, at) values ($1,$2,$3,$4,$5)', [room, 'dc', `${msg.author.username}: ${raw}${files ? ' ' + files : ''}`.slice(0, 1500), null, Date.now()]);
+        return;
+      }
       if (!raw.startsWith('!')) {
         if (isDM) await msg.reply({ content: 'Команды вводятся через /. Напишите /help — список команд.', allowedMentions: { repliedUser: false } });
         return; // в каналах на обычные сообщения не отвечаем
@@ -242,4 +251,13 @@ function start(opts) {
   client.login(token).catch(e => console.error('discord login:', e.message));
 }
 
-module.exports = { start, consumeCode };
+// сообщения с сайта в Discord-канал моста (вызывается из messenger.js)
+async function toDiscordChat({ author, text }) {
+  const id = process.env.DISCORD_CHAT_CHANNEL_ID;
+  if (!id || !client) return;
+  const ch = await client.channels.fetch(id).catch(() => null);
+  if (!ch) return;
+  await ch.send({ content: `**${author}** (сайт): ${String(text)}`.slice(0, 1990), allowedMentions: { parse: [] } });
+}
+
+module.exports = { start, consumeCode, toDiscordChat };
