@@ -24,11 +24,10 @@ const fresh = ts => Date.now() - ts < FLOW_TTL;
 const cdLeft = key => { const left = COOLDOWN_MS - (Date.now() - (cooldown.get(key) || 0)); return left > 0 ? Math.ceil(left / 1000) : 0; };
 
 const DEFS = [
-  { name: 'panel', description: 'Опубликовать панель «Тикеты» в этом канале (владельцы)', options: [] },
   { name: 'report', description: 'Пожаловаться на игрока — выбор сервера и игрока', options: [] },
   { name: 'setchannel', description: 'Назначить этот приватный канал для репортов или тикетов (владельцы)', options: [
     { name: 'kind', description: 'Что сюда присылать', type: 3, required: true,
-      choices: [{ name: 'Репорты (админы)', value: 'reports' }, { name: 'Тикеты (старшая администрация)', value: 'tickets' }] }] }
+      choices: [{ name: 'Репорты (админы)', value: 'reports' }, { name: 'Тикеты (старшая администрация)', value: 'tickets' }, { name: 'Панель с кнопками (канал создания тикетов)', value: 'panel' }] }] }
 ];
 
 // --- настройка канала: закрыт для всех, бот видит и пишет ---
@@ -46,12 +45,53 @@ async function checkPrivate(ch, guild) {
 async function setChannel(i, kind) {
   if (!isOwner(i.user.id)) return i.editReply({ content: 'Нет доступа.' });
   if (!i.guild || !i.channel) return i.editReply({ content: 'Выполните эту команду в канале сервера.' });
-  const problem = await checkPrivate(i.channel, i.guild);
-  if (problem) return i.editReply({ content: problem });
-  const key = kind === 'tickets' ? 'ticket_channel' : 'report_channel';
+  if (kind !== 'panel') {
+    const problem = await checkPrivate(i.channel, i.guild);
+    if (problem) return i.editReply({ content: problem });
+  }
+  const key = { tickets: 'ticket_channel', reports: 'report_channel', panel: 'panel_channel' }[kind];
   await db.query(`insert into dc_settings(key, value) values ($1, $2) on conflict (key) do update set value=excluded.value`, [key, i.channel.id]);
-  if (kind === 'tickets') ticketChannelId = i.channel.id; else reportChannelId = i.channel.id;
-  return i.editReply({ content: `✅ Этот канал теперь канал ${kind === 'tickets' ? 'тикетов' : 'репортов'}.` });
+  if (kind === 'tickets') ticketChannelId = i.channel.id;
+  if (kind === 'reports') reportChannelId = i.channel.id;
+  if (kind === 'panel') await ensurePanel();
+  const names = { tickets: 'тикетов', reports: 'репортов', panel: 'панели с кнопками' };
+  const cur = Object.fromEntries((await db.query("select key, value from dc_settings where key in ('report_channel','ticket_channel','panel_channel')")).rows.map(r => [r.key, r.value]));
+  const line = (label, id) => `${label}: ${id ? `<#${id}>` : 'не назначен'}`;
+  const sameWarn = cur.report_channel && cur.report_channel === cur.ticket_channel
+    ? '\n⚠️ Репорты и тикеты настроены на один канал. Назначьте разные каналы, если нужно их разделить.' : '';
+  return i.editReply({ content: `✅ Этот канал теперь канал ${names[kind]}.\n\n${line('Репорты', cur.report_channel)}\n${line('Тикеты', cur.ticket_channel)}\n${line('Панель', cur.panel_channel)}${sameWarn}` });
+}
+
+// --- панель публикуется сама: в канале создания тикетов, без команд ---
+// Канал: из настройки panel_channel, иначе ищем текстовый канал с «тикет» в названии (например «создать-тикет»).
+// Сообщение с кнопками закрепляется; при перезапуске или удалении бот восстанавливает его сам.
+async function findPanelChannel() {
+  const saved = (await db.query("select value from dc_settings where key='panel_channel'")).rows[0]?.value;
+  if (saved) return client.channels.fetch(saved).catch(() => null);
+  for (const g of client.guilds.cache.values()) {
+    const ch = g.channels.cache.find(c => c.type === D.ChannelType.GuildText && /тикет|ticket/i.test(c.name));
+    if (ch) return ch;
+  }
+  return null;
+}
+
+async function ensurePanel() {
+  try {
+    const ch = await findPanelChannel();
+    if (!ch) return;
+    const payload = panelPayload();
+    const stored = (await db.query("select value from dc_settings where key='panel_message'")).rows[0]?.value; // формат channelId:messageId
+    const [sChan, sMsg] = stored ? stored.split(':') : [];
+    if (sChan === ch.id && sMsg) {
+      const old = await ch.messages.fetch(sMsg).catch(() => null);
+      if (old) { await old.edit(payload); return; }
+    }
+    const msg = await ch.send(payload);
+    await msg.pin().catch(() => {});
+    await db.query(`insert into dc_settings(key, value) values ('panel_message', $1)
+      on conflict (key) do update set value=excluded.value`, [`${ch.id}:${msg.id}`]);
+    console.log('Панель тикетов опубликована в канале', ch.name);
+  } catch (e) { console.error('panel:', e.message); }
 }
 
 // --- панель «Тикеты» ---
@@ -131,8 +171,46 @@ async function submitReport(user, srv, target, reason) {
   return `✅ Жалоба #${row.id} на **${target}** отправлена администрации. Спасибо!`;
 }
 
+// --- переписка по тикету ---
+const mskTime = () => { const d = new Date(Date.now() + 3 * 36e5); const p = n => String(n).padStart(2, '0');
+  return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`; };
+const roleOf = msg => { const r = msg.member?.roles?.highest; return r && r.name !== '@everyone' ? r.name : 'Администрация'; };
+const attachText = msg => msg.attachments?.size ? '\n' + [...msg.attachments.values()].map(a => a.url).join('\n') : '';
+
+// открытый тикет пользователя (только один одновременно)
+async function openTicketOf(userId) {
+  return (await db.query("select id, thread_id from dc_reports where reporter_id=$1 and kind='ticket' and status='open' order by id desc limit 1", [userId])).rows[0] || null;
+}
+
+// ответ администратора в треде → личное сообщение игроку
+async function relayToPlayer(msg, ticket) {
+  const owner = await client.users.fetch(ticket.reporter_id).catch(() => null);
+  if (!owner) return msg.react('⚠️').catch(() => {});
+  const embed = new D.EmbedBuilder().setColor(0x5865f2)
+    .setAuthor({ name: msg.member?.displayName || msg.author.username, iconURL: msg.author.displayAvatarURL() })
+    .setDescription((msg.content || '').slice(0, 3500) + attachText(msg))
+    .setFooter({ text: `${roleOf(msg)} • ${mskTime()}` });
+  try { await owner.send({ embeds: [embed] }); msg.react('✅').catch(() => {}); }
+  catch (e) { msg.react('⚠️').catch(() => {}); }
+}
+
+// сообщение игрока → тред тикета (или карточка тикета, если тред ещё не создан)
+async function relayToStaff(msg, ticket) {
+  const target = ticket.thread_id ? await client.channels.fetch(ticket.thread_id).catch(() => null)
+    : await client.channels.fetch(ticketChannelId).catch(() => null);
+  if (!target) return msg.reply({ content: 'Не удалось передать сообщение администрации, попробуйте позже.' }).catch(() => {});
+  const embed = new D.EmbedBuilder().setColor(0x2b2d31)
+    .setAuthor({ name: msg.author.username, iconURL: msg.author.displayAvatarURL() })
+    .setDescription((msg.content || '').slice(0, 3500) + attachText(msg))
+    .setFooter({ text: `Игрок • тикет #${ticket.id} • ${mskTime()}` });
+  await target.send({ embeds: [embed], allowedMentions: { parse: [] } });
+  msg.react('✅').catch(() => {});
+}
+
 // --- тикет: текст из личных сообщений → канал тикетов ---
 async function submitTicket(user, text) {
+  const existing = await openTicketOf(user.id);
+  if (existing) return `У вас уже есть открытый тикет #${existing.id}. Пишите сюда, ответ придёт в этот же чат.`;
   if (cdLeft('t:' + user.id)) return `Новый тикет можно создать через ${cdLeft('t:' + user.id)} сек.`;
   const ch = ticketChannelId && await client.channels.fetch(ticketChannelId).catch(() => null);
   if (!ch) return 'Раздел тикетов ещё не настроен. Попробуйте позже.';
@@ -147,7 +225,8 @@ async function submitTicket(user, text) {
       { name: 'Статус', value: '🟡 Открыт' })
     .setFooter({ text: BRAND }).setTimestamp();
   const buttons = new D.ActionRowBuilder().addComponents(
-    new D.ButtonBuilder().setCustomId(`tk:close:${row.id}`).setLabel('Закрыть тикет').setStyle(D.ButtonStyle.Danger));
+    new D.ButtonBuilder().setCustomId(`tk:take:${row.id}`).setLabel('Принять').setStyle(D.ButtonStyle.Success),
+    new D.ButtonBuilder().setCustomId(`tk:close:${row.id}`).setLabel('Закрыть').setStyle(D.ButtonStyle.Danger));
   const msg = await ch.send({ embeds: [embed], components: [buttons], allowedMentions: { parse: [] } });
   await db.query('update dc_reports set message_id=$1 where id=$2', [msg.id, row.id]);
   return `🎫 Тикет #${row.id} создан. Администрация ответит вам здесь, в личных сообщениях.`;
@@ -172,15 +251,36 @@ async function handleReportButton(i) {
 }
 
 async function handleTicketButton(i) {
-  const id = i.customId.split(':')[2];
-  if (!await isAdminClick(i)) return i.reply({ content: 'Закрывать тикеты могут только администраторы.', ephemeral: true });
-  const r = await db.query("update dc_reports set status='closed', handled_by=$1 where id=$2 and status='open' and kind='ticket' returning reporter_id", [i.user.id, id]);
-  if (!r.rowCount) return i.reply({ content: 'Этот тикет уже закрыт.', ephemeral: true });
+  const [, action, id] = i.customId.split(':');
+  if (!await isAdminClick(i)) return i.reply({ content: 'Работать с тикетами могут только администраторы.', ephemeral: true });
+  const row = (await db.query("select reporter_id, thread_id from dc_reports where id=$1 and kind='ticket' and status='open'", [id])).rows[0];
+  if (!row) return i.reply({ content: 'Тикет не найден или уже закрыт.', ephemeral: true });
+  const owner = await client.users.fetch(row.reporter_id).catch(() => null);
   const old = i.message.embeds[0];
+
+  if (action === 'take') {
+    if (row.thread_id) return i.reply({ content: 'Тикет уже принят.', ephemeral: true });
+    const thread = await i.message.startThread({ name: `тикет-${id}`, autoArchiveDuration: 1440 });
+    await db.query("update dc_reports set thread_id=$1, handled_by=$2 where id=$3", [thread.id, i.user.id, id]);
+    await thread.send({ content: `✅ Тикет принят: <@${i.user.id}>. Пишите сюда, сообщения уйдут игроку в личные сообщения.` });
+    const embed = D.EmbedBuilder.from(old).setColor(0x3ba55d)
+      .setFields(old.fields.map(f => f.name === 'Статус' ? { name: 'Статус', value: `🟢 В работе (<@${i.user.id}>)` } : f));
+    const buttons = new D.ActionRowBuilder().addComponents(
+      new D.ButtonBuilder().setCustomId(`tk:close:${id}`).setLabel('Закрыть').setStyle(D.ButtonStyle.Danger));
+    await i.update({ embeds: [embed], components: [buttons] });
+    if (owner) owner.send({ content: `✅ Ваш тикет #${id} принят администрацией. Ответы будут приходить сюда, в личные сообщения.` }).catch(() => {});
+    return;
+  }
+
+  // закрытие: статус, тред в архив, уведомление игроку
+  await db.query("update dc_reports set status='closed', handled_by=$1 where id=$2", [i.user.id, id]);
   const embed = D.EmbedBuilder.from(old).setColor(0x95a5a6)
     .setFields(old.fields.map(f => f.name === 'Статус' ? { name: 'Статус', value: `🔒 Закрыт (<@${i.user.id}>)` } : f));
   await i.update({ embeds: [embed], components: [] });
-  const owner = await client.users.fetch(r.rows[0].reporter_id).catch(() => null);
+  if (row.thread_id) {
+    const thread = await client.channels.fetch(row.thread_id).catch(() => null);
+    if (thread) { await thread.send('🔒 Тикет закрыт.').catch(() => {}); await thread.setArchived(true).catch(() => {}); }
+  }
   if (owner) owner.send({ content: `🔒 Ваш тикет #${id} закрыт администрацией. Если вопрос остался, создайте новый тикет.` }).catch(() => {});
 }
 
@@ -235,6 +335,7 @@ function start(opts) {
     await db.query(`create table if not exists dc_reports(id bigserial primary key, reporter_id text not null, target text not null,
       reason text not null, status text not null, channel_id text, message_id text, handled_by text, at bigint not null)`);
     await db.query("alter table dc_reports add column if not exists kind text not null default 'report'");
+    await db.query('alter table dc_reports add column if not exists thread_id text');
     await db.query('create table if not exists dc_settings(key text primary key, value text not null)');
     const rows = (await db.query("select key, value from dc_settings where key in ('report_channel','ticket_channel')")).rows;
     reportChannelId = rows.find(r => r.key === 'report_channel')?.value || null;
@@ -257,6 +358,8 @@ function start(opts) {
     console.log('Бот поддержки запущен:', c.user.tag);
     await ready;
     await registerSlash().catch(e => console.error('report bot register:', e.message));
+    await ensurePanel();
+    setInterval(ensurePanel, 10 * 60000);
   });
 
   client.on('interactionCreate', async i => {
@@ -264,11 +367,6 @@ function start(opts) {
       await ready;
       // --- слеш-команды ---
       if (i.isChatInputCommand()) {
-        if (i.commandName === 'panel') {
-          if (!isOwner(i.user.id)) return i.reply({ content: 'Нет доступа.', ephemeral: true });
-          await i.reply({ content: 'Панель опубликована.', ephemeral: true });
-          return i.channel.send(panelPayload());
-        }
         if (i.commandName === 'setchannel') {
           await i.deferReply({ ephemeral: true });
           return setChannel(i, i.options.getString('kind'));
@@ -339,18 +437,32 @@ function start(opts) {
     try {
       if (msg.author.bot) return;
       await ready;
+      // администрация пишет в треде тикета — сообщение уходит игроку
+      if (msg.guild && msg.channel.isThread() && msg.channel.parentId === ticketChannelId) {
+        if (!msg.member?.permissions.has(D.PermissionFlagsBits.ManageMessages) && !isOwner(msg.author.id)) return;
+        const ticket = (await db.query("select id, reporter_id from dc_reports where thread_id=$1 and kind='ticket' and status='open'", [msg.channel.id])).rows[0];
+        if (ticket) return relayToPlayer(msg, ticket);
+        return;
+      }
       const raw = msg.content.trim();
       if (raw.startsWith('!')) return await handleText(msg);
+      // личка: открытый тикет — сообщения игрока идут администрации
       // личка: текст после «Создать тикет» становится тикетом
       if (!msg.guild && awaitingTicket.has(msg.author.id)) {
         const started = awaitingTicket.get(msg.author.id);
         if (Date.now() - started > FLOW_TTL) { awaitingTicket.delete(msg.author.id); return; }
         if (raw.length < 5) return msg.reply('Опишите проблему подробнее (от 5 символов).');
         awaitingTicket.delete(msg.author.id);
+        const open = await openTicketOf(msg.author.id);
+        if (open) return relayToStaff(msg, open); // уже есть открытый тикет — это сообщение в него
         const text = await submitTicket(msg.author, raw.slice(0, 1500));
         return msg.reply({ content: text });
       }
-      if (!msg.guild) return msg.reply({ content: 'Напишите `!тикет` — создать тикет, или `!репорт` — пожаловаться на игрока.' });
+      if (!msg.guild) {
+        const ticket = await openTicketOf(msg.author.id);
+        if (ticket) return relayToStaff(msg, ticket);
+        return msg.reply({ content: 'Напишите `!тикет` — создать тикет, или `!репорт` — пожаловаться на игрока.' });
+      }
     } catch (e) { console.error('report bot message:', e.message); }
   });
 
