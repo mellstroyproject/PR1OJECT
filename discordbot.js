@@ -222,17 +222,6 @@ function start(opts) {
       const raw = (msg.content || '').trim();
       if (!raw) return;
       const isDM = !msg.guild;
-      // мост с сайтом: обычные сообщения из канала моста попадают в общий чат сайта
-      const chatCh = process.env.DISCORD_CHAT_CHANNEL_ID;
-      if (msg.guild && chatCh && msg.channel.id === chatCh && !raw.startsWith('!') && !raw.startsWith('/')) {
-        await ready;
-        const room = process.env.SITE_CHAT_CHANNEL_ID ? 'ch:' + process.env.SITE_CHAT_CHANNEL_ID : null;
-        const files = [...msg.attachments.values()].map(a => a.url).join(' ');
-        const who = (msg.member?.displayName || msg.author.username || 'Discord').slice(0, 80);
-        const ava = msg.author.displayAvatarURL({ extension: 'png', size: 64 });
-        if (room) await db.query('insert into dc_messages(room, uid, text, reply_to, at, ext_name, ext_avatar) values ($1,$2,$3,$4,$5,$6,$7)', [room, 'dc', `${raw}${files ? ' ' + files : ''}`.slice(0, 1500), null, Date.now(), who, ava]);
-        return;
-      }
       if (!raw.startsWith('!')) {
         if (isDM) await msg.reply({ content: 'Команды вводятся через /. Напишите /help — список команд.', allowedMentions: { repliedUser: false } });
         return; // в каналах на обычные сообщения не отвечаем

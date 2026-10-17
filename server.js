@@ -1182,6 +1182,7 @@ catch (e) { console.error('messenger.js не подключён:', e.message); }
 const dcBot = require('./discordbot');
 const reportBot = require('./reportbot'); // бот репортов — отдельный бот (DISCORD_REPORT_BOT_TOKEN)
 reportBot.start({ db });
+require('./chatbot').start({ db }); // бот чата: DISCORD_CHATBOT_TOKEN (мост с сайтом)
 dcBot.start({ db, glentToggle,
   callStart: (s, n) => (msgCallStart ? msgCallStart(s, n) : Promise.resolve({ text: '❌ Звонки пока не включены' })),
   runTg: o => (tgRunDc ? tgRunDc(o) : Promise.resolve(false)),
