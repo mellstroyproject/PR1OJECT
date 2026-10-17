@@ -66,38 +66,6 @@ const sign = v => crypto.createHmac('sha256', SECRET).update(v).digest('base64ur
 
 const app = express();
 app.set('trust proxy', 1);
-// сжатие ответов gzip: страницы, скрипты, стили и JSON весят в 4–6 раз меньше (сервер сам не сжимает)
-const zlib = require('zlib');
-const gzipText = (req, res, next) => {
-  if (!/\bgzip\b/.test(req.headers['accept-encoding'] || '') || req.method === 'HEAD') return next();
-  const rawWrite = res.write.bind(res), rawEnd = res.end.bind(res);
-  let gz = null; // null — ещё не решили, false — не сжимаем, поток — сжимаем
-  const start = () => {
-    if (gz !== null) return gz;
-    const type = String(res.getHeader('Content-Type') || '');
-    const ok = res.statusCode !== 204 && res.statusCode !== 304 && !type.startsWith('text/event-stream')
-      && /^(text\/|application\/(javascript|json|manifest\+json))/.test(type);
-    if (!ok) return (gz = false);
-    res.setHeader('Content-Encoding', 'gzip');
-    res.setHeader('Vary', 'Accept-Encoding');
-    res.removeHeader('Content-Length');
-    gz = zlib.createGzip();
-    gz.on('data', c => rawWrite(c));
-    return gz;
-  };
-  res.write = (chunk, enc, cb) => { const g = start(); return g ? g.write(chunk, enc, cb) : rawWrite(chunk, enc, cb); };
-  res.end = (chunk, enc, cb) => {
-    if (typeof chunk === 'function') { cb = chunk; chunk = undefined; }
-    const g = start();
-    if (!g) return rawEnd(chunk, enc, cb);
-    if (chunk) g.write(chunk, enc);
-    g.on('end', () => rawEnd(cb));
-    g.end();
-    return res;
-  };
-  next();
-};
-app.use(gzipText);
 app.use(express.json());
 
 async function init() {
@@ -1231,12 +1199,11 @@ for (const [url, file, type] of [
   ['/icon-192.png', 'icon-192.png', 'image/png'],
   ['/icon-512.png', 'icon-512.png', 'image/png']
 ]) app.get(url, (req, res) => { res.type(type); res.sendFile(path.join(__dirname, file)); });
-// статические стили, скрипты и картинки сайта (assets/): только безопасные имена файлов, кэшируются браузером
+// статические стили сайта (assets/*.css): только безопасные имена файлов, кэшируются браузером
 app.get('/assets/:file', (req, res) => {
   const f = req.params.file;
-  const m = /^[a-z0-9-]+\.(css|js|png|webp)$/.exec(f);
-  if (!m) return res.status(404).end();
-  res.type({ css: 'text/css', js: 'application/javascript', png: 'image/png', webp: 'image/webp' }[m[1]]);
+  if (!/^[a-z0-9-]+\.css$/.test(f)) return res.status(404).end();
+  res.type('text/css');
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.sendFile(path.join(__dirname, 'assets', f), err => { if (err) res.status(404).end(); });
 });
@@ -2085,7 +2052,10 @@ if (process.env.TG_BOT_TOKEN) {
 // страницы сайта имеют свои адреса (/shop, /leaders, /profile/<SteamID64> …) — все отдают тот же index.html, дальше работает маршрутизация в браузере
 app.get('/maps/:file', (req, res) => { const f = req.params.file; if (!/^[\w-]+\.(jpg|png|webp)$/i.test(f)) return res.status(404).end(); res.sendFile(path.join(__dirname, 'maps', f), { maxAge: '1d' }, err => { if (err && !res.headersSent) res.status(404).end(); }); }); // картинки карт для карточек серверов (папка maps/, имена вида de_mirage.jpg)
 app.get('/glent.mp3', (req, res) => res.sendFile(path.join(__dirname, 'glent.mp3'), { maxAge: '7d' })); // песня режима /глент (файл glent.mp3 лежит рядом с server.js)
-app.get(['/', '/shop', '/leaders', '/bans', '/rules', '/settings', '/admin', '/skins', '/public', '/battleship', '/chat', '/profile/:id'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+// каждая страница — свой HTML из папки pages/ (общий код в assets/app.js)
+const PAGE_FILES = { '/': 'home', '/shop': 'shop', '/leaders': 'leaders', '/bans': 'bans', '/rules': 'rules', '/settings': 'settings', '/admin': 'admin', '/skins': 'skins', '/public': 'public', '/battleship': 'battleship', '/chat': 'chat' };
+for (const [route, name] of Object.entries(PAGE_FILES)) app.get(route, (req, res) => res.sendFile(path.join(__dirname, 'pages', name + '.html')));
+app.get('/profile/:id', (req, res) => res.sendFile(path.join(__dirname, 'pages', 'profile.html')));
 
 // --- 🚨 Жалобы игроков из игры (таблица np_reports). Доступ — право «Банить и мутить» ---
 app.get('/reports', (req, res) => res.sendFile(path.join(__dirname, 'reports.html')));

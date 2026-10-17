@@ -48,7 +48,6 @@
 | `messenger.js` | API чата, голоса, уведомлений и звонков из Telegram |
 | `messenger.html` | интерфейс чата и голосовых каналов (открывается в iframe) |
 | `index.html` | главная страница сайта, плавающий чат, плашки уведомлений |
-| `assets/` | стили и скрипты сайта: `site-N.css` (стили), `app-1.js`…`app-3.js` (основная логика), `chat.js`, `skins.js`, `dock.css`, `skin-*.css` и т.д. Файлы подключаются из `index.html` |
 | `sw.js` | service worker: кэш оболочки и push-уведомления |
 | `manifest.webmanifest` | описание приложения для установки на домашний экран |
 | `icon-180.png`, `icon-192.png`, `icon-512.png` | иконки приложения |

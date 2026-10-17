@@ -2,7 +2,6 @@
 
 ## 1. Файлы
 - [ ] Заменить на сервере: `index.html`, `server.js`, `messenger.js`, `messenger.html`, `sw.js`, `manifest.webmanifest`, `README.md`
-- [ ] Заменить папку `assets/` целиком: там теперь скрипты и стили главной страницы (`app-1.js`… `chat.js`, `dock.css`, `skin-*.css` и т.д.)
 - [ ] Положить рядом с `server.js`: иконки `icon-180.png`, `icon-192.png`, `icon-512.png`
 - [ ] Положить рядом с `server.js` мелодию звонка `ring.mp3` (только если есть права на использование)
 - [ ] `npm install` (должны стоять `web-push` и `grammy`)

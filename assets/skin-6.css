@@ -1,0 +1,99 @@
+/* ===== Меню — нижняя панель (как в приложении) ===== */
+:root{--pop:#1b1b26}
+body{padding-bottom:96px}
+header{justify-content:space-between}
+#nav{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:120;flex:none;display:flex;flex-wrap:nowrap;justify-content:center;gap:4px;padding:8px;border-radius:24px;background:var(--pop);border:1px solid var(--line);box-shadow:0 24px 50px -16px rgba(0,0,0,.75);animation:dockIn .7s var(--ease) .15s backwards}
+@keyframes dockIn{from{opacity:0;transform:translate(-50%,40px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes dockInM{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:none}}
+#nav button{padding:11px 18px;border-radius:17px;white-space:nowrap}
+#nav .navpill{border-radius:17px}
+#nav button:hover{transform:translateY(-2px)}
+#nav button .ic{transition:transform .3s var(--ease)}
+#nav button:hover .ic{transform:scale(1.15)}
+html[data-skin=light] #nav{box-shadow:0 22px 44px -16px rgba(20,22,40,.35)}
+html[data-skin=aurora] #nav,html[data-skin=aurora] #nav button,html[data-skin=aurora] #nav .navpill{border-radius:999px}
+html[data-skin=aurora] #nav{background:color-mix(in srgb,var(--acc) 8%,#15122b)}
+@media(max-width:1100px){html:not([data-nav=side]) #chatDock{bottom:92px!important}html:not([data-nav=side]) #skinBtn{bottom:92px}html:not([data-nav=side]) #skinPop{bottom:148px}}
+
+/* ===== Меню слева (боковая панель) — на экранах шире телефона ===== */
+@keyframes sideIn{from{opacity:0;transform:translateX(-34px)}to{opacity:1;transform:none}}
+@media(min-width:761px){
+  html[data-nav=side] body{padding-bottom:28px;padding-left:232px}
+  html[data-nav=side] #nav{left:16px;top:16px;bottom:78px;right:auto;transform:none;width:200px;flex-direction:column;justify-content:flex-start;align-content:flex-start;gap:6px;padding:12px;border-radius:24px;animation:sideIn .65s var(--ease) .1s backwards;overflow:auto}
+  html[data-nav=side] #nav button{width:100%;justify-content:flex-start;padding:13px 14px;gap:12px;border-radius:16px}
+  html[data-nav=side] #nav .navpill{border-radius:16px}
+  html[data-nav=side] #nav button:hover{transform:translateX(3px)}
+  html[data-nav=side] #nav::before{content:"МЕНЮ";display:block;font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--mut);padding:4px 14px 10px}
+  html[data-nav=side][data-skin=aurora] #nav{border-radius:30px}
+  html[data-nav=side][data-skin=aurora] #nav button,html[data-nav=side][data-skin=aurora] #nav .navpill{border-radius:20px}
+}
+@media(min-width:761px) and (max-width:1100px){
+  html[data-nav=side] body{padding-left:104px}
+  html[data-nav=side] #nav{width:68px;padding:10px 8px}
+  html[data-nav=side] #nav::before{content:"";padding:0;height:4px}
+  html[data-nav=side] #nav button{font-size:0;gap:0;justify-content:center;padding:14px 0}
+  html[data-nav=side] #nav button .ic{width:22px;height:22px}
+  html[data-nav=side] #nav button .tag{display:none}
+}
+/* переключатель в окне стиля */
+.nvrow{display:flex;gap:6px;padding:2px 6px 8px}
+.nvopt{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 8px;border-radius:12px;color:var(--tx);border:1px solid var(--line);font-size:13px;font-weight:600;transition:background .2s,border-color .2s}
+.nvopt:hover{background:rgba(127,127,127,.14)}
+.nvopt.on{background:rgba(var(--acc-rgb),.16);border-color:rgba(var(--acc-rgb),.55)}
+
+/* ===== Сворачивание боковой панели (иконки остаются) ===== */
+body{transition:padding-left .35s var(--ease)}
+#nav{transition:width .35s var(--ease),padding .35s var(--ease)}
+#navToggle{position:fixed;z-index:121;top:30px;left:202px;width:28px;height:28px;border-radius:50%;background:var(--pop);border:1px solid var(--line);color:var(--mut);display:none;place-items:center;box-shadow:0 6px 16px -6px rgba(0,0,0,.6);transition:left .35s var(--ease),color .2s,filter .2s}
+#navToggle:hover{color:var(--tx);filter:brightness(1.25)}
+#navToggle svg{width:14px;height:14px;transition:transform .35s var(--ease)}
+html[data-nav=side][data-navc=min] #navToggle{left:70px}
+html[data-nav=side][data-navc=min] #navToggle svg{transform:rotate(180deg)}
+@media(min-width:1101px){
+  html[data-nav=side] #navToggle{display:grid}
+  html[data-nav=side][data-navc=min] body{padding-left:104px}
+  html[data-nav=side][data-navc=min] #nav{width:68px;padding:10px 8px}
+  html[data-nav=side][data-navc=min] #nav::before{content:"";padding:0;height:4px}
+  html[data-nav=side][data-navc=min] #nav button{font-size:0;gap:0;justify-content:center;padding:14px 0}
+  html[data-nav=side][data-navc=min] #nav button .ic{width:22px;height:22px}
+  html[data-nav=side][data-navc=min] #nav button .tag{display:none}
+}
+/* ===== Верхняя панель: бренд + страница, быстрый вход на сервер ===== */
+header{gap:16px}
+.hbrand{display:flex;flex-direction:column;line-height:1.2;min-width:0}
+.hbrand b{font-size:15px;font-weight:800;letter-spacing:-.01em}
+.hbrand small{font-size:12px;color:var(--mut);white-space:nowrap}
+.hconn{margin:0 auto;display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--line);border-radius:16px;padding:5px 5px 5px 14px;animation:rise .6s var(--ease) .2s backwards}
+.hconn .hc-ic{width:18px;height:18px;color:var(--acc2);flex:none}
+.hconn .hc-name,.hconn select{font-weight:700;font-size:14px;color:var(--tx)}
+.hconn select{background:transparent;border:0;box-shadow:none;padding:0 2px;min-width:0;max-width:170px;cursor:pointer;appearance:none;-webkit-appearance:none;border-radius:0}
+.hconn select:focus{box-shadow:none;border:0}
+.hconn select option{background:#1b1b26;color:#f4f4f8}
+.hconn .hc-addr{font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
+.hconn button{padding:8px 13px;border-radius:11px;font-weight:700;font-size:13px;white-space:nowrap}
+.hc-copy{background:rgba(127,127,127,.16)}.hc-copy:hover{background:rgba(127,127,127,.3)}
+.hc-go{background:var(--acc);color:var(--on-acc)}.hc-go:hover{filter:brightness(1.12)}
+@media(max-width:1250px){.hconn .hc-addr{display:none}}
+@media(max-width:900px){.hconn{display:none}}
+
+/* ===== Боковая панель всегда узкая, названия — во всплывающей подсказке ===== */
+#navToggle{display:none!important}
+@media(min-width:761px){
+  html[data-nav=side] body{padding-left:104px}
+  html[data-nav=side] #nav{width:68px;padding:10px 8px;overflow:visible}
+  html[data-nav=side] #nav::before{content:"";padding:0;height:4px}
+  html[data-nav=side] #nav button{font-size:0;gap:0;justify-content:center;padding:14px 0}
+  html[data-nav=side] #nav button .ic{width:22px;height:22px}
+  html[data-nav=side] #nav button .tag{display:none}
+  html[data-nav=side] #nav button::after{content:attr(data-label);position:absolute;left:calc(100% + 16px);top:50%;transform:translate(-8px,-50%);opacity:0;pointer-events:none;white-space:nowrap;font-size:13px;font-weight:700;letter-spacing:0;color:var(--tx);background:var(--pop);border:1px solid var(--line);border-radius:10px;padding:8px 13px;box-shadow:0 14px 30px -10px rgba(0,0,0,.7);transition:opacity .12s,transform .2s var(--ease)}
+  html[data-nav=side] #nav button:hover::after,html[data-nav=side] #nav button:focus-visible::after{opacity:1;transform:translate(0,-50%)}
+  html[data-nav=side] #nav button::before{content:"";position:absolute;left:calc(100% + 10px);top:50%;width:8px;height:8px;background:var(--pop);border-left:1px solid var(--line);border-bottom:1px solid var(--line);transform:translate(-8px,-50%) rotate(45deg);opacity:0;pointer-events:none;transition:opacity .12s,transform .2s var(--ease)}
+  html[data-nav=side] #nav button:hover::before,html[data-nav=side] #nav button:focus-visible::before{opacity:1;transform:translate(0,-50%) rotate(45deg)}
+}
+@media(max-width:760px){
+  body{padding-bottom:86px}
+  #nav{left:8px;right:8px;bottom:8px;transform:none;justify-content:space-between;padding:6px;border-radius:20px;animation-name:dockInM}
+  #nav button{flex:1;flex-direction:column;gap:3px;font-size:11px;padding:8px 2px;min-width:0;border-radius:14px}
+  #nav .navpill{border-radius:14px}
+  #chatDock,#skinBtn{bottom:84px!important}#skinPop{bottom:140px}
+}

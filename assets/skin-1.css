@@ -1,0 +1,25 @@
+.mode-art .nx-en{fill:#07080f;stroke:var(--acc3);stroke-width:1.5;opacity:0;filter:drop-shadow(0 0 6px var(--acc));transform-box:fill-box;transform-origin:50% 100%;animation:nxen 5s ease-in-out infinite}
+.mode-art .nx-en .v{fill:color-mix(in srgb,var(--acc) 28%,#07080f);stroke-width:1}
+.mode-art .nx-en .g{fill:#0d0f1a;stroke-width:1.2}
+.mode-art .nx-tr{stroke:#fff;stroke-width:2.4;stroke-linecap:round;stroke-dasharray:14 200;stroke-dashoffset:14;opacity:0;filter:drop-shadow(0 0 5px var(--acc));animation:nxtr 5s linear infinite}
+.mode-art .nx-mz{fill:#fff;opacity:0;filter:drop-shadow(0 0 8px var(--acc));transform-box:fill-box;transform-origin:center;animation:nxmz 5s ease-out infinite}
+.mode-art .nx-sp path{stroke:var(--acc3);stroke-width:2;stroke-linecap:round;fill:none;stroke-dasharray:10 90}
+.mode-art .nx-sp{opacity:0;transform-box:fill-box;transform-origin:center;filter:drop-shadow(0 0 4px var(--acc));animation:nxhit 5s ease-out infinite}
+.mode-art .nx-hit{fill:none;stroke:var(--acc3);stroke-width:2.5;opacity:0;transform-box:fill-box;transform-origin:center;animation:nxhit 5s ease-out infinite}
+.mode-art .nx-fl{fill:#fff;opacity:0;transform-box:fill-box;transform-origin:center;filter:drop-shadow(0 0 14px var(--acc));animation:nxfl 5s ease-out infinite}
+.mode-art .nx-hm path{stroke:#fff;stroke-width:3;stroke-linecap:round;fill:none}
+.mode-art .nx-hm{opacity:0;animation:nxhm 5s linear infinite}
+.mode-art .nx-kf{opacity:0;animation:nxkf 5s ease-out infinite}
+.mode-art .nx-kf rect{fill:rgba(0,0,0,.65);stroke:var(--acc3);stroke-width:1.5}
+.mode-art .nx-kf text{fill:#fff;font:700 12px "Segoe UI",system-ui,sans-serif;letter-spacing:.5px}
+.mode-art .nx-kf .ic{fill:#fff;stroke:none}
+.mode-art .nx-kf .hs{fill:none;stroke:#fff;stroke-width:1.6}
+.mode-art .ring,.mode-art .cross{transform-box:fill-box;transform-origin:center;animation:nxkick 5s ease-out infinite}
+@keyframes nxen{0%{opacity:0;transform:translateX(90px)}14%{opacity:1;transform:translateX(0)}47%{opacity:1;transform:none}49%{transform:translateX(-4px) rotate(-5deg)}64%{opacity:1;transform:translate(-18px,12px) rotate(-92deg)}76%{opacity:0;transform:translate(-18px,12px) rotate(-92deg)}100%{opacity:0}}
+@keyframes nxtr{0%,40%{stroke-dashoffset:14;opacity:0}41%{opacity:1}47%{stroke-dashoffset:-100;opacity:1}48%,100%{opacity:0;stroke-dashoffset:-100}}
+@keyframes nxmz{0%,40%{opacity:0;transform:scale(.3)}41.5%{opacity:1;transform:scale(1)}46%,100%{opacity:0;transform:scale(1.5)}}
+@keyframes nxhit{0%,47%{opacity:0;transform:scale(.2)}48%{opacity:1}68%{opacity:0;transform:scale(2.6)}100%{opacity:0}}
+@keyframes nxfl{0%,47%{opacity:0;transform:scale(.3)}49%{opacity:1;transform:scale(1.2)}58%,100%{opacity:0;transform:scale(2)}}
+@keyframes nxhm{0%,47%{opacity:0}48%{opacity:1}56%,100%{opacity:0}}
+@keyframes nxkf{0%,48%{opacity:0;transform:translateX(24px)}51%{opacity:1;transform:none}86%{opacity:1}94%,100%{opacity:0}}
+@keyframes nxkick{0%,47%{transform:scale(1)}49%{transform:scale(1.05)}60%,100%{transform:scale(1)}}

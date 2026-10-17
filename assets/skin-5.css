@@ -1,0 +1,20 @@
+/* ===== СКИН: Аврора ===== */
+html[data-skin=aurora]{--bg:#0a0818;--panel:rgba(255,255,255,.055);--panel2:rgba(255,255,255,.09);--line:rgba(255,255,255,.12);--pop:#1a1733;--planbg:rgba(var(--acc-rgb),.16)}
+html[data-skin=aurora] body{background:#0a0818}
+html[data-skin=aurora]::before{background:radial-gradient(60% 50% at 14% 8%,color-mix(in srgb,var(--acc) 40%,transparent),transparent 70%),radial-gradient(55% 45% at 92% 18%,color-mix(in srgb,var(--acc-b) 36%,transparent),transparent 70%),radial-gradient(70% 50% at 50% 108%,color-mix(in srgb,var(--acc) 30%,transparent),transparent 70%)}
+html[data-skin=aurora] .fx i,html[data-skin=aurora] .fx i:nth-child(n){opacity:.28}
+html[data-skin=aurora] canvas.stars{opacity:.55}
+html[data-skin=aurora] header{border-radius:28px;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
+html[data-skin=aurora] :is(.plan,.admin-card,.set-card,.side,.admin-tools,.bar,.empty,.ap-nav,.tabs){border-radius:26px;border-color:rgba(255,255,255,.13);box-shadow:0 24px 50px -30px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.1)}
+html[data-skin=aurora] :is(.plan,.admin-card,.set-card):hover{border-color:rgba(255,255,255,.3);box-shadow:0 30px 60px -28px rgba(var(--acc-rgb),.55),inset 0 1px 0 rgba(255,255,255,.16)}
+html[data-skin=aurora] td{border-color:rgba(255,255,255,.08)}
+html[data-skin=aurora] td:first-child{border-radius:18px 0 0 18px}html[data-skin=aurora] td:last-child{border-radius:0 18px 18px 0}
+html[data-skin=aurora] h1{background:linear-gradient(90deg,#fff 10%,color-mix(in srgb,var(--acc2) 60%,#fff) 45%,var(--acc-b));-webkit-background-clip:text;background-clip:text;color:transparent;font-size:34px;letter-spacing:-.03em}
+html[data-skin=aurora] :is(nav button,.chip,.promo-btn,.steam,.join,.buy,.periods button,.tabs button,.ava,.online){border-radius:999px}
+html[data-skin=aurora] .ap-tab,html[data-skin=aurora] .side button{border-radius:18px}
+html[data-skin=aurora] input,html[data-skin=aurora] select{border-radius:16px}
+html[data-skin=aurora] :is(.steam,.join:not(.del),.plan.p .buy,.buy,.periods button.on,.prem){background:linear-gradient(135deg,var(--acc),var(--acc-b));background-size:220% 100%;box-shadow:0 12px 28px -12px rgba(var(--acc-rgb),.85);color:#fff}
+html[data-skin=aurora] .plan.g .buy{background:var(--gold);color:#1a1200;box-shadow:none}
+html[data-skin=aurora] .navpill{border-radius:999px;background:linear-gradient(135deg,rgba(var(--acc-rgb),.42),rgba(var(--acc-b-rgb),.3));box-shadow:inset 0 0 0 1px rgba(255,255,255,.22),0 10px 22px -10px rgba(var(--acc-rgb),.8)}
+html[data-skin=aurora] :is(.menu,.promo-pop){background:color-mix(in srgb,var(--acc) 10%,#15122b);border-color:rgba(255,255,255,.14);border-radius:22px}
+html[data-skin=aurora] .menu button{border-radius:14px}

@@ -1,0 +1,25 @@
+/* ===== СКИН: Терминал ===== */
+html[data-skin=terminal]{--bg:#050705;--panel:#0a0c0a;--panel2:#111511;--line:color-mix(in srgb,var(--acc) 30%,#101410);--tx:#e6efe6;--mut:#7f8f7f;--pop:#0c100c}
+html[data-skin=terminal],html[data-skin=terminal] :is(body,button,input,select,textarea){font-family:"JetBrains Mono","Cascadia Mono","SF Mono",Consolas,"Liberation Mono",monospace}
+html[data-skin=terminal] body{background:#050705;font-size:14px;letter-spacing:0}
+html[data-skin=terminal] *:not(svg *){border-radius:2px!important}
+html[data-skin=terminal]::before{background:radial-gradient(80% 40% at 50% -10%,color-mix(in srgb,var(--acc) 9%,transparent),transparent 70%)}
+html[data-skin=terminal] .fx i,html[data-skin=terminal] .fx i:nth-child(n){opacity:.05}
+html[data-skin=terminal] body::after{display:block;content:"";position:fixed;inset:0;z-index:200;pointer-events:none;-webkit-mask-image:none;mask-image:none;background-size:auto;background-image:repeating-linear-gradient(0deg,rgba(0,0,0,.28) 0 1px,transparent 1px 3px);opacity:.4}
+html[data-skin=terminal] :is(h1,h2){text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+html[data-skin=terminal] h1{font-size:24px}
+html[data-skin=terminal] h1::before{content:"> ";color:var(--acc)}
+html[data-skin=terminal] h1::after{content:"_";color:var(--acc);animation:tblink 1s steps(2,start) infinite}
+@keyframes tblink{to{visibility:hidden}}
+html[data-skin=terminal] :is(header,.plan,.mode,.admin-card,.set-card,.side,.admin-tools,.bar,.empty,.ap-nav,.tabs,.menu,.promo-pop){box-shadow:none;border:1px solid var(--line)}
+html[data-skin=terminal] :is(.plan,.mode,.admin-card,.set-card):hover{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+html[data-skin=terminal] nav button.on{color:var(--acc2)}
+html[data-skin=terminal] .navpill{background:transparent;box-shadow:inset 0 0 0 1px var(--acc)}
+html[data-skin=terminal] :is(.steam,.join:not(.del),.plan.p .buy,.buy,.periods button.on,.prem){background:var(--acc);color:#050705;font-weight:700}
+html[data-skin=terminal] .plan.g .buy{background:var(--gold)}
+html[data-skin=terminal] th{color:var(--acc2)}
+html[data-skin=terminal] tr:hover td{background:var(--panel2)}
+html[data-skin=terminal] :is(input,select,textarea){background:#080a08}
+html[data-skin=terminal] .ap-tab.on{background:rgba(var(--acc-rgb),.12)}
+html[data-skin=terminal] .ap-tab.on .ap-ic{background:var(--acc);color:#050705}
+html[data-skin=terminal] ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--acc) 40%,#111)}
