@@ -2,3 +2,6 @@
 @media (max-width: 900px), (hover: none) {
   *, *::before, *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 }
+
+/* во время прокрутки останавливаем фоновые анимации: кадры прокрутки не конкурируют с ними */
+html.scrolling *,html.scrolling *::before,html.scrolling *::after{animation-play-state:paused!important}

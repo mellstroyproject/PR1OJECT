@@ -18,14 +18,22 @@
     else pendingCmd = cmd;
   };
   // iframe ставим поверх места, где нарисован чат; на остальных страницах прячем (но не выгружаем)
+  // чат сообщает iframe, открыта ли страница чата: без неё iframe не опрашивает сервер каждые несколько секунд
+  let pageOn = null;
+  const syncPage = on => {
+    if (on === pageOn) return;
+    pageOn = on;
+    if (ready && frame && frame.contentWindow) frame.contentWindow.postMessage({ type: 'page', on }, location.origin);
+  };
   const place = () => {
     const f = ensure();
     const slot = document.getElementById('chatSlot');
-    if (!slot || st.page !== 'chat') { f.style.display = 'none'; return; }
+    if (!slot || st.page !== 'chat') { f.style.display = 'none'; syncPage(false); return; }
     const r = slot.getBoundingClientRect();
     f.style.display = 'block';
     f.style.left = r.left + 'px'; f.style.top = r.top + 'px';
     f.style.width = r.width + 'px'; f.style.height = r.height + 'px';
+    syncPage(true);
   };
   const _v2 = view;
   view = function(){
@@ -42,7 +50,7 @@
   toasts.id = 'chatToasts';
   document.body.appendChild(toasts);
   // мелодия входящего звонка: играет на любой странице сайта, в том числе в чате
-  const ringSnd = new Audio('/ring.mp3'); ringSnd.loop = true;
+  const ringSnd = new Audio(); ringSnd.preload = 'none'; ringSnd.src = '/ring.mp3'; ringSnd.loop = true;
   let ringT = null;
   const ringStart = () => { ringSnd.currentTime = 0; ringSnd.play().catch(() => {}); };
   const ringStop = () => { ringSnd.pause(); clearTimeout(ringT); };
@@ -71,6 +79,7 @@
     if (d.type === 'msg-ready') {
       ready = true;
       if (pendingCmd) { frame.contentWindow.postMessage(pendingCmd, location.origin); pendingCmd = null; }
+      if (pageOn !== null) frame.contentWindow.postMessage({ type: 'page', on: pageOn }, location.origin);
     }
     if (d.type === 'chat-notify') plaque(d);
     if (d.type === 'call-stop') ringStop();

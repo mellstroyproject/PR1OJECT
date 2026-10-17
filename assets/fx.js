@@ -5,7 +5,8 @@
   if(MOTION_OFF)return;
   const c=document.createElement('canvas');c.className='stars';document.body.prepend(c);
   const x=c.getContext('2d');let W,H,P=[],col='74,108,247';
-  const size=()=>{W=c.width=innerWidth;H=c.height=innerHeight;P=Array.from({length:Math.min(70,Math.floor(W*H/22000))},()=>({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.8+.4,v:Math.random()*.25+.05,t:Math.random()*6.28}))};
+  const S=.5; // звёзды рисуем в половину разрешения: в 4 раза меньше пикселей на кадр
+  const size=()=>{W=innerWidth;H=innerHeight;c.width=Math.ceil(W*S);c.height=Math.ceil(H*S);x.setTransform(S,0,0,S,0,0);P=Array.from({length:Math.min(70,Math.floor(W*H/22000))},()=>({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.8+.4,v:Math.random()*.25+.05,t:Math.random()*6.28}))};
   size();addEventListener('resize',size);
   let spr=null,sprCol='',lt=0;
   const mk=()=>{const k=document.createElement('canvas');k.width=k.height=32;const g=k.getContext('2d'),gr=g.createRadialGradient(16,16,0,16,16,16);gr.addColorStop(0,'rgba('+col+',1)');gr.addColorStop(.25,'rgba('+col+',.55)');gr.addColorStop(1,'rgba('+col+',0)');g.fillStyle=gr;g.fillRect(0,0,32,32);spr=k;sprCol=col};

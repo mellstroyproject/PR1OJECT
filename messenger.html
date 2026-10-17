@@ -230,6 +230,7 @@ button,input,textarea{font:inherit;color:inherit}
 
 <script>
 const EMOJI = ['👍','❤️','😂','🔥','😮','😢'];
+let PAGE_ON = false; // открыта ли страница чата на сайте (присылает родительская страница)
 const S = { view: 'server', people: [], peopleTab: 'online', peopleQ: '', online: new Set(), deaf: false, me: null, rooms: null, room: null, label: '', topic: '', kind: 'ch', write: true, msgs: [], hash: '', reply: null, edit: null, sel: null, panel: '', ring: null, notifyLast: null };
 const V = { room: null, label: '', local: null, pcs: new Map(), pending: new Map(), timer: null, muted: false, peers: [], state: new Map(), iceServers: null,
   vtx: new Map(), remoteVideo: new Map(), sharer: null, sharerName: '', screenStream: null, screenTrack: null, blank: null, watch: null, watchKey: null, ytPlayer: null, ytReady: false, ignoreUntil: 0 };
@@ -245,7 +246,7 @@ const toParent = msg => { if (inParent) window.parent.postMessage(msg, location.
 let toastT;
 let ringAud = null, ringTimer = null;
 function ringStart() {
-  if (!ringAud) { ringAud = new Audio('/ring.mp3'); ringAud.loop = true; }
+  if (!ringAud) { ringAud = new Audio(); ringAud.preload = 'none'; ringAud.src = '/ring.mp3'; ringAud.loop = true; }
   ringAud.currentTime = 0; ringAud.play().catch(() => {});
   clearTimeout(ringTimer); ringTimer = setTimeout(ringStop, RING_MS);
 }
@@ -283,10 +284,11 @@ async function init() {
     const first = v || S.rooms.channels.find(c => c.kind === 'text') || S.rooms.channels[0];
     openRoom(first.room, first.name, first.topic, v ? 'voice' : 'ch', first.write);
   }
-  setInterval(loadRooms, 5000);
-  setInterval(loadMsgs, 2500);
+  // опросы чата идут только пока открыта страница чата (PAGE_ON выставляет сайт); уведомления и звонки работают всегда
+  setInterval(() => { if (PAGE_ON) loadRooms(); }, 5000);
+  setInterval(() => { if (PAGE_ON) loadMsgs(); }, 2500);
   setInterval(notifyPoll, 3000);
-  setInterval(onlinePoll, 10000);
+  setInterval(() => { if (PAGE_ON) onlinePoll(); }, 10000);
   onlinePoll();
   notifyPoll();
 }
@@ -1116,8 +1118,15 @@ $('scrim').onclick = closeSide;
 
 // команды от сайта: открыть комнату, открыть голосовой канал
 window.addEventListener('message', e => {
-  if (e.origin !== location.origin || !S.rooms) return;
+  if (e.origin !== location.origin) return;
   const d = e.data || {};
+  if (d.type === 'page') {
+    const was = PAGE_ON;
+    PAGE_ON = !!d.on;
+    if (PAGE_ON && !was && S.rooms) { loadRooms(); loadMsgs(); onlinePoll(); }
+    return;
+  }
+  if (!S.rooms) return;
   if (d.type === 'open-room' && d.room) openByRoom(d.room);
   if (d.type === 'open-voice') {
     const c = S.rooms.channels.find(x => x.kind === 'voice' && x.name === d.name);
