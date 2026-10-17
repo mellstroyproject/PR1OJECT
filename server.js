@@ -1199,16 +1199,6 @@ for (const [url, file, type] of [
   ['/icon-192.png', 'icon-192.png', 'image/png'],
   ['/icon-512.png', 'icon-512.png', 'image/png']
 ]) app.get(url, (req, res) => { res.type(type); res.sendFile(path.join(__dirname, file)); });
-// файлы сайта из папки assets (стили, скрипты, картинки): только безопасные имена, кэшируются браузером
-app.get('/assets/:file', (req, res) => {
-  const f = req.params.file;
-  const types = { css: 'text/css', js: 'application/javascript', webp: 'image/webp', png: 'image/png', jpg: 'image/jpeg', svg: 'image/svg+xml' };
-  const m = /^[a-z0-9-]+\.([a-z0-9]+)$/i.exec(f);
-  if (!m || !types[m[1].toLowerCase()]) return res.status(404).end();
-  res.type(types[m[1].toLowerCase()]);
-  res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.sendFile(path.join(__dirname, 'assets', f), err => { if (err) res.status(404).end(); });
-});
 app.get('/ring.mp3', (req, res) => { res.type('audio/mpeg'); res.sendFile(path.join(__dirname, 'ring.mp3')); });
 // --- ✅ Подтверждение прав в Яндекс Вебмастере (HTML-файл из раздела «HTML-файл») ---
 app.get('/yandex_e579aaaa9eb23608.html', (req, res) => {
@@ -2054,10 +2044,7 @@ if (process.env.TG_BOT_TOKEN) {
 // страницы сайта имеют свои адреса (/shop, /leaders, /profile/<SteamID64> …) — все отдают тот же index.html, дальше работает маршрутизация в браузере
 app.get('/maps/:file', (req, res) => { const f = req.params.file; if (!/^[\w-]+\.(jpg|png|webp)$/i.test(f)) return res.status(404).end(); res.sendFile(path.join(__dirname, 'maps', f), { maxAge: '1d' }, err => { if (err && !res.headersSent) res.status(404).end(); }); }); // картинки карт для карточек серверов (папка maps/, имена вида de_mirage.jpg)
 app.get('/glent.mp3', (req, res) => res.sendFile(path.join(__dirname, 'glent.mp3'), { maxAge: '7d' })); // песня режима /глент (файл glent.mp3 лежит рядом с server.js)
-// каждая страница — свой HTML из папки pages/ (общий код в assets/app.js)
-const PAGE_FILES = { '/': 'home', '/shop': 'shop', '/leaders': 'leaders', '/bans': 'bans', '/rules': 'rules', '/settings': 'settings', '/admin': 'admin', '/skins': 'skins', '/public': 'public', '/battleship': 'battleship', '/chat': 'chat' };
-for (const [route, name] of Object.entries(PAGE_FILES)) app.get(route, (req, res) => res.sendFile(path.join(__dirname, 'pages', name + '.html')));
-app.get('/profile/:id', (req, res) => res.sendFile(path.join(__dirname, 'pages', 'profile.html')));
+app.get(['/', '/shop', '/leaders', '/bans', '/rules', '/settings', '/admin', '/skins', '/public', '/battleship', '/chat', '/profile/:id'], (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 // --- 🚨 Жалобы игроков из игры (таблица np_reports). Доступ — право «Банить и мутить» ---
 app.get('/reports', (req, res) => res.sendFile(path.join(__dirname, 'reports.html')));
