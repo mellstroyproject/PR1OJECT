@@ -25,9 +25,14 @@ function start(opts) {
       if (msg.author.bot || !msg.guild) return;
       const chatCh = process.env.DISCORD_CHAT_CHANNEL_ID;
       if (!chatCh || msg.channel.id !== chatCh) return;
+      console.log('chat bot: получено сообщение в канале моста');
       const text = (msg.content || '').trim();
       const files = [...msg.attachments.values()].map(a => a.url).join(' ');
-      if (!text && !files) return;
+      if (!text && !files) {
+        console.log('chat bot: пустое сообщение (проверьте Message Content Intent)');
+        return;
+      }
+      console.log('chat bot: сообщение из моста от', msg.author.username);
       const room = process.env.SITE_CHAT_CHANNEL_ID ? 'ch:' + process.env.SITE_CHAT_CHANNEL_ID : null;
       if (!room) return;
       const who = (msg.member?.displayName || msg.author.username || 'Discord').slice(0, 80);
