@@ -2049,16 +2049,32 @@ app.get(['/', '/shop', '/leaders', '/bans', '/rules', '/settings', '/admin', '/s
 // --- 🚨 Жалобы игроков из игры (таблица np_reports). Доступ — право «Банить и мутить» ---
 app.get('/reports', (req, res) => res.sendFile(path.join(__dirname, 'reports.html')));
 app.get('/api/reports', can('ban'), async (req, res) => {
+  // жалобы из игры: и старые (np_reports, игровая база) и новые (cs2_reports, через /api/cs2/report)
+  let old = [], fresh = [];
   try {
-    const rows = await gq('select id, reporter, reporter_name, target, reason, server, created_ms from np_reports order by id desc limit 300');
-    res.json({ reports: rows.map(r => ({ ...r, created_ms: +r.created_ms })) });
-  } catch (e) { res.status(500).json({ error: 'База игры недоступна: ' + (e.code || e.message) }); }
+    old = (await gq('select id, reporter, reporter_name, target, reason, server, created_ms from np_reports order by id desc limit 300'))
+      .map(r => ({ ...r, id: String(r.id), created_ms: +r.created_ms }));
+  } catch (e) { /* игровая база недоступна — покажем хотя бы жалобы с сайта */ }
+  try {
+    fresh = (await db.query('select id, reporter, reporter_name, target, reason, server, at from cs2_reports order by at desc limit 300')).rows
+      .map(r => ({ id: 'c' + r.id, reporter: r.reporter, reporter_name: r.reporter_name, target: r.target, reason: r.reason, server: r.server, created_ms: +r.at }));
+  } catch (e) { console.error('reports list:', e.message); }
+  const all = [...old, ...fresh].sort((a, b) => b.created_ms - a.created_ms).slice(0, 300);
+  res.json({ reports: all });
 });
 app.post('/api/reports/delete', can('ban'), async (req, res) => {
-  const id = parseInt(req.body.id) || 0;
+  const raw = String(req.body.id || '');
+  if (raw.startsWith('c')) { // жалоба с сайта (cs2_reports)
+    const id = parseInt(raw.slice(1)) || 0;
+    if (!id) return bad(res, 'Нет id жалобы');
+    try { await db.query('delete from cs2_reports where id=$1', [id]); res.json({ ok: true }); }
+    catch (e) { res.status(500).json({ error: 'Ошибка базы: ' + e.message }); }
+    return;
+  }
+  const id = parseInt(raw) || 0;
   if (!id) return bad(res, 'Нет id жалобы');
   try { await gq('delete from np_reports where id=?', [id]); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: 'База игры недоступна: ' + (e.code || e.message) }); }
+  catch (e) { res.status(500).json({ error: 'Игровая база недоступна: ' + (e.code || e.message) }); }
 });
 init().then(() => app.listen(process.env.PORT || 3000, () => console.log('ok')))
   .catch(e => { console.error('DB error:', e.message); process.exit(1); });
