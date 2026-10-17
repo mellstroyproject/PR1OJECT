@@ -1,14 +1,14 @@
 // Discord-бот: те же команды, что в Telegram-боте и на сайте (commands.js).
 // Команды — слеш-команды (/help, /bonus …). Ответы видны только тому, кто их вызвал (ephemeral).
-// Текстовые команды с «!» тоже работают: в канале их ответ уходит в личные сообщения.
+// Текстовые команды с «!» тоже работают: ответ уходит в личные сообщения вызвавшему.
 // Нужно: DISCORD_BOT_TOKEN, DISCORD_OWNER_IDS. Бот приглашается с областями bot и applications.commands.
 
 const a2s = require('./a2s');
 
-let db = null, commands = null, ready = null, client = null, runTg = null, tgNames = null;
-let live = null; // закреплённый список серверов: { channel, message, timer, last }
-const LIST_EVERY = 5000; // обновление списка, мс
-const CHUNK = 1900;      // лимит Discord — 2000 символов на сообщение
+let db = null, commands = null, ready = null, client = null, runTg = null, tgNames = null, D = null;
+let live = null;              // закреплённый список серверов: { channel, message, timer, last }
+const LIST_EVERY = 5000;      // обновление списка, мс
+const CHUNK = 1900;           // лимит Discord — 2000 символов на сообщение
 const chunks = t => { const out = []; for (let i = 0; i < t.length; i += CHUNK) out.push(t.slice(i, i + CHUNK)); return out.length ? out : ['…']; };
 
 const DESC = {
@@ -20,6 +20,9 @@ const DESC = {
   list: 'Закрепить список серверов в этом канале (владельцы)',
   unlist: 'Остановить закреплённый список (владельцы)'
 };
+
+// опции слеш-команд; остальным команды дают одну необязательную строку args
+const OPTS = {};
 
 // код привязки: /link → код DS-XXXXXXXX → вводится на сайте в окне промокода
 async function makeCode(discordId) {
@@ -40,19 +43,22 @@ async function consumeCode(code, steamId) {
   return { ok: true, msg: 'Discord привязан. Команды бота теперь работают с вашим аккаунтом.' };
 }
 
-// --- общая обработка команды: ctx = { id, isDM, channel, send(text) } — send отправляет только вызывающему ---
+// --- общая обработка команды: ctx = { id, displayName, isDM, channel, guild, send(text) } — send отвечает только вызвавшему ---
 async function handleCore(ctx, text) {
   const name = text.split(/\s+/)[0].slice(1).split('@')[0].toLowerCase();
+
   if (name === 'list' || name === 'unlist') {
     if (!commands.isOwnerDc(ctx.id)) return { text: 'Нет доступа' };
     if (name === 'unlist') { await stopList(); return { text: 'Список серверов остановлен и откреплён.' }; }
     if (!ctx.channel || ctx.isDM) return { text: 'Эта команда работает в канале сервера.' };
     return startList(ctx.channel);
   }
+
   if (name === 'link') {
     const code = await makeCode(ctx.id);
     return { text: `🔗 Код привязки: ${code}\n\nОткройте сайт → окно промокода → введите этот код. Код действует 15 минут.` };
   }
+
   const link = (await db.query('select steam_id from dc_links where discord_id=$1', [ctx.id])).rows[0];
   const out = await commands.run({ platform: 'dc', discordId: ctx.id, steam: link ? link.steam_id : null, text });
   if (out) return out;
@@ -152,7 +158,7 @@ async function registerSlash() {
   const defs = [...names].filter(n => /^[a-z0-9_-]{1,32}$/.test(n)).slice(0, 100).map(n => ({
     name: n,
     description: (DESC[n] || 'Команда Telegram-бота').slice(0, 100),
-    options: [{ name: 'args', description: 'Аргументы (необязательно)', type: 3, required: false }]
+    options: OPTS[n] || [{ name: 'args', description: 'Аргументы (необязательно)', type: 3, required: false }]
   }));
   for (const g of client.guilds.cache.values()) {
     await g.commands.set(defs).catch(e => console.error('discord slash (нужна область applications.commands):', e.message));
@@ -168,6 +174,7 @@ function start(opts) {
     await db.query('create table if not exists dc_links(discord_id text primary key, steam_id text not null, at bigint)');
     await db.query('create table if not exists dc_link_codes(code text primary key, discord_id text not null, at bigint not null)');
     await db.query('create table if not exists dc_list(id int primary key, channel_id text not null, message_id text not null)');
+    await db.query('create table if not exists dc_settings(key text primary key, value text not null)');
     commands = require('./commands').create({ db, glentToggle: opts.glentToggle, callStart: opts.callStart });
   })().catch(e => console.error('discord init:', e.message));
 
@@ -177,6 +184,7 @@ function start(opts) {
   try { discord = require('discord.js'); }
   catch (e) { console.error('discord.js не установлен — выполните npm install'); return; }
   const { Client, GatewayIntentBits, Partials } = discord;
+  D = discord;
 
   client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.DirectMessages, GatewayIntentBits.MessageContent],
@@ -190,15 +198,14 @@ function start(opts) {
     restoreList();
   });
 
-  // слеш-команды: ответ только вызвавшему
   client.on('interactionCreate', async i => {
     if (!i.isChatInputCommand()) return;
     try {
       await ready;
       await i.deferReply({ ephemeral: true });
+      const ctx = { id: i.user.id, displayName: i.user.username, isDM: !i.guild, channel: i.channel, guild: i.guild, send: t => sendEphemeral(i, t) };
       const args = i.options.getString('args') || '';
       const text = '/' + i.commandName + (args ? ' ' + args : '');
-      const ctx = { id: i.user.id, isDM: !i.guild, channel: i.channel, send: t => sendEphemeral(i, t) };
       const out = await handleCore(ctx, text);
       if (!out.sent) await ctx.send(out.text);
     } catch (e) {
@@ -222,7 +229,7 @@ function start(opts) {
       await ready;
       const text = '/' + raw.slice(1);
       console.log('discord cmd:', text.split(/\s+/)[0], 'от', msg.author.id, isDM ? '(личка)' : '(канал)');
-      const ctx = { id: msg.author.id, isDM, channel: msg.channel, send: t => sendDM(msg, t) };
+      const ctx = { id: msg.author.id, displayName: msg.author.username, isDM, channel: msg.channel, guild: msg.guild, send: t => sendDM(msg, t) };
       const out = await handleCore(ctx, text);
       if (!out.sent) await ctx.send(out.text);
     } catch (e) {

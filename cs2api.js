@@ -103,8 +103,9 @@ function site(app, db, opts = {}) {
     reportCooldown.set(reporter, now);
     await db.query('insert into cs2_reports(reporter, reporter_name, target, reason, server, at) values ($1,$2,$3,$4,$5,$6)',
       [reporter, reporterName, target, reason, server, now]);
-    notify(`🚨 Жалоба на сервере ${server || 'CS2'}\nОт: ${reporterName || reporter}\nНа: ${target}\nПричина: ${reason}`)
-      .catch(e => console.error('cs2 report notify:', e.message));
+    const reportText = `🚨 Жалоба на сервере ${server || 'CS2'}\nОт: ${reporterName || reporter}\nНа: ${target}\nПричина: ${reason}`;
+    notify(reportText).catch(e => console.error('cs2 report notify:', e.message));
+    if (opts.reportSink) opts.reportSink(reportText); // канал репортов Discord (виден только админам)
     res.json({ ok: true });
   }));
 

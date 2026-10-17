@@ -1179,6 +1179,8 @@ try {
 catch (e) { console.error('messenger.js не подключён:', e.message); }
 // --- Discord-бот (личка и каналы): discordbot.js; без DISCORD_BOT_TOKEN выключен ---
 const dcBot = require('./discordbot');
+const reportBot = require('./reportbot'); // бот репортов — отдельный бот (DISCORD_REPORT_BOT_TOKEN)
+reportBot.start({ db });
 dcBot.start({ db, glentToggle,
   callStart: (s, n) => (msgCallStart ? msgCallStart(s, n) : Promise.resolve({ text: '❌ Звонки пока не включены' })),
   runTg: o => (tgRunDc ? tgRunDc(o) : Promise.resolve(false)),
@@ -1186,7 +1188,8 @@ dcBot.start({ db, glentToggle,
 
 // --- 🎮 CS2: випка и жалобы для плагина VipReport (ключ сервера — CS2_SERVER_KEY) ---
 try {
-  cs2SetVip = require('./cs2api').site(app, db, { notify: t => tgOwnerNotify(t), vipModel: process.env.CS2_VIP_MODEL || null, owner: OWNER }).setUntil;
+  cs2SetVip = require('./cs2api').site(app, db, { notify: t => tgOwnerNotify(t), vipModel: process.env.CS2_VIP_MODEL || null, owner: OWNER,
+    reportSink: t => reportBot.postReport(t) }).setUntil;
 } catch (e) { console.error('cs2api.js не подключён:', e.message); }
 // --- 📱 Установка на домашний экран iPhone (PWA): манифест, иконки, service worker ---
 for (const [url, file, type] of [
