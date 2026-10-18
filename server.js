@@ -1183,6 +1183,7 @@ const dcBot = require('./discordbot');
 const reportBot = require('./reportbot'); // бот репортов — отдельный бот (DISCORD_REPORT_BOT_TOKEN)
 reportBot.start({ db });
 require('./chatbot').start({ db }); // бот чата: DISCORD_CHATBOT_TOKEN (мост с сайтом)
+require('./vkbot').start({ db, glentToggle, callStart: (s, n) => (msgCallStart ? msgCallStart(s, n) : Promise.resolve({ text: '❌ Звонки пока не включены' })) }); // VK-бот: VK_GROUP_TOKEN, VK_GROUP_ID
 dcBot.start({ db, glentToggle,
   callStart: (s, n) => (msgCallStart ? msgCallStart(s, n) : Promise.resolve({ text: '❌ Звонки пока не включены' })),
   runTg: o => (tgRunDc ? tgRunDc(o) : Promise.resolve(false)),

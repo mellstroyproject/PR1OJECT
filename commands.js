@@ -42,6 +42,8 @@ function create({ db, glentToggle, callStart }) {
   const isOwnerTg = tgId => !!tgId && TG_ADMINS().includes(String(tgId));
   const DC_OWNERS = () => (process.env.DISCORD_OWNER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
   const isOwnerDc = dcId => !!dcId && DC_OWNERS().includes(String(dcId));
+  const VK_OWNERS = () => (process.env.VK_OWNER_IDS || '').split(',').map(x => x.trim()).filter(Boolean);
+  const isOwnerVk = vkId => !!vkId && VK_OWNERS().includes(String(vkId));
   // владелец аккаунта сайта: привязан владельческий Telegram или Discord
   const isOwnerSteam = async steam => {
     if (!steam) return false;
@@ -87,11 +89,14 @@ function create({ db, glentToggle, callStart }) {
   };
 
   // run({ platform, steam, tgId, text }) -> { text, url? } | null (если это не команда из списка)
-  async function run({ platform, steam, tgId, discordId, text }) {
+  async function run({ platform, steam, tgId, discordId, vkId, text }) {
     const p = parse(text);
     if (!p || !handlers[p.name]) return null;
     const cmd = COMMANDS.find(c => c.name === p.name);
-    const isOwner = platform === 'tg' ? isOwnerTg(tgId) : platform === 'dc' ? (isOwnerDc(discordId) || await isOwnerSteam(steam)) : await isOwnerSteam(steam);
+    const isOwner = platform === 'tg' ? isOwnerTg(tgId)
+      : platform === 'dc' ? (isOwnerDc(discordId) || await isOwnerSteam(steam))
+      : platform === 'vk' ? isOwnerVk(vkId)
+      : await isOwnerSteam(steam);
     if (cmd.owner && !isOwner) return { text: 'Нет доступа' };
     try {
       return await handlers[p.name]({ steam, tgId, isOwner, arg: p.arg, platform });
