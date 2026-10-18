@@ -1,6 +1,6 @@
 // VK-бот (сообщество): команды те же, что в Telegram и Discord (commands.js). Работает через Long Poll, вебхук не нужен.
 // Нужно: VK_GROUP_TOKEN (ключ доступа сообщества), VK_GROUP_ID (ID сообщества без минуса),
-// VK_OWNER_IDS (ID владельцев ВК через запятую, для /glent). Команды пишутся с «/», например /help, /servers.
+// VK_OWNER_IDS (ID или ник владельцев ВК через запятую, для /glent). Команды пишутся с «/», например /help, /servers.
 
 const API = 'https://api.vk.com/method/';
 const V = '5.199';
@@ -53,13 +53,29 @@ async function poll() {
   }
 }
 
+// В VK_OWNER_IDS можно писать и ID (число), и ник (например ss_plik): ник превращаем в число при запуске
+async function resolveOwners() {
+  const items = (process.env.VK_OWNER_IDS || '').split(',').map(x => x.trim()).filter(Boolean);
+  const ids = [];
+  const names = [];
+  for (const it of items) (/^\d+$/.test(it) ? ids : names).push(it);
+  if (names.length) {
+    try {
+      const users = await call('users.get', { user_ids: names.join(',') });
+      for (const u of users) ids.push(String(u.id));
+    } catch (e) { console.error('vk owners:', e.message); }
+  }
+  process.env.VK_OWNER_IDS = ids.join(',');
+  console.log('VK владельцы:', ids.length ? ids.join(', ') : 'не определены');
+}
+
 function start(opts) {
   token = process.env.VK_GROUP_TOKEN || '';
   groupId = process.env.VK_GROUP_ID || '';
   if (!token || !groupId) { console.log('VK-бот: VK_GROUP_TOKEN или VK_GROUP_ID не заданы — выключен'); return; }
   commands = require('./commands').create({ db: opts.db, glentToggle: opts.glentToggle, callStart: opts.callStart });
   console.log('VK-бот запущен (Long Poll), сообщество', groupId);
-  poll().catch(e => console.error('vk start:', e.message));
+  resolveOwners().then(() => poll()).catch(e => console.error('vk start:', e.message));
 }
 
 module.exports = { start };
