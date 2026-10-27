@@ -160,8 +160,9 @@ app.get('/auth/steam/callback', async (req, res) => {
     await db.query(`insert into users(steam_id,name,avatar) values($1,$2,$3)
       on conflict(steam_id) do update set name=coalesce(excluded.name, users.name), avatar=coalesce(excluded.avatar, users.avatar)`, [id, name, avatar]);
     const tgl = (req.headers.cookie || '').match(/(?:^|;\s*)tgl=(LK-[0-9A-F]{24})/)?.[1];
-    res.setHeader('Set-Cookie', [`s=${id}.${sign(id)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`].concat(tgl ? ['tgl=; Path=/; Max-Age=0'] : []));
-    res.redirect(tgl ? '/tg/link/' + tgl : '/');
+    const mcl = (req.headers.cookie || '').match(/(?:^|;\s*)mcl=(home|NP-[A-HJ-NP-Z2-9]{8})/)?.[1]; // вход пришёл со страницы Minecraft / из лаунчера (mcauth.js)
+    res.setHeader('Set-Cookie', [`s=${id}.${sign(id)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`].concat(tgl ? ['tgl=; Path=/; Max-Age=0'] : [], mcl ? ['mcl=; Path=/; Max-Age=0'] : []));
+    res.redirect(tgl ? '/tg/link/' + tgl : mcl ? (mcl === 'home' ? '/minecraft' : '/minecraft/link?code=' + mcl) : '/');
   } catch (e) { res.status(403).send('Не удалось войти через Steam'); }
 });
 
@@ -1194,6 +1195,9 @@ try {
   cs2SetVip = require('./cs2api').site(app, db, { notify: t => tgOwnerNotify(t), vipModel: process.env.CS2_VIP_MODEL || null, owner: OWNER,
     reportSink: t => reportBot.postReport(t) }).setUntil;
 } catch (e) { console.error('cs2api.js не подключён:', e.message); }
+// --- 🟩 Minecraft: ник, скин, вход лаунчера через сайт и Yggdrasil-сервер сессий (mcauth.js) ---
+try { require('./mcauth').site(app, getUser, { db, isAdmin: u => permsOf(u).includes('server') }); }
+catch (e) { console.error('mcauth.js не подключён:', e.message); }
 // --- 📱 Установка на домашний экран iPhone (PWA): манифест, иконки, service worker ---
 for (const [url, file, type] of [
   ['/manifest.webmanifest', 'manifest.webmanifest', 'application/manifest+json'],

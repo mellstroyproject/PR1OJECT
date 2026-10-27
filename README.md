@@ -53,6 +53,7 @@
 | `icon-180.png`, `icon-192.png`, `icon-512.png` | иконки приложения |
 | `ring.mp3` | мелодия входящего звонка |
 | `battleship.js` | мини-игра «Морской бой» |
+| `mcauth.js` | Minecraft: ник и скин игрока, вход лаунчера через сайт, сервер сессий `/yggdrasil` для authlib-injector (страница игрока — `/minecraft`) |
 
 Файлы `messenger.js`, `messenger.html`, `ring.mp3`, `sw.js`, иконки и манифест лежат рядом с `server.js`.
 
